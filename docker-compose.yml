@@ -1,11 +1,8 @@
 # 整体启动后端 cloud-fitter + 前端 cloud-fitter-web
 #
-# 前端构建 context 目录（相对本 compose 所在目录 = cloud-fitter 仓库根）：
-#   默认 ./cloud-fitter-web（在仓库内克隆前端）
-# dockerfile 路径相对「context 目录」解析（Compose 规范），因此指向仓库内 Dockerfile 用 ../deploy/web/Dockerfile
-# 若前端与后端同级（例：~/cloud-fitter 与 ~/cloud-fitter-web），请：
-#   export CLOUD_FITTER_WEB_DIR=../cloud-fitter-web
-#   export CLOUD_FITTER_WEB_DOCKERFILE=../cloud-fitter/deploy/web/Dockerfile
+# 前端构建：context 为 cloud-fitter 仓库根目录，源码在子目录 cloud-fitter-web（可改 WEB_SUBDIR）
+#   git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
+# 若前端与后端同级目录，可在 cloud-fitter 根下执行：ln -s ../cloud-fitter-web cloud-fitter-web
 #
 # 准备配置：在本仓库根目录复制 config_template.yaml 为 config.yaml 并填写云账号
 #
@@ -29,8 +26,10 @@ services:
 
   web:
     build:
-      context: ${CLOUD_FITTER_WEB_DIR:-./cloud-fitter-web}
-      dockerfile: ${CLOUD_FITTER_WEB_DOCKERFILE:-../deploy/web/Dockerfile}
+      context: .
+      dockerfile: deploy/web/Dockerfile
+      args:
+        WEB_SUBDIR: ${CLOUD_FITTER_WEB_SUBDIR:-cloud-fitter-web}
     image: cloud-fitter-web:local
     container_name: cloud-fitter-web
     restart: unless-stopped
