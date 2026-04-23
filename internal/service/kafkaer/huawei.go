@@ -4,10 +4,8 @@ import (
 	"context"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
-	hwregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dms/v2/region"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
-	iamregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/region"
 	hwkafka "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kafka/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kafka/v2/model"
 	"github.com/pkg/errors"
@@ -33,7 +31,7 @@ func newHuaweiKafkaClient(region tenanter.Region, tenant tenanter.Tenanter) (Kaf
 	case *tenanter.AccessKeyTenant:
 		auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 		rName := region.GetName()
-		cli := hwiam.IamClientBuilder().WithRegion(iamregion.ValueOf(rName)).WithCredential(auth).Build()
+		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).Build()
 		c := hwiam.NewIamClient(cli)
 		request := new(iammodel.KeystoneListProjectsRequest)
 		request.Name = &rName
@@ -44,7 +42,7 @@ func newHuaweiKafkaClient(region tenanter.Region, tenant tenanter.Tenanter) (Kaf
 		projectId := (*r.Projects)[0].Id
 
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcClient := hwkafka.KafkaClientBuilder().WithRegion(hwregion.ValueOf(rName)).WithCredential(auth).Build()
+		hcClient := hwkafka.KafkaClientBuilder().WithRegion(huaweicloudregion.EndpointForService("dms", rName)).WithCredential(auth).Build()
 		client = hwkafka.NewKafkaClient(hcClient)
 	default:
 	}

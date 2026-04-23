@@ -6,18 +6,18 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
-	hwregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/region"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
-	iamregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/region"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -37,7 +37,7 @@ func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser
 	case *tenanter.AccessKeyTenant:
 		auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 		rName := region.GetName()
-		cli := hwiam.IamClientBuilder().WithRegion(iamregion.ValueOf(rName)).WithCredential(auth).Build()
+		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).Build()
 		c := hwiam.NewIamClient(cli)
 		request := new(iammodel.KeystoneListProjectsRequest)
 		request.Name = &rName
@@ -48,7 +48,7 @@ func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser
 		projectId := (*r.Projects)[0].Id
 
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcEcs := hwecs.EcsClientBuilder().WithRegion(hwregion.ValueOf(rName)).WithCredential(auth).Build()
+		hcEcs := hwecs.EcsClientBuilder().WithRegion(huaweicloudregion.EndpointForService("ecs", rName)).WithCredential(auth).Build()
 		client = hwecs.NewEcsClient(hcEcs)
 	default:
 	}
@@ -245,7 +245,33 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	}
 
 	servers := *resp.Servers
-	ecses := make([]*pbecs.EcsInstance, len(servers))
+	n := len(servers)
+	type diskRow struct {
+		sys, data int32
+		summary   string
+	}
+	disks := make([]diskRow, n)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+	for i := 0; i < n; i++ {
+		i := i
+		v := servers[i]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			blkResp, blkErr := ecs.cli.ListServerBlockDevices(&model.ListServerBlockDevicesRequest{ServerId: v.Id})
+			if blkErr == nil {
+				disks[i].sys, disks[i].data, disks[i].summary = huaweiDiskFromListServerBlockDevices(blkResp, v.Flavor)
+			} else {
+				disks[i].sys, disks[i].data, disks[i].summary = huaweiDiskFromListServerBlockDevices(nil, v.Flavor)
+			}
+		}()
+	}
+	wg.Wait()
+
+	ecses := make([]*pbecs.EcsInstance, n)
 	for k, v := range servers {
 		desc := ""
 		if v.Description != nil {
@@ -255,15 +281,6 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 		resourceGroup := ""
 		if v.EnterpriseProjectId != nil {
 			resourceGroup = *v.EnterpriseProjectId
-		}
-
-		var sysGB, dataGB int32
-		var dsum string
-		blkResp, blkErr := ecs.cli.ListServerBlockDevices(&model.ListServerBlockDevicesRequest{ServerId: v.Id})
-		if blkErr == nil {
-			sysGB, dataGB, dsum = huaweiDiskFromListServerBlockDevices(blkResp, v.Flavor)
-		} else {
-			sysGB, dataGB, dsum = huaweiDiskFromListServerBlockDevices(nil, v.Flavor)
 		}
 
 		ecses[k] = &pbecs.EcsInstance{
@@ -288,9 +305,9 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			ImageName:        huaweiMetadataGet(v.Metadata, "image_name"),
 			OsType:           huaweiMetadataGet(v.Metadata, "os_type"),
 			OsBit:            huaweiMetadataGet(v.Metadata, "os_bit"),
-			SystemDiskSizeGb: sysGB,
-			DataDiskTotalGb:  dataGB,
-			DiskSummary:      dsum,
+			SystemDiskSizeGb: disks[k].sys,
+			DataDiskTotalGb:  disks[k].data,
+			DiskSummary:      disks[k].summary,
 		}
 	}
 

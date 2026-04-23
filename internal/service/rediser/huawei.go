@@ -9,14 +9,13 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwdcs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dcs/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dcs/v2/model"
-	hwregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dcs/v2/region"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
-	iamregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/region"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -36,7 +35,7 @@ func newHuaweiDcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Redis
 	case *tenanter.AccessKeyTenant:
 		auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 		rName := region.GetName()
-		cli := hwiam.IamClientBuilder().WithRegion(iamregion.ValueOf(rName)).WithCredential(auth).Build()
+		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).Build()
 		c := hwiam.NewIamClient(cli)
 		request := new(iammodel.KeystoneListProjectsRequest)
 		request.Name = &rName
@@ -47,7 +46,7 @@ func newHuaweiDcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Redis
 		projectId := (*r.Projects)[0].Id
 
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcClient := hwdcs.DcsClientBuilder().WithRegion(hwregion.ValueOf(rName)).WithCredential(auth).Build()
+		hcClient := hwdcs.DcsClientBuilder().WithRegion(huaweicloudregion.EndpointForService("dcs", rName)).WithCredential(auth).Build()
 		client = hwdcs.NewDcsClient(hcClient)
 	default:
 	}
