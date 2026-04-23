@@ -73,6 +73,7 @@ message ListResp {
   repeated RdsInstance rdses = 1;
 }
 
+message ListAllReq {}
 
 // RDS类产品接口
 // 阿里云 - RDS
@@ -92,6 +93,14 @@ service RdsService {
   rpc ListRds(ListReq) returns (ListResp) {
     option (google.api.http) = {
       post : "/apis/rds"
+      body : "*"
+    };
+  }
+
+  // 查询所有云的 RDS
+  rpc ListRdsAll(ListAllReq) returns (ListResp) {
+    option (google.api.http) = {
+      post : "/apis/rds/all"
       body : "*"
     };
   }

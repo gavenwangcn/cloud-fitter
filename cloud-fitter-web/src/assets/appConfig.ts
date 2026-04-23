@@ -1,7 +1,17 @@
 export const menuList = [
   {
-    title: '主页',
-    key: 'home',
+    title: 'ECS',
+    key: 'ecs',
+    icon: 'icon-quanju1',
+  },
+  {
+    title: 'RDS',
+    key: 'rds',
+    icon: 'icon-quanju1',
+  },
+  {
+    title: 'DCS',
+    key: 'dcs',
     icon: 'icon-quanju1',
   },
 ];

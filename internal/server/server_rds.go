@@ -28,3 +28,14 @@ func (s *Server) ListRds(ctx context.Context, req *pbrds.ListReq) (*pbrds.ListRe
 	}
 	return resp, nil
 }
+
+func (s *Server) ListRdsAll(ctx context.Context, req *pbrds.ListAllReq) (*pbrds.ListResp, error) {
+	glog.Infof("grpc/http ListRdsAll begin")
+	resp, err := rds.ListAll(ctx)
+	if err != nil {
+		glog.Errorf("ListRdsAll error %+v", err)
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+	glog.Infof("grpc/http ListRdsAll ok instances=%d", len(resp.Rdses))
+	return resp, nil
+}

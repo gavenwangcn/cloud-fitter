@@ -49,6 +49,39 @@
         ]
       }
     },
+    "/apis/rds/all": {
+      "post": {
+        "summary": "查询所有云的 RDS",
+        "operationId": "RdsService_ListRdsAll",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbrdsListResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbrdsListAllReq"
+            }
+          }
+        ],
+        "tags": [
+          "RdsService"
+        ]
+      }
+    },
     "/apis/rds/detail": {
       "post": {
         "summary": "查询RDS明细 - 支持云类型、区域、账户、分页等过滤条件",
@@ -84,6 +117,9 @@
     }
   },
   "definitions": {
+    "pbrdsListAllReq": {
+      "type": "object"
+    },
     "pbrdsListDetailReq": {
       "type": "object",
       "properties": {

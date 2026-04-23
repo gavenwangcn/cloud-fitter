@@ -5,11 +5,23 @@ export default [
     routes: [
       {
         path: '/',
-        redirect: '/home',
+        redirect: '/ecs',
+      },
+      {
+        path: '/ecs',
+        component: './ecs',
+      },
+      {
+        path: '/rds',
+        component: './rds',
+      },
+      {
+        path: '/dcs',
+        component: './dcs',
       },
       {
         path: '/home',
-        component: './home',
+        redirect: '/ecs',
       },
       {
         component: './exception/404',

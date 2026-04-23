@@ -27,13 +27,9 @@ const BasicMenu: React.FC<BasicMenuProps> = (props) => {
     history.push(`/${path}`);
   };
 
-  // 默认选中菜单
-  let selectedKeys = '';
-  for (const menu of menuList) {
-    if (props.path.indexOf(menu.key) > 0) {
-      selectedKeys = menu.key;
-    }
-  }
+  const seg = props.path.replace(/^\//, '').split('/').filter(Boolean)[0];
+  const selectedKeys =
+    menuList.find((m) => m.key === seg)?.key ?? menuList[0]?.key ?? 'ecs';
 
   return (
     <Sider collapsed={collapsed} className={styles.basicMenu}>
@@ -54,7 +50,7 @@ const BasicMenu: React.FC<BasicMenuProps> = (props) => {
             backgroundColor: 'transparent',
             color: '#a8beff',
           }}
-          selectedKeys={[selectedKeys]}
+          selectedKeys={selectedKeys ? [selectedKeys] : ['ecs']}
           mode="inline"
         >
           {menuList.map((menuItem) => (

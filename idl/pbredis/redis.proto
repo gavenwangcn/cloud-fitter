@@ -67,6 +67,7 @@ message ListResp {
   repeated RedisInstance redises = 1;
 }
 
+message ListAllReq {}
 
 // Redis类产品接口
 // 阿里云 - Redis
@@ -85,6 +86,14 @@ service RedisService {
   rpc ListRedis(ListReq) returns (ListResp) {
     option (google.api.http) = {
       post : "/apis/redis"
+      body : "*"
+    };
+  }
+
+  // 查询所有云的 Redis（华为云 DCS 等）
+  rpc ListRedisAll(ListAllReq) returns (ListResp) {
+    option (google.api.http) = {
+      post : "/apis/redis/all"
       body : "*"
     };
   }

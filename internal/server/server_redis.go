@@ -28,3 +28,14 @@ func (s *Server) ListRedis(ctx context.Context, req *pbredis.ListReq) (*pbredis.
 	}
 	return resp, nil
 }
+
+func (s *Server) ListRedisAll(ctx context.Context, req *pbredis.ListAllReq) (*pbredis.ListResp, error) {
+	glog.Infof("grpc/http ListRedisAll begin")
+	resp, err := redis.ListAll(ctx)
+	if err != nil {
+		glog.Errorf("ListRedisAll error %+v", err)
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+	glog.Infof("grpc/http ListRedisAll ok instances=%d", len(resp.Redises))
+	return resp, nil
+}

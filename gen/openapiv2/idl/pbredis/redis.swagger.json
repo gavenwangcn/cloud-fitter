@@ -49,6 +49,39 @@
         ]
       }
     },
+    "/apis/redis/all": {
+      "post": {
+        "summary": "查询所有云的 Redis（华为云 DCS 等）",
+        "operationId": "RedisService_ListRedisAll",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbredisListResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbredisListAllReq"
+            }
+          }
+        ],
+        "tags": [
+          "RedisService"
+        ]
+      }
+    },
     "/apis/redis/detail": {
       "post": {
         "summary": "查询Redis明细 - 支持云类型、区域、账户、分页等过滤条件",
@@ -84,6 +117,9 @@
     }
   },
   "definitions": {
+    "pbredisListAllReq": {
+      "type": "object"
+    },
     "pbredisListDetailReq": {
       "type": "object",
       "properties": {

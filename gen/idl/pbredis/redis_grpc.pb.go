@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion7
 const (
 	RedisService_ListRedisDetail_FullMethodName = "/pbredis.RedisService/ListRedisDetail"
 	RedisService_ListRedis_FullMethodName       = "/pbredis.RedisService/ListRedis"
+	RedisService_ListRedisAll_FullMethodName    = "/pbredis.RedisService/ListRedisAll"
 )
 
 // RedisServiceClient is the client API for RedisService service.
@@ -31,6 +32,8 @@ type RedisServiceClient interface {
 	ListRedisDetail(ctx context.Context, in *ListDetailReq, opts ...grpc.CallOption) (*ListDetailResp, error)
 	// 查询Redis全量 - 根据云类型
 	ListRedis(ctx context.Context, in *ListReq, opts ...grpc.CallOption) (*ListResp, error)
+	// 查询所有云的 Redis（华为云 DCS 等）
+	ListRedisAll(ctx context.Context, in *ListAllReq, opts ...grpc.CallOption) (*ListResp, error)
 }
 
 type redisServiceClient struct {
@@ -59,6 +62,15 @@ func (c *redisServiceClient) ListRedis(ctx context.Context, in *ListReq, opts ..
 	return out, nil
 }
 
+func (c *redisServiceClient) ListRedisAll(ctx context.Context, in *ListAllReq, opts ...grpc.CallOption) (*ListResp, error) {
+	out := new(ListResp)
+	err := c.cc.Invoke(ctx, RedisService_ListRedisAll_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RedisServiceServer is the server API for RedisService service.
 // All implementations must embed UnimplementedRedisServiceServer
 // for forward compatibility
@@ -67,6 +79,8 @@ type RedisServiceServer interface {
 	ListRedisDetail(context.Context, *ListDetailReq) (*ListDetailResp, error)
 	// 查询Redis全量 - 根据云类型
 	ListRedis(context.Context, *ListReq) (*ListResp, error)
+	// 查询所有云的 Redis（华为云 DCS 等）
+	ListRedisAll(context.Context, *ListAllReq) (*ListResp, error)
 	mustEmbedUnimplementedRedisServiceServer()
 }
 
@@ -79,6 +93,9 @@ func (UnimplementedRedisServiceServer) ListRedisDetail(context.Context, *ListDet
 }
 func (UnimplementedRedisServiceServer) ListRedis(context.Context, *ListReq) (*ListResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRedis not implemented")
+}
+func (UnimplementedRedisServiceServer) ListRedisAll(context.Context, *ListAllReq) (*ListResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRedisAll not implemented")
 }
 func (UnimplementedRedisServiceServer) mustEmbedUnimplementedRedisServiceServer() {}
 
@@ -129,6 +146,24 @@ func _RedisService_ListRedis_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RedisService_ListRedisAll_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAllReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RedisServiceServer).ListRedisAll(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RedisService_ListRedisAll_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RedisServiceServer).ListRedisAll(ctx, req.(*ListAllReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RedisService_ServiceDesc is the grpc.ServiceDesc for RedisService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -143,6 +178,10 @@ var RedisService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRedis",
 			Handler:    _RedisService_ListRedis_Handler,
+		},
+		{
+			MethodName: "ListRedisAll",
+			Handler:    _RedisService_ListRedisAll_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/service/rediser"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 	"github.com/golang/glog"
@@ -91,5 +92,39 @@ func List(ctx context.Context, req *pbredis.ListReq) (*pbredis.ListResp, error) 
 	}
 	wg.Wait()
 
+	return &pbredis.ListResp{Redises: redises}, nil
+}
+
+func ListAll(ctx context.Context) (*pbredis.ListResp, error) {
+	var (
+		wg      sync.WaitGroup
+		mutex   sync.Mutex
+		redises []*pbredis.RedisInstance
+	)
+
+	glog.Infof("redis ListAll: aggregating all providers (%d)", len(pbtenant.CloudProvider_name))
+	wg.Add(len(pbtenant.CloudProvider_name))
+	for k := range pbtenant.CloudProvider_name {
+		go func(provider int32) {
+			defer wg.Done()
+
+			pname := pbtenant.CloudProvider_name[provider]
+			resp, err := List(ctx, &pbredis.ListReq{Provider: pbtenant.CloudProvider(provider)})
+			if err != nil {
+				glog.Warningf("redis ListAll provider=%s: %v", pname, err)
+				return
+			}
+
+			mutex.Lock()
+			n := len(resp.Redises)
+			redises = append(redises, resp.Redises...)
+			mutex.Unlock()
+			glog.Infof("redis ListAll provider=%s instances=%d", pname, n)
+		}(k)
+	}
+
+	wg.Wait()
+
+	glog.Infof("redis ListAll finished total_instances=%d", len(redises))
 	return &pbredis.ListResp{Redises: redises}, nil
 }

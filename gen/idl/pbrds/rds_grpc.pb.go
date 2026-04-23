@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion7
 const (
 	RdsService_ListRdsDetail_FullMethodName = "/pbrds.RdsService/ListRdsDetail"
 	RdsService_ListRds_FullMethodName       = "/pbrds.RdsService/ListRds"
+	RdsService_ListRdsAll_FullMethodName    = "/pbrds.RdsService/ListRdsAll"
 )
 
 // RdsServiceClient is the client API for RdsService service.
@@ -31,6 +32,8 @@ type RdsServiceClient interface {
 	ListRdsDetail(ctx context.Context, in *ListDetailReq, opts ...grpc.CallOption) (*ListDetailResp, error)
 	// 查询RDS全量 - 根据云类型
 	ListRds(ctx context.Context, in *ListReq, opts ...grpc.CallOption) (*ListResp, error)
+	// 查询所有云的 RDS
+	ListRdsAll(ctx context.Context, in *ListAllReq, opts ...grpc.CallOption) (*ListResp, error)
 }
 
 type rdsServiceClient struct {
@@ -59,6 +62,15 @@ func (c *rdsServiceClient) ListRds(ctx context.Context, in *ListReq, opts ...grp
 	return out, nil
 }
 
+func (c *rdsServiceClient) ListRdsAll(ctx context.Context, in *ListAllReq, opts ...grpc.CallOption) (*ListResp, error) {
+	out := new(ListResp)
+	err := c.cc.Invoke(ctx, RdsService_ListRdsAll_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RdsServiceServer is the server API for RdsService service.
 // All implementations must embed UnimplementedRdsServiceServer
 // for forward compatibility
@@ -67,6 +79,8 @@ type RdsServiceServer interface {
 	ListRdsDetail(context.Context, *ListDetailReq) (*ListDetailResp, error)
 	// 查询RDS全量 - 根据云类型
 	ListRds(context.Context, *ListReq) (*ListResp, error)
+	// 查询所有云的 RDS
+	ListRdsAll(context.Context, *ListAllReq) (*ListResp, error)
 	mustEmbedUnimplementedRdsServiceServer()
 }
 
@@ -79,6 +93,9 @@ func (UnimplementedRdsServiceServer) ListRdsDetail(context.Context, *ListDetailR
 }
 func (UnimplementedRdsServiceServer) ListRds(context.Context, *ListReq) (*ListResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListRds not implemented")
+}
+func (UnimplementedRdsServiceServer) ListRdsAll(context.Context, *ListAllReq) (*ListResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRdsAll not implemented")
 }
 func (UnimplementedRdsServiceServer) mustEmbedUnimplementedRdsServiceServer() {}
 
@@ -129,6 +146,24 @@ func _RdsService_ListRds_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RdsService_ListRdsAll_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAllReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RdsServiceServer).ListRdsAll(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RdsService_ListRdsAll_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RdsServiceServer).ListRdsAll(ctx, req.(*ListAllReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RdsService_ServiceDesc is the grpc.ServiceDesc for RdsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -143,6 +178,10 @@ var RdsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRds",
 			Handler:    _RdsService_ListRds_Handler,
+		},
+		{
+			MethodName: "ListRdsAll",
+			Handler:    _RdsService_ListRdsAll_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
