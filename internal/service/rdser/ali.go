@@ -6,10 +6,12 @@ import (
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	alirds "github.com/aliyun/alibaba-cloud-sdk-go/services/rds"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -56,8 +58,22 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 		return nil, errors.Wrap(err, "Aliyun ListDetail error")
 	}
 
+	tagKey := envtags.RDSKey()
+	var tagByInst map[string]string
+	if tagKey != "" {
+		tagByInst, err = envtags.AliRDSInstanceTagMap(rds.cli, tagKey)
+		if err != nil {
+			glog.Warningf("Aliyun RDS DescribeTags account=%s region=%s: %v", rds.tenanter.AccountName(), rds.region.GetName(), err)
+			tagByInst = nil
+		}
+	}
+
 	var rdses = make([]*pbrds.RdsInstance, len(resp.Items.DBInstance))
 	for k, v := range resp.Items.DBInstance {
+		ev := ""
+		if tagByInst != nil {
+			ev = tagByInst[v.DBInstanceId]
+		}
 		rdses[k] = &pbrds.RdsInstance{
 			Provider:      pbtenant.CloudProvider_ali,
 			AccoutName:    rds.tenanter.AccountName(),
@@ -71,6 +87,7 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			Status:        v.DBInstanceStatus,
 			CreationTime:  v.CreateTime,
 			ExpireTime:    v.ExpireTime,
+			EnvTagValue:   ev,
 		}
 	}
 

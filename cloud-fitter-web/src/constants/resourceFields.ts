@@ -17,6 +17,7 @@ export type ResourceFieldDef = {
 /** pbecs.EcsInstance */
 export const ECS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'envTagValue', title: '环境(标签)' },
   { dataIndex: 'accountName', title: '账号名称' },
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },
@@ -44,6 +45,7 @@ export const ECS_FIELDS: ResourceFieldDef[] = [
 /** pbrds.RdsInstance（proto 中账号字段为 accoutName） */
 export const RDS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'envTagValue', title: '环境(标签)' },
   { dataIndex: 'accoutName', title: '账号名称' },
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },
@@ -67,6 +69,7 @@ export const RDS_FIELDS: ResourceFieldDef[] = [
 /** pbredis.RedisInstance（华为 DCS 等走 Redis 接口） */
 export const DCS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'envTagValue', title: '环境(标签)' },
   { dataIndex: 'accoutName', title: '账号名称' },
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },

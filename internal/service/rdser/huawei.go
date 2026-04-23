@@ -15,6 +15,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -122,6 +123,10 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		}
 		pub := append([]string(nil), v.PublicIps...)
 		priv := append([]string(nil), v.PrivateIps...)
+		var tagPairs [][2]string
+		for _, tg := range v.Tags {
+			tagPairs = append(tagPairs, [2]string{tg.Key, tg.Value})
+		}
 		rdses[k] = &pbrds.RdsInstance{
 			Provider:      pbtenant.CloudProvider_huawei,
 			AccoutName:    r.tenanter.AccountName(),
@@ -142,6 +147,7 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			VpcId:         v.VpcId,
 			Port:          v.Port,
 			ChargeType:    charge,
+			EnvTagValue:   envtags.FromPairs(envtags.RDSKey(), tagPairs),
 		}
 	}
 

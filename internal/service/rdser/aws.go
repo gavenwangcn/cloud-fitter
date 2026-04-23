@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awsrds "github.com/aws/aws-sdk-go-v2/service/rds"
@@ -11,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -60,6 +62,10 @@ func (rds *AwsRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 
 	var rdses = make([]*pbrds.RdsInstance, len(resp.DBInstances))
 	for k, v := range resp.DBInstances {
+		var tagPairs [][2]string
+		for _, t := range v.TagList {
+			tagPairs = append(tagPairs, [2]string{aws.ToString(t.Key), aws.ToString(t.Value)})
+		}
 		rdses[k] = &pbrds.RdsInstance{
 			Provider:      pbtenant.CloudProvider_aws,
 			AccoutName:    rds.tenanter.AccountName(),
@@ -73,6 +79,7 @@ func (rds *AwsRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			Status:        *v.DBInstanceStatus,
 			CreationTime:  v.InstanceCreateTime.Format(time.RFC3339),
 			ExpireTime:    "",
+			EnvTagValue:   envtags.FromPairs(envtags.RDSKey(), tagPairs),
 		}
 	}
 

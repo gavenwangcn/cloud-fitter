@@ -19,6 +19,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -324,6 +325,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			SystemDiskSizeGb: disks[k].sys,
 			DataDiskTotalGb:  disks[k].data,
 			DiskSummary:      disks[k].summary,
+			EnvTagValue:      envtags.HuaweiECSFromServerDetail(v, envtags.ECSKey()),
 		}
 	}
 

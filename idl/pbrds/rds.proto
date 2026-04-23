@@ -41,6 +41,8 @@ message RdsInstance {
   int32 port = 18;
   // 计费类型（如云厂商返回的 charge_info / charging_mode 可读形式）
   string charge_type = 19;
+  // 环境标识：指定标签键的值（CLOUD_FITTER_RDS_ENV_TAG_KEY / CLOUD_FITTER_ENV_TAG_KEY）
+  string env_tag_value = 20;
 }
 
 message ListDetailReq {

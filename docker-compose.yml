@@ -17,6 +17,14 @@ services:
     image: cloud-fitter-app:local
     container_name: cloud-fitter-app
     restart: unless-stopped
+    # 根目录 .env 可设置标签键，用于列表「环境(标签)」列（见 CLOUD_FITTER_*_ENV_TAG_KEY）
+    environment:
+      CLOUD_FITTER_ENV_TAG_KEY: ${CLOUD_FITTER_ENV_TAG_KEY:-}
+      CLOUD_FITTER_ECS_ENV_TAG_KEY: ${CLOUD_FITTER_ECS_ENV_TAG_KEY:-}
+      CLOUD_FITTER_RDS_ENV_TAG_KEY: ${CLOUD_FITTER_RDS_ENV_TAG_KEY:-}
+      CLOUD_FITTER_REDIS_ENV_TAG_KEY: ${CLOUD_FITTER_REDIS_ENV_TAG_KEY:-}
+      ENVIRONMENT_TAG_KEY: ${ENVIRONMENT_TAG_KEY:-}
+      environment: ${environment:-}
     networks:
       - app
     ports:

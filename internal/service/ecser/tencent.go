@@ -7,6 +7,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 
 	"github.com/golang/glog"
@@ -95,6 +96,15 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 		sysGB, dataGB, dsum := tencentDiskInfo(v)
 		glog.V(2).Infof("Tencent CVM disk instance_id=%s account=%s region=%s sys_gb=%d data_gb=%d summary=%q",
 			*v.InstanceId, ecs.tenanter.AccountName(), ecs.region.GetName(), sysGB, dataGB, dsum)
+		var tagPairs [][2]string
+		if v.Tags != nil {
+			for _, t := range v.Tags {
+				if t == nil || t.Key == nil || t.Value == nil {
+					continue
+				}
+				tagPairs = append(tagPairs, [2]string{*t.Key, *t.Value})
+			}
+		}
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:         pbtenant.CloudProvider_tencent,
 			AccountName:      ecs.tenanter.AccountName(),
@@ -120,6 +130,7 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 			SystemDiskSizeGb: sysGB,
 			DataDiskTotalGb:  dataGB,
 			DiskSummary:      dsum,
+			EnvTagValue:      envtags.FromPairs(envtags.ECSKey(), tagPairs),
 		}
 		for k1, v1 := range v.PublicIpAddresses {
 			ecses[k].PublicIps[k1] = *v1

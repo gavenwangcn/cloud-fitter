@@ -15,6 +15,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -183,6 +184,10 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			sysGB, dataGB, dsum := awsDiskFromBlockDevs(v2, volMap)
 			glog.V(2).Infof("AWS EC2 disk instance_id=%s account=%s region=%s sys_gb=%d data_gb=%d summary=%q",
 				*v2.InstanceId, ecs.tenanter.AccountName(), ecs.region.GetName(), sysGB, dataGB, dsum)
+			var tagPairs [][2]string
+			for _, t := range v2.Tags {
+				tagPairs = append(tagPairs, [2]string{aws.ToString(t.Key), aws.ToString(t.Value)})
+			}
 			ecses = append(ecses, &pbecs.EcsInstance{
 				Provider:         pbtenant.CloudProvider_aws,
 				AccountName:      ecs.tenanter.AccountName(),
@@ -204,6 +209,7 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 				SystemDiskSizeGb: sysGB,
 				DataDiskTotalGb:  dataGB,
 				DiskSummary:      dsum,
+				EnvTagValue:      envtags.FromPairs(envtags.ECSKey(), tagPairs),
 			})
 		}
 	}

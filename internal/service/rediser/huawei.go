@@ -15,6 +15,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -217,6 +218,17 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 		priv := splitDcsIPs(v.Ip)
 		spec := derefString(v.SpecCode)
 
+		var tagPairs [][2]string
+		if v.Tags != nil {
+			for _, tg := range *v.Tags {
+				val := ""
+				if tg.Value != nil {
+					val = *tg.Value
+				}
+				tagPairs = append(tagPairs, [2]string{tg.Key, val})
+			}
+		}
+
 		redises[k] = &pbredis.RedisInstance{
 			Provider:       pbtenant.CloudProvider_huawei,
 			AccoutName:     redis.tenanter.AccountName(),
@@ -234,6 +246,7 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			UsedMemoryMb:   used,
 			ChargeType:     dcsChargingMode(v.ChargingMode),
 			Cpu:            resolveDcsCPU(spec, cpuBySpec),
+			EnvTagValue:    envtags.FromPairs(envtags.RedisKey(), tagPairs),
 		}
 	}
 

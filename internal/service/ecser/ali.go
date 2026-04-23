@@ -13,6 +13,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -116,6 +117,10 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			sysGB, dataGB, dsum = 0, 0, ""
 			glog.Infof("Aliyun disk empty for instance_id=%s after DescribeDisks error", v.InstanceId)
 		}
+		tagPairs := make([][2]string, 0, len(v.Tags.Tag))
+		for _, t := range v.Tags.Tag {
+			tagPairs = append(tagPairs, [2]string{t.TagKey, t.TagValue})
+		}
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:          pbtenant.CloudProvider_ali,
 			AccountName:       ecs.tenanter.AccountName(),
@@ -141,6 +146,7 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			SystemDiskSizeGb:  sysGB,
 			DataDiskTotalGb:   dataGB,
 			DiskSummary:       dsum,
+			EnvTagValue:       envtags.FromPairs(envtags.ECSKey(), tagPairs),
 		}
 	}
 

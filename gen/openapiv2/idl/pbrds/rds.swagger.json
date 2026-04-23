@@ -292,6 +292,10 @@
         "chargeType": {
           "type": "string",
           "title": "计费类型（如云厂商返回的 charge_info / charging_mode 可读形式）"
+        },
+        "envTagValue": {
+          "type": "string",
+          "title": "环境标识：指定标签键的值（CLOUD_FITTER_RDS_ENV_TAG_KEY / CLOUD_FITTER_ENV_TAG_KEY）"
         }
       }
     },

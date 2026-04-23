@@ -280,6 +280,10 @@
           "type": "integer",
           "format": "int32",
           "title": "vCPU 核数（华为 DCS：由 ListFlavors 按 spec_code 解析）"
+        },
+        "envTagValue": {
+          "type": "string",
+          "title": "环境标识：指定标签键的值（CLOUD_FITTER_REDIS_ENV_TAG_KEY / CLOUD_FITTER_ENV_TAG_KEY）"
         }
       }
     },

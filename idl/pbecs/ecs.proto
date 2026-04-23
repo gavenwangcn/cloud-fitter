@@ -55,6 +55,8 @@ message EcsInstance {
   int32 data_disk_total_gb = 23;
   // 磁盘类型与容量摘要（如云盘类型、多盘拼接说明）
   string disk_summary = 24;
+  // 环境标识：取实例上指定标签键的值（见环境变量 CLOUD_FITTER_ECS_ENV_TAG_KEY / CLOUD_FITTER_ENV_TAG_KEY）
+  string env_tag_value = 25;
 }
 
 message ListDetailReq {
