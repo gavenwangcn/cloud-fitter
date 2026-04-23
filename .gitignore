@@ -16,8 +16,7 @@ coverage.txt
 # Dependency directories (remove the comment below to include it)
 vendor/
 
-# buf for protobuf
-buf.lock
+# buf.lock 建议纳入版本库，Docker/CI 可少一步解析且版本可复现；若忽略请确保 Dockerfile 内保留 buf mod update
 
 # idea project
 .idea/

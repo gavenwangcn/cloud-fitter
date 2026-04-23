@@ -69,13 +69,14 @@ mv buf/bin/ ${GOPATH}/bin/
 # 2. 其余操作系统
 # 手动去 https://github.com/bufbuild/buf/releases 下载0.41.0版本的二进制文件，放到可执行的目录中
 
-# 根据IDL生成Go代码（重要） - 也可直接运行 ./gen.sh
+# 根据IDL生成Go代码（重要） - 也可直接运行 ./gen.sh（脚本会在缺少 buf.lock 时自动 buf mod update）
 # 需安装较新版本 buf（建议 ≥ 1.28，见 https://github.com/bufbuild/buf/releases ）
 # 仓库已使用 buf.yaml / buf.gen.yaml v1 与远程插件，无需再本地安装 protoc-gen-* 
+# 若单独执行 buf generate 报错找不到 google/api/annotations.proto，请先：buf mod update
 buf generate
 ```
 
-使用 **Docker / docker compose** 构建后端镜像时，Dockerfile 内会在 **Linux** 环境中自动执行 `buf generate`，仅修改 `idl/` 也可完成构建；本地开发仍建议安装 buf 后运行 `./gen.sh` 提交与 `idl` 一致的 `gen/`。
+使用 **Docker / docker compose** 构建后端镜像时，Dockerfile 内会先 **`buf mod update`** 再 **`buf generate`**（拉取 buf.yaml 中的依赖），仅修改 `idl/` 也可完成构建；本地开发仍建议安装 buf 后运行 `./gen.sh` 提交与 `idl` 一致的 `gen/`。建议将生成的 **`buf.lock` 一并提交**，便于可复现构建。
 
 ## 验证环境搭建
 

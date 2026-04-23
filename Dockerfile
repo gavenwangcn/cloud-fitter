@@ -3,8 +3,9 @@ FROM bufbuild/buf:1.28.1 AS codegen
 WORKDIR /workspace
 COPY buf.yaml buf.gen.yaml ./
 COPY idl ./idl/
-# 拉取 buf 依赖并生成 Go / gateway 代码（构建期需能访问 buf.build）
-RUN buf generate
+# 根据 buf.yaml 拉取 googleapis / grpc-gateway 等到 buf.lock（仓库若未提交 buf.lock 时也必须执行）
+# 构建期需能访问 buf.build（下载依赖与 buf.gen.yaml 中的远程插件）
+RUN buf mod update && buf generate
 
 # 阶段 2：Go 编译（用生成结果覆盖上下文中的 gen/）
 FROM golang:1.23-alpine AS builder
