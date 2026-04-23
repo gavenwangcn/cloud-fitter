@@ -29,5 +29,12 @@ config.yaml
 
 log/
 
-# 可选：在仓库根目录克隆前端以便 compose 默认路径可用（勿提交子仓库内容）
-cloud-fitter-web/
+# 前端源码目录 cloud-fitter-web/ 与后端同库提交（业务代码），勿使用仅引用/子模块而不含文件
+# 以下仅为构建产物与依赖，勿提交
+cloud-fitter-web/node_modules/
+cloud-fitter-web/dist/
+cloud-fitter-web/.umi/
+cloud-fitter-web/.umi-production/
+cloud-fitter-web/.mfsu/
+cloud-fitter-web/.cache/
+cloud-fitter-web/src/.umi/

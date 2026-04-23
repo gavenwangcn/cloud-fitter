@@ -2,9 +2,7 @@
 #
 #   docker compose up -d --build
 #
-# 须先有前端目录 cloud-fitter-web/（含 package.json），例如：
-#   git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
-# 与后端同级时：ln -snf ../cloud-fitter-web cloud-fitter-web
+# 前端源码须在本仓库 cloud-fitter-web/ 目录内提交（含 package.json），勿仅用子模块空引用
 #
 # 仅需后端：清空或删除 .env 里的 COMPOSE_PROFILES，或执行 docker compose up -d --build app
 #
@@ -28,7 +26,7 @@ services:
       - ./config.yaml:/app/config/config.yaml:ro
 
   web:
-    profiles: ["full"]
+    profiles: [ "full" ]
     build:
       context: .
       dockerfile: deploy/web/Dockerfile

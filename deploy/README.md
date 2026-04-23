@@ -13,8 +13,9 @@ docker run --rm -p 9090:9090 -p 9091:9091 -v "$PWD/config.yaml:/app/config/confi
 
 ## 前端（cloud-fitter-web）
 
-上游仓库原有 `Dockerfile` 仅 `COPY ./dist`，要求在宿主机先执行 `npm run build`。  
-本仓库提供 **`deploy/web/Dockerfile`**：构建上下文为 **cloud-fitter 仓库根目录**，在镜像内从子目录（默认 `cloud-fitter-web`）完成依赖安装与 `umi build`；Nginx 配置 **`deploy/web/default.conf`** 在本仓库内，不依赖前端仓库是否自带该文件。
+**前端以源码形式放在本仓库 `cloud-fitter-web/` 目录，与后端一并提交**（勿只提交 submodule 指针或外链而不含实际文件；`node_modules/`、`dist/` 等见根目录 `.gitignore`）。
+
+上游独立仓库的 `Dockerfile` 多为 `COPY ./dist`。本仓库使用 **`deploy/web/Dockerfile`**：构建上下文为 **仓库根目录**，在镜像内对 `cloud-fitter-web` 执行 `npm install` 与 `umi build`；Nginx 配置 **`deploy/web/default.conf`** / **`nginx.compose.conf`** 在 `deploy/web/`。
 
 单独构建前端（在 **cloud-fitter** 根目录执行）：
 
@@ -28,11 +29,9 @@ docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local --build-arg WEB_
 
 仓库根目录 **`.env`** 默认包含 **`COMPOSE_PROFILES=full`**，因此 **`docker compose up -d --build` 会同时构建/启动 app（容器名 `cloud-fitter-app`）与 web**。
 
-须先在 **cloud-fitter 根目录** 存在前端源码（否则构建 web 会因 `COPY .../package.json` 失败）：
+须保证 **`cloud-fitter-web/package.json` 等源码已纳入本仓库并拉取到本地**（否则构建 web 会因 `COPY .../package.json` 失败）：
 
 ```bash
-git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
-# 或与后端同级：ln -snf ../cloud-fitter-web cloud-fitter-web
 docker compose up -d --build
 ```
 

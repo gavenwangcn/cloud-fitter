@@ -9,6 +9,8 @@ Communicate with public and private clouds conveniently by a set of apis.
 
 **用一套接口，便捷地访问各类公有云和私有云**
 
+前端 Web 源码位于本仓库 **`cloud-fitter-web/`**，与后端同库维护、提交业务文件（非空子模块引用）；详见 `deploy/README.md`。
+
 ## 快速使用
 
 ```shell
