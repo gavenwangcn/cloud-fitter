@@ -3,7 +3,7 @@
 
 ARG WEB_SUBDIR=cloud-fitter-web
 
-FROM node:18-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
 ARG WEB_SUBDIR
 
 WORKDIR /app
@@ -16,6 +16,8 @@ COPY ${WEB_SUBDIR}/package.json ./
 RUN npm install --legacy-peer-deps
 
 COPY ${WEB_SUBDIR}/ ./
+# Node 17+ / OpenSSL 3 下 Webpack 4（Umi 2）会报 ERR_OSSL_EVP_UNSUPPORTED
+ENV NODE_OPTIONS=--openssl-legacy-provider
 RUN npm run build
 
 FROM nginx:1.26-alpine
