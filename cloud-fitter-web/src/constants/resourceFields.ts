@@ -31,7 +31,6 @@ export const ECS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'memory', title: '内存(MB)' },
   { dataIndex: 'systemDiskSizeGb', title: '系统盘(GB)' },
   { dataIndex: 'dataDiskTotalGb', title: '数据盘合计(GB)' },
-  { dataIndex: 'diskSummary', title: '磁盘摘要' },
   { dataIndex: 'description', title: '描述' },
   { dataIndex: 'status', title: '状态' },
   { dataIndex: 'creationTime', title: '创建时间' },
