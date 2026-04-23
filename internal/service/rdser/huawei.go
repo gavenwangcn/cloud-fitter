@@ -3,6 +3,7 @@ package rdser
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -101,6 +102,27 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			engine = huaweiRdsDatastoreTypeString(v.Datastore.Type)
 			engineVersion = v.Datastore.Version
 		}
+		cpu := int32(0)
+		if v.Cpu != nil {
+			if n, err := strconv.ParseInt(*v.Cpu, 10, 32); err == nil {
+				cpu = int32(n)
+			}
+		}
+		memMB := int32(0)
+		if v.Mem != nil {
+			if gb, err := strconv.ParseFloat(*v.Mem, 64); err == nil {
+				memMB = int32(gb * 1024)
+			}
+		}
+		charge := ""
+		if v.ChargeInfo != nil {
+			raw, err := json.Marshal(v.ChargeInfo.ChargeMode)
+			if err == nil {
+				charge = strings.Trim(string(raw), `"`)
+			}
+		}
+		pub := append([]string(nil), v.PublicIps...)
+		priv := append([]string(nil), v.PrivateIps...)
 		rdses[k] = &pbrds.RdsInstance{
 			Provider:      pbtenant.CloudProvider_huawei,
 			AccoutName:    r.tenanter.AccountName(),
@@ -114,6 +136,13 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			Status:        v.Status,
 			CreationTime:  v.Created,
 			ExpireTime:    "",
+			Cpu:           cpu,
+			MemoryMb:      memMB,
+			PublicIps:     pub,
+			PrivateIps:    priv,
+			VpcId:         v.VpcId,
+			Port:          v.Port,
+			ChargeType:    charge,
 		}
 	}
 

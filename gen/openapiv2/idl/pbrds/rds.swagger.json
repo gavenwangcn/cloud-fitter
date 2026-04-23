@@ -259,6 +259,39 @@
         "expireTime": {
           "type": "string",
           "title": "过期时间"
+        },
+        "cpu": {
+          "type": "integer",
+          "format": "int32",
+          "title": "vCPU 核数（华为 ListInstances 等返回）"
+        },
+        "memoryMb": {
+          "type": "integer",
+          "format": "int32",
+          "title": "内存 MB（由控制台/API 的 GB 等换算）"
+        },
+        "publicIps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "privateIps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "vpcId": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "chargeType": {
+          "type": "string",
+          "title": "计费类型（如云厂商返回的 charge_info / charging_mode 可读形式）"
         }
       }
     },

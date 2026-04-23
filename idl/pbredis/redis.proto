@@ -25,6 +25,16 @@ message RedisInstance {
   string creation_time = 8;
   // 过期时间
   string expire_time = 9;
+  // 产品规格编码（华为 DCS spec_code，可对照规格表看 CPU）
+  string spec_code = 10;
+  string vpc_id = 11;
+  repeated string public_ips = 12;
+  repeated string private_ips = 13;
+  // 已用内存 MB（华为 DCS used_memory）
+  int32 used_memory_mb = 14;
+  string charge_type = 15;
+  // vCPU 核数（华为 DCS：由 ListFlavors 按 spec_code 解析）
+  int32 cpu = 16;
 }
 
 message ListDetailReq {
