@@ -24,6 +24,6 @@ COPY --from=builder /app/dist /usr/share/nginx/html/
 # 文件在本仓库 deploy/web/，不依赖前端仓库内是否有 default.conf
 COPY deploy/web/default.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 8080
+EXPOSE 8089
 
 CMD ["nginx", "-g", "daemon off;"]
