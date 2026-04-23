@@ -6,19 +6,21 @@
 #   git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
 # 与后端同级时：ln -snf ../cloud-fitter-web cloud-fitter-web
 #
-# 仅需后端：清空或删除 .env 里的 COMPOSE_PROFILES，或执行 docker compose up -d --build api
+# 仅需后端：清空或删除 .env 里的 COMPOSE_PROFILES，或执行 docker compose up -d --build app
 #
 # 准备配置：复制 config_template.yaml 为 config.yaml 并填写云账号
 # 访问：前端 http://<宿主机>:8089；API 直连 9090/9091
 
 services:
-  api:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    image: cloud-fitter-api:local
-    container_name: cloud-fitter-api
+    image: cloud-fitter-app:local
+    container_name: cloud-fitter-app
     restart: unless-stopped
+    networks:
+      - app
     ports:
       - "9090:9090" # HTTP（grpc-gateway）
       - "9091:9091" # gRPC
@@ -36,8 +38,15 @@ services:
     container_name: cloud-fitter-web
     restart: unless-stopped
     depends_on:
-      - api
+      - app
+    networks:
+      - app
     ports:
       - "8089:8089"
     volumes:
       - ./deploy/web/nginx.compose.conf:/etc/nginx/conf.d/default.conf:ro
+
+# 显式网络：app / web 在同一桥接网络，服务名 app、web 可作 DNS（nginx 里 proxy_pass http://app:9090）
+networks:
+  app:
+    driver: bridge

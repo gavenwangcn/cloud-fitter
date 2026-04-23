@@ -7,8 +7,8 @@
 ```bash
 cp config_template.yaml config.yaml
 # 编辑 config.yaml 后
-docker build -t cloud-fitter-api:local .
-docker run --rm -p 9090:9090 -p 9091:9091 -v "$PWD/config.yaml:/app/config/config.yaml:ro" cloud-fitter-api:local
+docker build -t cloud-fitter-app:local .
+docker run --rm -p 9090:9090 -p 9091:9091 -v "$PWD/config.yaml:/app/config/config.yaml:ro" cloud-fitter-app:local
 ```
 
 ## 前端（cloud-fitter-web）
@@ -26,7 +26,7 @@ docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local --build-arg WEB_
 
 ## Compose
 
-仓库根目录 **`.env`** 默认包含 **`COMPOSE_PROFILES=full`**，因此 **`docker compose up -d --build` 会同时构建/启动 api 与 web**。
+仓库根目录 **`.env`** 默认包含 **`COMPOSE_PROFILES=full`**，因此 **`docker compose up -d --build` 会同时构建/启动 app（容器名 `cloud-fitter-app`）与 web**。
 
 须先在 **cloud-fitter 根目录** 存在前端源码（否则构建 web 会因 `COPY .../package.json` 失败）：
 
@@ -39,9 +39,9 @@ docker compose up -d --build
 - 前端：<http://localhost:8089>（映射 8089:8089）
 - 后端 HTTP（grpc-gateway）：<http://localhost:9090>，gRPC：`9091`
 
-**仅后端**：清空或删除 `.env` 中的 `COMPOSE_PROFILES`，或执行 `docker compose up -d --build api`。
+**仅后端**：清空或删除 `.env` 中的 `COMPOSE_PROFILES`，或执行 `docker compose up -d --build app`。
 
 ## Nginx 说明
 
-- Compose 使用 **`deploy/web/nginx.compose.conf`**，将 `/apis` 代理到 Docker 网络中的服务名 **`api:9090`**，无需再配置 `localnode` hosts。
+- Compose 使用 **`deploy/web/nginx.compose.conf`**，将 `/apis` 代理到 Docker 网络中的服务名 **`app:9090`**，无需再配置 `localnode` hosts。
 - 镜像内默认 **`deploy/web/default.conf`**（代理 `localnode:9090`），便于脱离 Compose 单独运行（需自行 `--add-host localnode:<宿主机IP>` 或改配置）。
