@@ -16,14 +16,14 @@ ENV GO111MODULE=on \
 
 WORKDIR /src
 
-# 仅复制 go.mod 即可下载依赖；部分 fork 未提交 go.sum 时避免 COPY 失败
-COPY go.mod ./
+# 复制 go.mod / go.sum 预热模块缓存；新增依赖若未写入 go.sum，构建前 tidy 会补全
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 COPY --from=codegen /workspace/gen ./gen
 # 显式输出名，避免依赖默认命名规则；strip 符号表减小体积
-RUN go build -ldflags="-s -w" -o /cloud-fitter .
+RUN go mod tidy && go build -ldflags="-s -w" -o /cloud-fitter .
 
 # 运行阶段：仅可执行文件 + 证书（访问各公有云 HTTPS API）
 FROM alpine:3.21
