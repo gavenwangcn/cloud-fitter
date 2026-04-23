@@ -30,8 +30,12 @@ docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local ../cloud-fitter-
 1. 准备前端源码，任选一种布局：
    - **推荐（与 compose 默认一致）**：在 **cloud-fitter 仓库根目录** 下克隆  
      `git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web`
-   - **同级目录**：`../your-path/cloud-fitter` 与 `../your-path/cloud-fitter-web` 并列时，启动前执行  
-     `export CLOUD_FITTER_WEB_DIR=../cloud-fitter-web`（Windows 用 `set CLOUD_FITTER_WEB_DIR=...`）
+   - **同级目录**（例如 `~/cloud-fitter` 与 `~/cloud-fitter-web`）：Compose 里 `dockerfile` 相对 **前端 context** 解析，需同时指定：
+     ```bash
+     export CLOUD_FITTER_WEB_DIR=../cloud-fitter-web
+     export CLOUD_FITTER_WEB_DOCKERFILE=../cloud-fitter/deploy/web/Dockerfile
+     ```
+     （在 `~/cloud-fitter` 下执行 `docker compose`；若仓库名或路径不同，按实际目录改这两个变量。）
 2. 在本仓库根目录准备好 `config.yaml`。
 3. 在 **cloud-fitter** 根目录执行：
 
