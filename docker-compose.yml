@@ -1,17 +1,15 @@
-# 默认只启动 api（无需 cloud-fitter-web，适合仅后端或 CI 未拉前端）
+# 默认前后端一起：根目录 .env 中 COMPOSE_PROFILES=full（见该文件）
 #
 #   docker compose up -d --build
 #
-# 前后端一起：须先在仓库根目录有前端源码目录（默认名 cloud-fitter-web），再启用 profile full：
-#
+# 须先有前端目录 cloud-fitter-web/（含 package.json），例如：
 #   git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
-#   docker compose --profile full up -d --build
+# 与后端同级时：ln -snf ../cloud-fitter-web cloud-fitter-web
 #
-# 或在本目录 .env 写：COMPOSE_PROFILES=full（之后仍只需 docker compose up -d --build）
-# 与后端同级目录时：ln -snf ../cloud-fitter-web cloud-fitter-web
+# 仅需后端：清空或删除 .env 里的 COMPOSE_PROFILES，或执行 docker compose up -d --build api
 #
 # 准备配置：复制 config_template.yaml 为 config.yaml 并填写云账号
-# 访问：前端 http://<宿主机>:8089（仅 profile full）；API 直连 9090/9091
+# 访问：前端 http://<宿主机>:8089；API 直连 9090/9091
 
 services:
   api:

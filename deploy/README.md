@@ -26,26 +26,20 @@ docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local --build-arg WEB_
 
 ## Compose
 
-**仅后端（默认）**——没有 `cloud-fitter-web/package.json` 时也能完成构建与启动：
+仓库根目录 **`.env`** 默认包含 **`COMPOSE_PROFILES=full`**，因此 **`docker compose up -d --build` 会同时构建/启动 api 与 web**。
 
-```bash
-docker compose up -d --build
-```
-
-- 后端 HTTP（grpc-gateway）：<http://localhost:9090>，gRPC：`9091`
-
-**前后端一起**——须先在 **cloud-fitter 根目录** 存在前端源码（否则构建 web 会因 `COPY .../package.json` 失败）：
+须先在 **cloud-fitter 根目录** 存在前端源码（否则构建 web 会因 `COPY .../package.json` 失败）：
 
 ```bash
 git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
 # 或与后端同级：ln -snf ../cloud-fitter-web cloud-fitter-web
-docker compose --profile full up -d --build
+docker compose up -d --build
 ```
 
-也可在 `.env` 中写 `COMPOSE_PROFILES=full`，之后直接 `docker compose up -d --build`。
-
 - 前端：<http://localhost:8089>（映射 8089:8089）
-- 后端：同上
+- 后端 HTTP（grpc-gateway）：<http://localhost:9090>，gRPC：`9091`
+
+**仅后端**：清空或删除 `.env` 中的 `COMPOSE_PROFILES`，或执行 `docker compose up -d --build api`。
 
 ## Nginx 说明
 
