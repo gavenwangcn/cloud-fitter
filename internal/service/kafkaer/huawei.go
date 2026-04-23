@@ -61,10 +61,7 @@ func newHuaweiKafkaClient(region tenanter.Region, tenant tenanter.Tenanter) (Kaf
 func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetailReq) (*pbkafka.ListDetailResp, error) {
 	request := new(model.ListInstancesRequest)
 	request.Engine = model.GetListInstancesRequestEngineEnum().KAFKA
-	offset := (req.PageNumber - 1) * req.PageSize
-	request.Offset = &offset
-	limit := req.PageSize
-	request.Limit = &limit
+	// v0.0.40-rc 的 ListInstancesRequest 无 offset/limit；ListInstances 单次返回当前过滤下全量
 
 	resp, err := kafka.cli.ListInstances(request)
 	if err != nil {
@@ -89,14 +86,9 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 		}
 	}
 
-	isFinished := false
-	if len(kafkas) < int(req.PageSize) {
-		isFinished = true
-	}
-
 	return &pbkafka.ListDetailResp{
 		Kafkas:     kafkas,
-		Finished:   isFinished,
+		Finished:   true,
 		NextToken:  "",
 		PageNumber: req.PageNumber + 1,
 		PageSize:   req.PageSize,
