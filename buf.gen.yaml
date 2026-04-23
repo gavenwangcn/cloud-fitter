@@ -9,9 +9,11 @@ plugins:
     out: gen
     opt:
       - paths=source_relative
-  - plugin: buf.build/grpc-ecosystem/grpc-gateway:v2.3.0
+  # BSR 上插件名为 gateway，非 grpc-gateway（旧名会报 plugin not found）
+  # 远程插件版本与 go.mod 中 github.com/grpc-ecosystem/grpc-gateway/v2 保持一致（当前 v2.16.2）
+  - plugin: buf.build/grpc-ecosystem/gateway:v2.16.2
     out: gen
     opt:
       - paths=source_relative
-  - plugin: buf.build/grpc-ecosystem/openapiv2:v2.3.0
+  - plugin: buf.build/grpc-ecosystem/openapiv2:v2.16.2
     out: gen/openapiv2

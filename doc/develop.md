@@ -71,7 +71,7 @@ mv buf/bin/ ${GOPATH}/bin/
 
 # 根据IDL生成Go代码（重要） - 也可直接运行 ./gen.sh（脚本会在缺少 buf.lock 时自动 buf mod update）
 # 需安装较新版本 buf（建议 ≥ 1.28，见 https://github.com/bufbuild/buf/releases ）
-# 仓库已使用 buf.yaml / buf.gen.yaml v1 与远程插件，无需再本地安装 protoc-gen-* 
+# 仓库已使用 buf.yaml / buf.gen.yaml v1 与远程插件（grpc-gateway 在 BSR 上名为 buf.build/grpc-ecosystem/gateway），无需再本地安装 protoc-gen-*
 # 若单独执行 buf generate 报错找不到 google/api/annotations.proto，请先：buf mod update
 buf generate
 ```
