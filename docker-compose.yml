@@ -1,14 +1,17 @@
-# 整体启动后端 cloud-fitter + 前端 cloud-fitter-web
+# 默认仅后端 api（适合云服务器只克隆本仓库、无前端子目录的场景）
 #
-# 前端构建：context 为 cloud-fitter 仓库根目录，源码在子目录 cloud-fitter-web（可改 WEB_SUBDIR）
+#   docker compose up -d --build
+#
+# 需要带 Nginx 前端时：先把前端放到仓库根下的 cloud-fitter-web（或设 CLOUD_FITTER_WEB_SUBDIR），再启用 profile web：
+#
 #   git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
-# 若前端与后端同级目录，可在 cloud-fitter 根下执行：ln -s ../cloud-fitter-web cloud-fitter-web
+#   docker compose --profile web up -d --build
 #
-# 准备配置：在本仓库根目录复制 config_template.yaml 为 config.yaml 并填写云账号
+# 前端与后端同级目录时，可在本仓库根执行：ln -snf ../cloud-fitter-web cloud-fitter-web
+# 或在本目录 .env 写：COMPOSE_PROFILES=web（仍需存在上述目录）
 #
-# 启动：docker compose up -d --build
-# 说明：api 镜像构建时会执行 buf generate（见 Dockerfile），仅改 idl/ 也会得到新 gen/ 再编译
-# 访问：http://localhost:8080  （前端）；API 经 Nginx /apis 转发至 api:9090；宿主机与容器端口一致
+# 准备配置：复制 config_template.yaml 为 config.yaml 并填写云账号
+# api 构建会 buf generate（见 Dockerfile）；带 web 时访问 http://localhost:8080，直连 API：9090/9091
 
 services:
   api:
@@ -25,6 +28,7 @@ services:
       - ./config.yaml:/app/config/config.yaml:ro
 
   web:
+    profiles: ["web"]
     build:
       context: .
       dockerfile: deploy/web/Dockerfile
