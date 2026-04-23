@@ -17,7 +17,7 @@ func TestConfigger_Statistic(t *testing.T) {
 	tc, _ := NewConfigClient(pbtenant.CloudProvider_tencent, region, tcTenant[0])
 	tcFailed, _ := NewConfigClient(pbtenant.CloudProvider_tencent, region, tenanter.NewTenantWithAccessKey("empty", "", ""))
 
-	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_southwest_2))
+	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_east_3))
 	hw, _ := NewConfigClient(pbtenant.CloudProvider_huawei, region, hwTenant[0])
 
 	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_aws, int32(pbtenant.AwsRegionId_aws_us_east_2))

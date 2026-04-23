@@ -16,9 +16,8 @@ func TestBillinger_ListDetail(t *testing.T) {
 	tc, _ := NewBillingClient(pbtenant.CloudProvider_tencent, tcTenant[0])
 	tcFailed, _ := NewBillingClient(pbtenant.CloudProvider_tencent, tenanter.NewTenantWithAccessKey("empty", "", ""))
 
-	// region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei_cloud, int32(pbtenant.HuaweiRegionId_hw_cn_southwest_2))
-	// hw, _ := NewHuaweiEcsClient(region, hwTenant[0])
-	// // hwFailed, _ := NewHuaweiEcsClient(int32(pbtenant.HuaweiRegionId_hw_cn_north_1), tenanter.NewTenantWithAccessKey("empty", "", "", ""))
+	// region, _ := tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_east_3))
+	// hw, _ := NewBillingClient(pbtenant.CloudProvider_huawei, hwTenant[0])
 	//
 	// region, _ = tenanter.NewRegion(pbtenant.CloudProvider_aws_cloud, int32(pbtenant.AwsRegionId_aws_us_east_2))
 	// aws, _ := NewAwsEcsClient(region, awsTenant[0])

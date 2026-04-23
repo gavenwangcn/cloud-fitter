@@ -19,7 +19,7 @@ func TestListDetail(t *testing.T) {
 	}{
 		{name: "ali", args: args{req: &pbrds.ListDetailReq{Provider: pbtenant.CloudProvider_ali, RegionId: int32(pbtenant.AliRegionId_ali_cn_hangzhou), PageNumber: 1, PageSize: 10}}, wantErr: false},
 		{name: "tencent", args: args{req: &pbrds.ListDetailReq{Provider: pbtenant.CloudProvider_tencent, RegionId: int32(pbtenant.TencentRegionId_tc_ap_beijing), PageNumber: 1, PageSize: 10}}, wantErr: false},
-		{name: "huawei", args: args{req: &pbrds.ListDetailReq{Provider: pbtenant.CloudProvider_huawei, RegionId: int32(pbtenant.HuaweiRegionId_hw_cn_south_1), PageNumber: 1, PageSize: 10}}, wantErr: false},
+		{name: "huawei", args: args{req: &pbrds.ListDetailReq{Provider: pbtenant.CloudProvider_huawei, RegionId: int32(pbtenant.HuaweiRegionId_hw_cn_east_3), PageNumber: 1, PageSize: 10}}, wantErr: false},
 		// {name: "aws", args: args{req: &pbrds.ListDetailReq{Provider: pbtenant.CloudProvider_aws, RegionId: int32(pbtenant.AwsRegionId_aws_us_east_2), PageNumber: 1, PageSize: 10}}, wantErr: false},
 	}
 	for _, tt := range tests {

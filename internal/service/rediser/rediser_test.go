@@ -19,7 +19,7 @@ func TestRediser_ListDetail(t *testing.T) {
 	tc, _ := NewRedisClient(pbtenant.CloudProvider_tencent, region, tcTenant[0])
 	tcFailed, _ := NewRedisClient(pbtenant.CloudProvider_tencent, region, tenanter.NewTenantWithAccessKey("empty", "", ""))
 
-	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_ap_southeast_1))
+	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_east_3))
 	hw, _ := NewRedisClient(pbtenant.CloudProvider_huawei, region, hwTenant[0])
 	// hwFailed, _ := NewRedisClient(pbtenant.CloudProvider_huawei, region, tenanter.NewTenantWithAccessKey("empty", "", ""))
 	//

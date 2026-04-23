@@ -1,0 +1,234 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "idl/pbbilling/billing.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "BillingService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/apis/billing": {
+      "post": {
+        "summary": "查询费用全量 - 根据云类型",
+        "operationId": "BillingService_ListBilling",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbbillingListResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbbillingListReq"
+            }
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    },
+    "/apis/billing/detail": {
+      "post": {
+        "summary": "查询费用明细  - 支持云类型、账户过滤条件",
+        "operationId": "BillingService_ListBillingDetail",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbbillingListDetailResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbbillingListDetailReq"
+            }
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "pbbillingBillingInstance": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider",
+          "title": "云类型"
+        },
+        "billingCycle": {
+          "type": "string",
+          "title": "计费周期"
+        },
+        "accountName": {
+          "type": "string",
+          "title": "账号名称"
+        },
+        "regionName": {
+          "type": "string",
+          "title": "区域名称"
+        },
+        "productCode": {
+          "type": "string",
+          "title": "产品类型"
+        },
+        "productType": {
+          "type": "string",
+          "title": "产品类型"
+        },
+        "instanceId": {
+          "type": "string",
+          "title": "产品ID"
+        },
+        "fee": {
+          "type": "number",
+          "format": "double",
+          "title": "产品费用"
+        },
+        "item": {
+          "type": "string",
+          "title": "账单类型： SubscriptionOrder (预付订单) PayAsYouGoBill (后付账单) Refund (退款) Adjustment (调账)"
+        },
+        "instanceName": {
+          "type": "string",
+          "title": "实例昵称"
+        },
+        "subscriptionType": {
+          "type": "string",
+          "title": "订阅类型：Subscription：预付费 PayAsYouGo：后付费"
+        }
+      }
+    },
+    "pbbillingListDetailReq": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider",
+          "title": "云名称"
+        },
+        "billingCycle": {
+          "type": "string",
+          "title": "计费周期,格式为 YYYY-MM"
+        },
+        "accountName": {
+          "type": "string",
+          "title": "账户名称，根据config.yaml中的配置，默认为第一个配置的账户"
+        }
+      }
+    },
+    "pbbillingListDetailResp": {
+      "type": "object",
+      "properties": {
+        "billings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/pbbillingBillingInstance"
+          },
+          "title": "Billing 集合"
+        }
+      }
+    },
+    "pbbillingListReq": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider",
+          "title": "云名称"
+        },
+        "billingCycle": {
+          "type": "string",
+          "title": "计费周期,格式为 YYYY-MM"
+        }
+      }
+    },
+    "pbbillingListResp": {
+      "type": "object",
+      "properties": {
+        "billings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/pbbillingBillingInstance"
+          },
+          "title": "Billing 集合"
+        }
+      }
+    },
+    "pbtenantCloudProvider": {
+      "type": "string",
+      "enum": [
+        "ali",
+        "tencent",
+        "huawei",
+        "aws"
+      ],
+      "default": "ali",
+      "description": "- ali: 0 - 阿里云\n - tencent: 1 - 腾讯云\n - huawei: 2 - 华为云\n - aws: 3 - 亚马逊云",
+      "title": "云提供商"
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    }
+  }
+}

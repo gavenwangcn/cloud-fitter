@@ -18,9 +18,9 @@ func TestEcser_ListDetail(t *testing.T) {
 	tc, _ := NewEcsClient(pbtenant.CloudProvider_tencent, region, tcTenant[0])
 	tcFailed, _ := NewEcsClient(pbtenant.CloudProvider_tencent, region, tenanter.NewTenantWithAccessKey("empty", "", ""))
 
-	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_southwest_2))
+	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_east_3))
 	hw, _ := NewEcsClient(pbtenant.CloudProvider_huawei, region, hwTenant[0])
-	// hwFailed, _ := newHuaweiEcsClient(int32(pbtenant.HuaweiRegionId_hw_cn_north_1), tenanter.NewTenantWithAccessKey("empty", "", "", ""))
+	// hwFailed, _ := NewEcsClient(pbtenant.CloudProvider_huawei, region, tenanter.NewTenantWithAccessKey("empty", "", "", ""))
 
 	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_aws, int32(pbtenant.AwsRegionId_aws_us_east_2))
 	aws, _ := NewEcsClient(pbtenant.CloudProvider_aws, region, awsTenant[0])

@@ -1,0 +1,268 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "idl/pbkafka/kafka.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "KafkaService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/apis/kafka": {
+      "post": {
+        "summary": "查询Kafka全量 - 根据云类型",
+        "operationId": "KafkaService_ListKafka",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbkafkaListResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbkafkaListReq"
+            }
+          }
+        ],
+        "tags": [
+          "KafkaService"
+        ]
+      }
+    },
+    "/apis/kafka/detail": {
+      "post": {
+        "summary": "查询Kafka明细 - 支持云类型、区域、账户、分页等过滤条件",
+        "operationId": "KafkaService_ListKafkaDetail",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbkafkaListDetailResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbkafkaListDetailReq"
+            }
+          }
+        ],
+        "tags": [
+          "KafkaService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "pbkafkaKafkaInstance": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider",
+          "title": "云类型"
+        },
+        "accoutName": {
+          "type": "string",
+          "title": "账号名称"
+        },
+        "instanceId": {
+          "type": "string",
+          "title": "实例id"
+        },
+        "instanceName": {
+          "type": "string",
+          "title": "实例名称"
+        },
+        "regionName": {
+          "type": "string",
+          "title": "地域，数据中心"
+        },
+        "endPoint": {
+          "type": "string",
+          "title": "默认接入点"
+        },
+        "topicNumLimit": {
+          "type": "integer",
+          "format": "int32",
+          "title": "Topic最大数量"
+        },
+        "distSize": {
+          "type": "integer",
+          "format": "int32",
+          "title": "磁盘容量"
+        },
+        "status": {
+          "type": "string",
+          "title": "状态"
+        },
+        "createTime": {
+          "type": "string",
+          "title": "创建时间，ISO8601"
+        },
+        "expiredTime": {
+          "type": "string",
+          "title": "过期时间"
+        }
+      }
+    },
+    "pbkafkaListDetailReq": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider",
+          "title": "云名称"
+        },
+        "accountName": {
+          "type": "string",
+          "title": "账户名称，根据config.yaml中的配置，默认为第一个配置的账户"
+        },
+        "regionId": {
+          "type": "integer",
+          "format": "int32",
+          "title": "区域Id，参考 tenant.proto 中的各个云的区域"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "format": "int32",
+          "title": "分页相关参数，页码"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32",
+          "title": "分页相关参数，每页数量"
+        },
+        "nextToken": {
+          "type": "string",
+          "title": "分页相关参数，下一页的token"
+        }
+      }
+    },
+    "pbkafkaListDetailResp": {
+      "type": "object",
+      "properties": {
+        "kafkas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/pbkafkaKafkaInstance"
+          },
+          "title": "kafka 机器集合"
+        },
+        "finished": {
+          "type": "boolean",
+          "title": "查询是否完成，如果为否-false，则可以将下面三个分页参数填入到请求中，继续查询"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "format": "int32",
+          "title": "分页相关参数，页码"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32",
+          "title": "分页相关参数，每页数量"
+        },
+        "nextToken": {
+          "type": "string",
+          "title": "分页相关参数，下一页的token"
+        },
+        "requestId": {
+          "type": "string",
+          "title": "请求id，出现问题后提供给云厂商，排查问题"
+        }
+      }
+    },
+    "pbkafkaListReq": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider",
+          "title": "云名称"
+        }
+      }
+    },
+    "pbkafkaListResp": {
+      "type": "object",
+      "properties": {
+        "kafkas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/pbkafkaKafkaInstance"
+          },
+          "title": "Kafka 机器集合"
+        }
+      }
+    },
+    "pbtenantCloudProvider": {
+      "type": "string",
+      "enum": [
+        "ali",
+        "tencent",
+        "huawei",
+        "aws"
+      ],
+      "default": "ali",
+      "description": "- ali: 0 - 阿里云\n - tencent: 1 - 腾讯云\n - huawei: 2 - 华为云\n - aws: 3 - 亚马逊云",
+      "title": "云提供商"
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    }
+  }
+}

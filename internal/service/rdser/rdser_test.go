@@ -18,7 +18,7 @@ func TestRdser_ListDetail(t *testing.T) {
 	tc, _ := NewRdsClient(pbtenant.CloudProvider_tencent, region, tcTenant[0])
 	tcFailed, _ := NewRdsClient(pbtenant.CloudProvider_tencent, region, tenanter.NewTenantWithAccessKey("empty", "", ""))
 
-	regionHW, _ := tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_south_1))
+	regionHW, _ := tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_east_3))
 	hw, _ := NewRdsClient(pbtenant.CloudProvider_huawei, regionHW, hwTenant[0])
 
 	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_aws, int32(pbtenant.AwsRegionId_aws_us_east_2))

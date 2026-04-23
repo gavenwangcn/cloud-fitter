@@ -66,34 +66,48 @@ func List(ctx context.Context, req *pbecs.ListReq) (*pbecs.ListResp, error) {
 		for _, region := range regions {
 			go func(tenant tenanter.Tenanter, region tenanter.Region) {
 				defer wg.Done()
+				rName := region.GetName()
+				acc := tenant.AccountName()
+				rid := region.GetId()
 				ecs, err := ecser.NewEcsClient(req.Provider, region, tenant)
 				if err != nil {
-					glog.Errorf("New Ecs Client error %v", err)
+					glog.Errorf("ecs provider=%s region=%s(regionId=%d) account=%s NewEcsClient failed: %v", pname, rName, rid, acc, err)
 					return
 				}
+				glog.Infof("ecs provider=%s region=%s(regionId=%d) account=%s client ok, start ListDetail pagination", pname, rName, rid, acc)
 
+				var regionTotal int
 				request := &pbecs.ListDetailReq{
 					Provider:    req.Provider,
-					AccountName: tenant.AccountName(),
-					RegionId:    region.GetId(),
+					AccountName: acc,
+					RegionId:    rid,
 					PageNumber:  1,
 					PageSize:    100,
 					NextToken:   "",
 				}
+				page := 0
 				for {
+					page++
 					resp, err := ecs.ListDetail(ctx, request)
 					if err != nil {
-						glog.Errorf("ListDetail error %v", err)
+						glog.Errorf("ecs provider=%s region=%s(regionId=%d) account=%s ListDetail page=%d failed (no data merged): %v", pname, rName, rid, acc, page, err)
 						return
 					}
+					n := len(resp.Ecses)
+					regionTotal += n
 					mutex.Lock()
 					ecses = append(ecses, resp.Ecses...)
 					mutex.Unlock()
+					glog.Infof("ecs provider=%s region=%s account=%s ListDetail page=%d batch=%d region_total_so_far=%d finished=%v", pname, rName, acc, page, n, regionTotal, resp.Finished)
 					if resp.Finished {
 						break
 					}
 					request.PageNumber, request.PageSize, request.NextToken = resp.PageNumber, resp.PageSize, resp.NextToken
 				}
+				if regionTotal == 0 {
+					glog.Warningf("ecs provider=%s region=%s(regionId=%d) account=%s list finished pages=%d but instances_in_region=0 (API ok but empty; check region/account/IAM)", pname, rName, rid, acc, page)
+				}
+				glog.Infof("ecs provider=%s region=%s account=%s list ok pages=%d instances_in_region=%d", pname, rName, acc, page, regionTotal)
 			}(t, region)
 
 		}

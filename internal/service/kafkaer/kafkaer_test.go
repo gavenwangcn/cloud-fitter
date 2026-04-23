@@ -18,9 +18,9 @@ func TestKafkaer_ListDetail(t *testing.T) {
 	tc, _ := NewKafkaClient(pbtenant.CloudProvider_tencent, region, tcTenant[0])
 	tcFailed, _ := NewKafkaClient(pbtenant.CloudProvider_tencent, region, tenanter.NewTenantWithAccessKey("empty", "", ""))
 
-	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_south_1))
+	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_east_3))
 	hw, _ := NewKafkaClient(pbtenant.CloudProvider_huawei, region, hwTenant[0])
-	// hwFailed, _ := NewHuaweiEcsClient(int32(pbtenant.HuaweiRegionId_hw_cn_north_1), tenanter.NewTenantWithAccessKey("empty", "", "", ""))
+	// hwFailed, _ := NewKafkaClient(pbtenant.CloudProvider_huawei, region, tenanter.NewTenantWithAccessKey("empty", "", "", ""))
 	//
 	// region, _ = tenanter.NewRegion(pbtenant.CloudProvider_aws, int32(pbtenant.AwsRegionId_aws_us_east_2))
 	// aws, _ := NewAwsEcsClient(region, awsTenant[0])
