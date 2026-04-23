@@ -51,8 +51,7 @@ func newAliCfgClient(region tenanter.Region, tenant tenanter.Tenanter) (Configge
 
 func (cfg *AliCfg) Statistic(ctx context.Context) (*pbstatistic.StatisticInfo, error) {
 	req := alicfg.CreateListDiscoveredResourcesRequest()
-	req.PageNumber = requests.NewInteger(1)
-	req.PageSize = requests.NewInteger(1)
+	req.MaxResults = requests.NewInteger(1)
 	req.ResourceTypes = "ACS::ECS::Instance"
 	req.Regions = cfg.regionName
 
