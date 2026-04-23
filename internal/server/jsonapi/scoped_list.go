@@ -5,11 +5,13 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	ccesvc "github.com/cloud-fitter/cloud-fitter/internal/server/cce"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/ecs"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/kafka"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/rds"
@@ -81,6 +83,18 @@ func KafkaByAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
 	resp, err := kafka.List(ctx, &pbkafka.ListReq{Provider: pbtenant.CloudProvider(body.Provider)})
+	writeProtoJSON(w, resp, err)
+}
+
+// CceByAccount POST /apis/cce/by-account（当前：华为云 CCE 集群）
+func CceByAccount(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeListByAccount(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ctx := scope.WithAccountName(r.Context(), body.AccountName)
+	resp, err := ccesvc.List(ctx, &pbcce.ListReq{Provider: pbtenant.CloudProvider(body.Provider)})
 	writeProtoJSON(w, resp, err)
 }
 

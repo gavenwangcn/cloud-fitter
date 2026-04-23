@@ -24,4 +24,9 @@ export const menuList = [
     key: 'dms',
     icon: 'icon-quanju1',
   },
+  {
+    title: 'CCE',
+    key: 'cce',
+    icon: 'icon-quanju1',
+  },
 ];

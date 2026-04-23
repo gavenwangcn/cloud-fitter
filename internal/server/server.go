@@ -5,6 +5,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/demo"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbbilling"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbdomain"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
@@ -24,6 +25,7 @@ type Server struct {
 	pbdomain.UnsafeDomainServiceServer
 	pboss.UnsafeOssServiceServer
 	pbkafka.UnsafeKafkaServiceServer
+	pbcce.UnsafeCceServiceServer
 	pbbilling.UnsafeBillingServiceServer
 }
 

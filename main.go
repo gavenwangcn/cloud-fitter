@@ -14,6 +14,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/demo" // Update
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbbilling"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbdomain"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
@@ -58,6 +59,8 @@ func run(store *configstore.Store) error {
 		return errors.Wrap(err, "RegisterOssServiceHandlerFromEndpoint error")
 	} else if err = pbkafka.RegisterKafkaServiceHandlerFromEndpoint(ctx, mux, *grpcServerEndpoint, opts); err != nil {
 		return errors.Wrap(err, "RegisterKafkaServiceHandlerFromEndpoint error")
+	} else if err = pbcce.RegisterCceServiceHandlerFromEndpoint(ctx, mux, *grpcServerEndpoint, opts); err != nil {
+		return errors.Wrap(err, "RegisterCceServiceHandlerFromEndpoint error")
 	} else if err = pbbilling.RegisterBillingServiceHandlerFromEndpoint(ctx, mux, *grpcServerEndpoint, opts); err != nil {
 		return errors.Wrap(err, "RegisterBillingServiceHandlerFromEndpoint error")
 	}
@@ -86,6 +89,8 @@ func run(store *configstore.Store) error {
 			jsonapi.RedisByAccount(w, r)
 		case r.URL.Path == "/apis/kafka/by-account" && r.Method == http.MethodPost:
 			jsonapi.KafkaByAccount(w, r)
+		case r.URL.Path == "/apis/cce/by-account" && r.Method == http.MethodPost:
+			jsonapi.CceByAccount(w, r)
 		default:
 			mux.ServeHTTP(w, r)
 		}
@@ -146,6 +151,7 @@ func main() {
 		pbdomain.RegisterDomainServiceServer(s, &server.Server{})
 		pboss.RegisterOssServiceServer(s, &server.Server{})
 		pbkafka.RegisterKafkaServiceServer(s, &server.Server{})
+		pbcce.RegisterCceServiceServer(s, &server.Server{})
 		pbbilling.RegisterBillingServiceServer(s, &server.Server{})
 
 		if err = s.Serve(lis); err != nil {

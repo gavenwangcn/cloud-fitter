@@ -1,0 +1,74 @@
+syntax = "proto3";
+package pbcce;
+
+option go_package = "github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce";
+
+import "idl/pbtenant/tenant.proto";
+import "google/api/annotations.proto";
+
+// 华为云 CCE 等 Kubernetes 托管集群（字段对应 API 中 metadata / spec / status）
+message CceCluster {
+  pbtenant.CloudProvider provider = 1;
+  string accout_name = 2;
+  string region_name = 3;
+  // metadata.name
+  string cluster_name = 4;
+  // metadata.uid
+  string cluster_uid = 5;
+  // spec.flavor，如 cce.s2.medium
+  string flavor = 6;
+  // spec.version，如 v1.28
+  string k8s_version = 7;
+  // status.phase：Available / Unavailable / Creating 等
+  string phase = 8;
+  // 集群下节点总数（ListNodes）
+  int32 node_total = 9;
+  // 正常节点数（节点 phase 为 Active、Installed 等就绪状态）
+  int32 node_normal = 10;
+  // 节点 vCPU 合计（据 ECS 规格汇总，无 serverId 或未匹配到规格时为 0）
+  int32 cpu_total = 11;
+  // 节点内存合计（MB，同上）
+  int32 memory_total_mb = 12;
+}
+
+message ListDetailReq {
+  pbtenant.CloudProvider provider = 1;
+  string account_name = 2;
+  int32 region_id = 3;
+  int32 page_number = 4;
+  int32 page_size = 5;
+  string next_token = 6;
+}
+
+message ListDetailResp {
+  repeated CceCluster clusters = 1;
+  bool finished = 2;
+  int32 page_number = 3;
+  int32 page_size = 4;
+  string next_token = 5;
+  string request_id = 6;
+}
+
+message ListReq {
+  pbtenant.CloudProvider provider = 1;
+}
+
+message ListResp {
+  repeated CceCluster clusters = 1;
+}
+
+service CceService {
+  rpc ListCceDetail(ListDetailReq) returns (ListDetailResp) {
+    option (google.api.http) = {
+      post: "/apis/cce/detail"
+      body: "*"
+    };
+  }
+
+  rpc ListCce(ListReq) returns (ListResp) {
+    option (google.api.http) = {
+      post: "/apis/cce"
+      body: "*"
+    };
+  }
+}

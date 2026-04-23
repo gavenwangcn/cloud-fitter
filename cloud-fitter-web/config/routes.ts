@@ -24,6 +24,10 @@ export default [
         component: './dms',
       },
       {
+        path: '/cce',
+        component: './cce',
+      },
+      {
         path: '/config',
         component: './config',
       },

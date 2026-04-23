@@ -1,0 +1,256 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "idl/pbcce/cce.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "CceService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/apis/cce": {
+      "post": {
+        "operationId": "CceService_ListCce",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbcceListResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbcceListReq"
+            }
+          }
+        ],
+        "tags": [
+          "CceService"
+        ]
+      }
+    },
+    "/apis/cce/detail": {
+      "post": {
+        "operationId": "CceService_ListCceDetail",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbcceListDetailResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbcceListDetailReq"
+            }
+          }
+        ],
+        "tags": [
+          "CceService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "pbcceCceCluster": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider"
+        },
+        "accoutName": {
+          "type": "string"
+        },
+        "regionName": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string",
+          "title": "metadata.name"
+        },
+        "clusterUid": {
+          "type": "string",
+          "title": "metadata.uid"
+        },
+        "flavor": {
+          "type": "string",
+          "title": "spec.flavor，如 cce.s2.medium"
+        },
+        "k8sVersion": {
+          "type": "string",
+          "title": "spec.version，如 v1.28"
+        },
+        "phase": {
+          "type": "string",
+          "title": "status.phase：Available / Unavailable / Creating 等"
+        },
+        "nodeTotal": {
+          "type": "integer",
+          "format": "int32",
+          "title": "集群下节点总数（ListNodes）"
+        },
+        "nodeNormal": {
+          "type": "integer",
+          "format": "int32",
+          "title": "正常节点数（节点 phase 为 Active、Installed 等就绪状态）"
+        },
+        "cpuTotal": {
+          "type": "integer",
+          "format": "int32",
+          "title": "节点 vCPU 合计（据 ECS 规格汇总，无 serverId 或未匹配到规格时为 0）"
+        },
+        "memoryTotalMb": {
+          "type": "integer",
+          "format": "int32",
+          "title": "节点内存合计（MB，同上）"
+        }
+      },
+      "title": "华为云 CCE 等 Kubernetes 托管集群（字段对应 API 中 metadata / spec / status）"
+    },
+    "pbcceListDetailReq": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider"
+        },
+        "accountName": {
+          "type": "string"
+        },
+        "regionId": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "nextToken": {
+          "type": "string"
+        }
+      }
+    },
+    "pbcceListDetailResp": {
+      "type": "object",
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/pbcceCceCluster"
+          }
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "pageSize": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "nextToken": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        }
+      }
+    },
+    "pbcceListReq": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider"
+        }
+      }
+    },
+    "pbcceListResp": {
+      "type": "object",
+      "properties": {
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/pbcceCceCluster"
+          }
+        }
+      }
+    },
+    "pbtenantCloudProvider": {
+      "type": "string",
+      "enum": [
+        "ali",
+        "tencent",
+        "huawei",
+        "aws"
+      ],
+      "default": "ali",
+      "description": "- ali: 0 - 阿里云\n - tencent: 1 - 腾讯云\n - huawei: 2 - 华为云\n - aws: 3 - 亚马逊云",
+      "title": "云提供商"
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    }
+  }
+}

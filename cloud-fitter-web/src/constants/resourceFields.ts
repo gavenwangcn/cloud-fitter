@@ -104,3 +104,19 @@ export const DMS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'createTime', title: '创建时间' },
   { dataIndex: 'expiredTime', title: '过期时间' },
 ];
+
+/** pbcce.CceCluster（华为云 CCE 等；对应 metadata/spec/status） */
+export const CCE_FIELDS: ResourceFieldDef[] = [
+  { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'accoutName', title: '账号名称' },
+  { dataIndex: 'regionName', title: '地域' },
+  { dataIndex: 'clusterName', title: '集群名称 (metadata.name)' },
+  { dataIndex: 'clusterUid', title: '集群 ID (metadata.uid)' },
+  { dataIndex: 'flavor', title: '集群规格 (spec.flavor)' },
+  { dataIndex: 'k8sVersion', title: 'K8s 版本 (spec.version)' },
+  { dataIndex: 'phase', title: '状态 (status.phase)' },
+  { dataIndex: 'nodeTotal', title: '节点总数' },
+  { dataIndex: 'nodeNormal', title: '正常节点数' },
+  { dataIndex: 'cpuTotal', title: '节点 vCPU 合计' },
+  { dataIndex: 'memoryTotalMb', title: '节点内存合计(MB)' },
+];
