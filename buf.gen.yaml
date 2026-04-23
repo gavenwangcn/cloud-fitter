@@ -1,6 +1,6 @@
 version: v1
 plugins:
-  # 版本与仓库既有 grpc-gateway v2.3 / protobuf 生成风格尽量接近，降低与当前 go.mod 不兼容概率
+  # 远程插件须用 buf.build/grpc-ecosystem/gateway（勿写 grpc-gateway，BSR 已弃用该插件名）
   - plugin: buf.build/protocolbuffers/go:v1.28.1
     out: gen
     opt:
