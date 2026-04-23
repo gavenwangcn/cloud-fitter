@@ -20,6 +20,10 @@ export default [
         component: './dcs',
       },
       {
+        path: '/dms',
+        component: './dms',
+      },
+      {
         path: '/config',
         component: './config',
       },

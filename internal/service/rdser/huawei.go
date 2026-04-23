@@ -70,6 +70,24 @@ func huaweiRdsDatastoreTypeString(t model.DatastoreType) string {
 	return strings.Trim(string(b), `"`)
 }
 
+// formatHuaweiRDSInstanceMode 对应控制台「实例类型」：ListInstances 的 type（Single/Ha/Replica）；
+// 主备实例可附带 ha.replication_mode（async/semisync/sync）。
+func formatHuaweiRDSInstanceMode(v model.InstanceResponse) string {
+	t := strings.TrimSpace(v.Type)
+	if v.Ha == nil {
+		return t
+	}
+	b, err := json.Marshal(v.Ha.ReplicationMode)
+	if err != nil {
+		return t
+	}
+	rm := strings.Trim(string(b), `"`)
+	if rm == "" {
+		return t
+	}
+	return t + " (" + rm + ")"
+}
+
 func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*pbrds.ListDetailResp, error) {
 	request := new(model.ListInstancesRequest)
 	offset := (req.PageNumber - 1) * req.PageSize
@@ -127,13 +145,17 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		for _, tg := range v.Tags {
 			tagPairs = append(tagPairs, [2]string{tg.Key, tg.Value})
 		}
+		regionName := strings.TrimSpace(v.Region)
+		if regionName == "" {
+			regionName = r.region.GetName()
+		}
 		rdses[k] = &pbrds.RdsInstance{
 			Provider:      pbtenant.CloudProvider_huawei,
 			AccoutName:    r.tenanter.AccountName(),
 			InstanceId:    v.Id,
 			InstanceName:  v.Name,
-			RegionName:    r.region.GetName(),
-			InstanceType:  v.Type,
+			RegionName:    regionName,
+			InstanceType:  formatHuaweiRDSInstanceMode(v),
 			Engine:        engine,
 			EngineVersion: engineVersion,
 			InstanceClass: v.FlavorRef,

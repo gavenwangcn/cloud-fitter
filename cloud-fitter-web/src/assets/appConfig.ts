@@ -19,4 +19,9 @@ export const menuList = [
     key: 'dcs',
     icon: 'icon-quanju1',
   },
+  {
+    title: 'DMS',
+    key: 'dms',
+    icon: 'icon-quanju1',
+  },
 ];

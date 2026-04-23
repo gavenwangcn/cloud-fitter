@@ -6,10 +6,12 @@ import (
 	"net/http"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/ecs"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/kafka"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/rds"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/redis"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
@@ -67,6 +69,18 @@ func RedisByAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
 	resp, err := redis.List(ctx, &pbredis.ListReq{Provider: pbtenant.CloudProvider(body.Provider)})
+	writeProtoJSON(w, resp, err)
+}
+
+// KafkaByAccount POST /apis/kafka/by-account（DMS / Kafka 实例）
+func KafkaByAccount(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeListByAccount(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ctx := scope.WithAccountName(r.Context(), body.AccountName)
+	resp, err := kafka.List(ctx, &pbkafka.ListReq{Provider: pbtenant.CloudProvider(body.Provider)})
 	writeProtoJSON(w, resp, err)
 }
 

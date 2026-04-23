@@ -7,6 +7,8 @@
 # 仅需后端：清空或删除 .env 里的 COMPOSE_PROFILES，或执行 docker compose up -d --build app
 #
 # 准备配置：复制 config_template.yaml 为 config.yaml 并填写云账号
+# SQLite（界面「配置管理」写入的账号）默认落在容器 /app/data/cloud-fitter.db，
+#   通过 CLOUD_FITTER_DATA_DIR 挂载到宿主机，重启/重建容器后仍会保留（见根目录 .env）
 # 访问：前端 http://<宿主机>:8089；API 直连 9090/9091
 
 services:
@@ -32,6 +34,7 @@ services:
       - "9091:9091" # gRPC
     volumes:
       - ./config.yaml:/app/config/config.yaml:ro
+      - ${CLOUD_FITTER_DATA_DIR:-./data}:/app/data
 
   web:
     profiles: [ "full" ]

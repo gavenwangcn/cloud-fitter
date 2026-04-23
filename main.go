@@ -84,6 +84,8 @@ func run(store *configstore.Store) error {
 			jsonapi.RdsByAccount(w, r)
 		case r.URL.Path == "/apis/redis/by-account" && r.Method == http.MethodPost:
 			jsonapi.RedisByAccount(w, r)
+		case r.URL.Path == "/apis/kafka/by-account" && r.Method == http.MethodPost:
+			jsonapi.KafkaByAccount(w, r)
 		default:
 			mux.ServeHTTP(w, r)
 		}

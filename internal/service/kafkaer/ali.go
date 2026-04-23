@@ -81,14 +81,10 @@ func (kafka *AliKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetailRe
 		}
 	}
 
-	isFinished := false
-	if len(kafkas) < int(req.PageSize) {
-		isFinished = true
-	}
-
+	// 阿里云 GetInstanceList 单次返回全量列表，无服务端分页参数
 	return &pbkafka.ListDetailResp{
 		Kafkas:     kafkas,
-		Finished:   isFinished,
+		Finished:   true,
 		PageNumber: req.PageNumber + 1,
 		PageSize:   req.PageSize,
 		NextToken:  "",

@@ -50,7 +50,10 @@ export const RDS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },
   { dataIndex: 'regionName', title: '地域' },
-  { dataIndex: 'instanceType', title: '实例类型' },
+  {
+    dataIndex: 'instanceType',
+    title: '部署形态 (Single/Ha/Replica，Ha 含复制模式)',
+  },
   { dataIndex: 'engine', title: '数据库引擎' },
   { dataIndex: 'engineVersion', title: '引擎版本' },
   { dataIndex: 'instanceClass', title: '实例规格' },
@@ -85,4 +88,19 @@ export const DCS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'status', title: '状态' },
   { dataIndex: 'creationTime', title: '创建时间' },
   { dataIndex: 'expireTime', title: '过期时间' },
+];
+
+/** pbkafka.KafkaInstance（DMS Kafka / CKafka 等） */
+export const DMS_FIELDS: ResourceFieldDef[] = [
+  { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'accoutName', title: '账号名称' },
+  { dataIndex: 'instanceId', title: '实例 ID' },
+  { dataIndex: 'instanceName', title: '实例名称' },
+  { dataIndex: 'regionName', title: '地域' },
+  { dataIndex: 'endPoint', title: '接入点' },
+  { dataIndex: 'topicNumLimit', title: 'Topic 上限' },
+  { dataIndex: 'distSize', title: '磁盘(GB)' },
+  { dataIndex: 'status', title: '状态' },
+  { dataIndex: 'createTime', title: '创建时间' },
+  { dataIndex: 'expiredTime', title: '过期时间' },
 ];

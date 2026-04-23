@@ -12,6 +12,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -60,10 +61,10 @@ func newHuaweiKafkaClient(region tenanter.Region, tenant tenanter.Tenanter) (Kaf
 func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetailReq) (*pbkafka.ListDetailResp, error) {
 	request := new(model.ListInstancesRequest)
 	request.Engine = model.GetListInstancesRequestEngineEnum().KAFKA
-	// offset := (req.PageNumber - 1) * req.PageSize
-	// request.Offset = &offset
-	// limit := req.PageSize
-	// request.Limit = &limit
+	offset := (req.PageNumber - 1) * req.PageSize
+	request.Offset = &offset
+	limit := req.PageSize
+	request.Limit = &limit
 
 	resp, err := kafka.cli.ListInstances(request)
 	if err != nil {

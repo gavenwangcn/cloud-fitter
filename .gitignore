@@ -27,6 +27,9 @@ vendor/
 # config file
 config.yaml
 
+# Compose 挂载的持久化目录（含 SQLite cloud-fitter.db）
+data/
+
 log/
 
 # 前端源码目录 cloud-fitter-web/ 与后端同库提交（业务代码），勿使用仅引用/子模块而不含文件
