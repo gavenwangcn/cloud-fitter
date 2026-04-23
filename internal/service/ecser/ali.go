@@ -8,6 +8,7 @@ import (
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	aliecs "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
@@ -61,6 +62,8 @@ func (ecs *AliEcs) aliDiskStats(instanceId string) (sysGB, dataGB int32, summary
 		dreq.PageSize = requests.NewInteger(50)
 		dresp, derr := ecs.cli.DescribeDisks(dreq)
 		if derr != nil {
+			glog.Warningf("Aliyun DescribeDisks failed instance_id=%s account=%s region=%s page=%d err=%v",
+				instanceId, ecs.tenanter.AccountName(), ecs.region.GetName(), page, derr)
 			return 0, 0, "", derr
 		}
 		disks := dresp.Disks.Disk
@@ -81,7 +84,10 @@ func (ecs *AliEcs) aliDiskStats(instanceId string) (sysGB, dataGB int32, summary
 		}
 		page++
 	}
-	return sys, dataSum, strings.Join(parts, "; "), nil
+	sum := strings.Join(parts, "; ")
+	glog.V(2).Infof("Aliyun DescribeDisks ok instance_id=%s account=%s region=%s sys_gb=%d data_gb=%d summary=%q pages=%d",
+		instanceId, ecs.tenanter.AccountName(), ecs.region.GetName(), sys, dataSum, sum, page)
+	return sys, dataSum, sum, nil
 }
 
 func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
@@ -97,11 +103,18 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 		return nil, errors.Wrap(err, "Aliyun ListDetail error")
 	}
 
-	var ecses = make([]*pbecs.EcsInstance, len(resp.Instances.Instance))
+	nInst := len(resp.Instances.Instance)
+	glog.Infof("Aliyun ECS ListDetail DescribeDisks batch begin account=%s region=%s instances_in_page=%d page_number=%d",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), nInst, req.PageNumber)
+
+	var ecses = make([]*pbecs.EcsInstance, nInst)
+	var diskErrN int32
 	for k, v := range resp.Instances.Instance {
 		sysGB, dataGB, dsum, derr := ecs.aliDiskStats(v.InstanceId)
 		if derr != nil {
+			diskErrN++
 			sysGB, dataGB, dsum = 0, 0, ""
+			glog.Infof("Aliyun disk empty for instance_id=%s after DescribeDisks error", v.InstanceId)
 		}
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:          pbtenant.CloudProvider_ali,
@@ -130,6 +143,9 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			DiskSummary:       dsum,
 		}
 	}
+
+	glog.Infof("Aliyun ECS ListDetail DescribeDisks batch end account=%s region=%s disk_api_errors=%d/%d (use -v=2 for per-instance disk lines)",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), diskErrN, nInst)
 
 	isFinished := false
 	if len(ecses) < int(req.PageSize) {

@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awsec2 "github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
@@ -109,6 +110,11 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 		return nil, errors.Wrap(err, "Aws ListDetail error")
 	}
 
+	nInst := 0
+	for _, v := range resp.Reservations {
+		nInst += len(v.Instances)
+	}
+
 	var volumeIDs []string
 	for _, v := range resp.Reservations {
 		for _, inst := range v.Instances {
@@ -120,6 +126,11 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 		}
 	}
 	volumeIDs = uniqNonEmptyStrings(volumeIDs)
+	nbatch := (len(volumeIDs) + 199) / 200
+	hasToken := req.NextToken != ""
+	glog.Infof("AWS EC2 ListDetail DescribeVolumes begin account=%s region=%s instances_in_page=%d unique_volume_ids=%d batches=%d next_token_set=%v page_number=%d",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), nInst, len(volumeIDs), nbatch, hasToken, req.PageNumber)
+
 	volMap := make(map[string]awsVolBrief)
 	for i := 0; i < len(volumeIDs); i += 200 {
 		end := i + 200
@@ -127,8 +138,11 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			end = len(volumeIDs)
 		}
 		batch := volumeIDs[i:end]
+		bi, bn := i/200+1, nbatch
 		dOut, dErr := ecs.cli.DescribeVolumes(ctx, &awsec2.DescribeVolumesInput{VolumeIds: batch})
 		if dErr != nil {
+			glog.Warningf("AWS DescribeVolumes failed account=%s region=%s batch=%d/%d volume_ids_in_batch=%d err=%v",
+				ecs.tenanter.AccountName(), ecs.region.GetName(), bi, bn, len(batch), dErr)
 			return nil, errors.Wrap(dErr, "Aws DescribeVolumes error")
 		}
 		for _, vol := range dOut.Volumes {
@@ -136,6 +150,12 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			volMap[vid] = awsVolBrief{sizeGiB: vol.Size, volType: string(vol.VolumeType)}
 		}
 	}
+	if len(volumeIDs) > 0 && len(volMap) != len(volumeIDs) {
+		glog.Warningf("AWS DescribeVolumes volume count mismatch account=%s region=%s requested_ids=%d resolved_in_map=%d (some volume IDs missing from API response)",
+			ecs.tenanter.AccountName(), ecs.region.GetName(), len(volumeIDs), len(volMap))
+	}
+	glog.Infof("AWS EC2 ListDetail DescribeVolumes end account=%s region=%s volume_ids=%d map_entries=%d (use -v=2 for per-instance disk lines)",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), len(volumeIDs), len(volMap))
 
 	var ecses []*pbecs.EcsInstance
 	for _, v := range resp.Reservations {
@@ -161,6 +181,8 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 				status = string(v2.State.Name)
 			}
 			sysGB, dataGB, dsum := awsDiskFromBlockDevs(v2, volMap)
+			glog.V(2).Infof("AWS EC2 disk instance_id=%s account=%s region=%s sys_gb=%d data_gb=%d summary=%q",
+				*v2.InstanceId, ecs.tenanter.AccountName(), ecs.region.GetName(), sysGB, dataGB, dsum)
 			ecses = append(ecses, &pbecs.EcsInstance{
 				Provider:         pbtenant.CloudProvider_aws,
 				AccountName:      ecs.tenanter.AccountName(),

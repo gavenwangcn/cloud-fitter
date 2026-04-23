@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
+	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
@@ -246,6 +248,9 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 
 	servers := *resp.Servers
 	n := len(servers)
+	glog.Infof("Huawei ECS ListDetail block_device pull begin account=%s region=%s servers_in_page=%d page_number=%d",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), n, req.PageNumber)
+
 	type diskRow struct {
 		sys, data int32
 		summary   string
@@ -253,6 +258,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	disks := make([]diskRow, n)
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 10)
+	var diskOK, diskFail int32
 	for i := 0; i < n; i++ {
 		i := i
 		v := servers[i]
@@ -262,14 +268,24 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			blkResp, blkErr := ecs.cli.ListServerBlockDevices(&model.ListServerBlockDevicesRequest{ServerId: v.Id})
-			if blkErr == nil {
-				disks[i].sys, disks[i].data, disks[i].summary = huaweiDiskFromListServerBlockDevices(blkResp, v.Flavor)
-			} else {
+			if blkErr != nil {
+				atomic.AddInt32(&diskFail, 1)
+				glog.Warningf("Huawei ListServerBlockDevices failed server_id=%s server_name=%q account=%s region=%s err=%v",
+					v.Id, v.Name, ecs.tenanter.AccountName(), ecs.region.GetName(), blkErr)
 				disks[i].sys, disks[i].data, disks[i].summary = huaweiDiskFromListServerBlockDevices(nil, v.Flavor)
+				glog.Infof("Huawei disk fallback after API error server_id=%s flavor_disk_only sys_gb=%d data_gb=%d summary=%q",
+					v.Id, disks[i].sys, disks[i].data, disks[i].summary)
+				return
 			}
+			atomic.AddInt32(&diskOK, 1)
+			disks[i].sys, disks[i].data, disks[i].summary = huaweiDiskFromListServerBlockDevices(blkResp, v.Flavor)
+			glog.V(2).Infof("Huawei disk from ListServerBlockDevices server_id=%s server_name=%q sys_gb=%d data_gb=%d summary=%q",
+				v.Id, v.Name, disks[i].sys, disks[i].data, disks[i].summary)
 		}()
 	}
 	wg.Wait()
+	glog.Infof("Huawei ECS ListDetail block_device pull end account=%s region=%s ok=%d fail=%d (use -v=2 for per-instance disk lines)",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), diskOK, diskFail)
 
 	ecses := make([]*pbecs.EcsInstance, n)
 	for k, v := range servers {

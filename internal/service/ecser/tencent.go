@@ -9,6 +9,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
@@ -77,7 +78,11 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 		return nil, errors.Wrap(err, "Tencent ListDetail error")
 	}
 
-	var ecses = make([]*pbecs.EcsInstance, len(resp.Response.InstanceSet))
+	nInst := len(resp.Response.InstanceSet)
+	glog.Infof("Tencent CVM ListDetail disk(from DescribeInstances) begin account=%s region=%s instances_in_page=%d page_number=%d",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), nInst, req.PageNumber)
+
+	var ecses = make([]*pbecs.EcsInstance, nInst)
 	for k, v := range resp.Response.InstanceSet {
 		imageID := ""
 		if v.ImageId != nil {
@@ -88,6 +93,8 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 			osName = *v.OsName
 		}
 		sysGB, dataGB, dsum := tencentDiskInfo(v)
+		glog.V(2).Infof("Tencent CVM disk instance_id=%s account=%s region=%s sys_gb=%d data_gb=%d summary=%q",
+			*v.InstanceId, ecs.tenanter.AccountName(), ecs.region.GetName(), sysGB, dataGB, dsum)
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:         pbtenant.CloudProvider_tencent,
 			AccountName:      ecs.tenanter.AccountName(),
@@ -121,6 +128,9 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 			ecses[k].InnerIps[k1] = *v1
 		}
 	}
+
+	glog.Infof("Tencent CVM ListDetail disk end account=%s region=%s instances=%d (use -v=2 for per-instance lines)",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), nInst)
 
 	isFinished := false
 	if len(ecses) < int(req.PageSize) {
