@@ -1,13 +1,17 @@
-# 同时启动后端 api + Nginx 前端（默认）
+# 默认只启动 api（无需 cloud-fitter-web，适合仅后端或 CI 未拉前端）
 #
 #   docker compose up -d --build
 #
-# 前端源码须在仓库根下 cloud-fitter-web/（或设 CLOUD_FITTER_WEB_SUBDIR），例如：
+# 前后端一起：须先在仓库根目录有前端源码目录（默认名 cloud-fitter-web），再启用 profile full：
+#
 #   git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
+#   docker compose --profile full up -d --build
+#
+# 或在本目录 .env 写：COMPOSE_PROFILES=full（之后仍只需 docker compose up -d --build）
 # 与后端同级目录时：ln -snf ../cloud-fitter-web cloud-fitter-web
 #
 # 准备配置：复制 config_template.yaml 为 config.yaml 并填写云账号
-# 访问：前端 http://<宿主机>:8089（容器内外均为 8089）；API 直连 9090/9091
+# 访问：前端 http://<宿主机>:8089（仅 profile full）；API 直连 9090/9091
 
 services:
   api:
@@ -24,6 +28,7 @@ services:
       - ./config.yaml:/app/config/config.yaml:ro
 
   web:
+    profiles: ["full"]
     build:
       context: .
       dockerfile: deploy/web/Dockerfile

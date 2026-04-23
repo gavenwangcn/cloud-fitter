@@ -24,20 +24,28 @@ docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local .
 docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local --build-arg WEB_SUBDIR=你的目录名 .
 ```
 
-## Compose（默认前后端一起）
+## Compose
 
-1. 准备前端源码：在 **cloud-fitter 仓库根目录** 下克隆  
-   `git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web`  
-   或与后端同级时：`ln -snf ../cloud-fitter-web cloud-fitter-web`（也可设 `CLOUD_FITTER_WEB_SUBDIR`）。
-2. 在本仓库根目录准备好 `config.yaml`。
-3. 在 **cloud-fitter** 根目录执行：
+**仅后端（默认）**——没有 `cloud-fitter-web/package.json` 时也能完成构建与启动：
 
 ```bash
 docker compose up -d --build
 ```
 
-- 前端：<http://localhost:8089>（静态页 + `/apis` 反代到后端；映射为 8089:8089）
 - 后端 HTTP（grpc-gateway）：<http://localhost:9090>，gRPC：`9091`
+
+**前后端一起**——须先在 **cloud-fitter 根目录** 存在前端源码（否则构建 web 会因 `COPY .../package.json` 失败）：
+
+```bash
+git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web
+# 或与后端同级：ln -snf ../cloud-fitter-web cloud-fitter-web
+docker compose --profile full up -d --build
+```
+
+也可在 `.env` 中写 `COMPOSE_PROFILES=full`，之后直接 `docker compose up -d --build`。
+
+- 前端：<http://localhost:8089>（映射 8089:8089）
+- 后端：同上
 
 ## Nginx 说明
 
