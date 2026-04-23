@@ -11,6 +11,9 @@ import (
 	hwecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
 	hwregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/region"
+	hwevs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2"
+	evsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2/model"
+	evsregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2/region"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	iamregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/region"
@@ -23,14 +26,16 @@ import (
 
 type HuaweiEcs struct {
 	cli      *hwecs.EcsClient
+	evs      *hwevs.EvsClient
 	region   tenanter.Region
 	tenanter tenanter.Tenanter
 }
 
 func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser, error) {
 	var (
-		client *hwecs.EcsClient
-		err    error
+		client    *hwecs.EcsClient
+		evsClient *hwevs.EvsClient
+		err       error
 	)
 
 	switch t := tenant.(type) {
@@ -48,8 +53,10 @@ func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser
 		projectId := (*r.Projects)[0].Id
 
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcClient := hwecs.EcsClientBuilder().WithRegion(hwregion.ValueOf(rName)).WithCredential(auth).Build()
-		client = hwecs.NewEcsClient(hcClient)
+		hcEcs := hwecs.EcsClientBuilder().WithRegion(hwregion.ValueOf(rName)).WithCredential(auth).Build()
+		client = hwecs.NewEcsClient(hcEcs)
+		hcEvs := hwevs.EvsClientBuilder().WithRegion(evsregion.ValueOf(rName)).WithCredential(auth).Build()
+		evsClient = hwevs.NewEvsClient(hcEvs)
 	default:
 	}
 
@@ -58,6 +65,7 @@ func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser
 	}
 	return &HuaweiEcs{
 		cli:      client,
+		evs:      evsClient,
 		region:   region,
 		tenanter: tenant,
 	}, nil
@@ -186,35 +194,95 @@ func huaweiMetadataGet(m map[string]string, key string) string {
 	return m[key]
 }
 
-func huaweiDiskInfo(v *model.ServerDetail) (sysGB, dataGB int32, summary string) {
-	if v.Flavor != nil && v.Flavor.Disk != "" {
-		if n, err := strconv.ParseInt(v.Flavor.Disk, 10, 32); err == nil && n > 0 {
-			sysGB = int32(n)
+func huaweiUniqNonEmpty(ids []string) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, id := range ids {
+		if id == "" {
+			continue
 		}
-	}
-	attach := v.OsExtendedVolumesvolumesAttached
-	hasBoot := false
-	for _, a := range attach {
-		if a.BootIndex != nil && *a.BootIndex == "0" {
-			hasBoot = true
-			break
+		if _, ok := seen[id]; ok {
+			continue
 		}
+		seen[id] = struct{}{}
+		out = append(out, id)
 	}
-	dataCnt := len(attach)
-	if hasBoot && dataCnt > 0 {
-		dataCnt--
+	return out
+}
+
+func huaweiBootIndexIsZero(bi *string) bool {
+	if bi == nil {
+		return false
 	}
+	s := strings.TrimSpace(*bi)
+	return s == "0"
+}
+
+func huaweiIsBootVolume(att model.ServerExtendVolumeAttachment, vol *evsmodel.VolumeDetail) bool {
+	if vol != nil && strings.EqualFold(vol.Bootable, "true") {
+		return true
+	}
+	return huaweiBootIndexIsZero(att.BootIndex)
+}
+
+// huaweiDiskInfo 结合 ECS 挂载信息（volume id）与 EVS 云硬盘详情（size、bootable）。
+// 官方说明：ECS flavor.disk 常为 0 或无效；容量需查 EVS「查询所有云硬盘详情」接口。
+func huaweiDiskInfo(v *model.ServerDetail, volByID map[string]evsmodel.VolumeDetail) (sysGB, dataGB int32, summary string) {
 	var parts []string
-	if sysGB > 0 {
-		parts = append(parts, fmt.Sprintf("系统盘(规格):%dGB", sysGB))
-	}
-	if len(attach) > 0 {
-		parts = append(parts, fmt.Sprintf("云硬盘挂载:%d块", len(attach)))
-		if dataCnt > 0 {
-			parts = append(parts, fmt.Sprintf("数据盘约:%d块(容量需对接 EVS)", dataCnt))
+	var sys int32
+	var dataSum int32
+	for _, att := range v.OsExtendedVolumesvolumesAttached {
+		if att.Id == "" {
+			continue
+		}
+		vol, ok := volByID[att.Id]
+		if !ok {
+			continue
+		}
+		if huaweiIsBootVolume(att, &vol) {
+			sys = vol.Size
+			parts = append(parts, fmt.Sprintf("系统盘:%dGB(%s)", vol.Size, vol.VolumeType))
+		} else {
+			dataSum += vol.Size
+			parts = append(parts, fmt.Sprintf("数据盘:%dGB(%s)", vol.Size, vol.VolumeType))
 		}
 	}
-	return sysGB, 0, strings.Join(parts, "; ")
+	// flavor.disk 仅作兜底（文档称多数场景无效）
+	if sys == 0 && v.Flavor != nil && v.Flavor.Disk != "" {
+		if n, err := strconv.ParseInt(v.Flavor.Disk, 10, 32); err == nil && n > 0 {
+			sys = int32(n)
+		}
+	}
+	return sys, dataSum, strings.Join(parts, "; ")
+}
+
+func (ecs *HuaweiEcs) huaweiFetchVolumesByIDs(ids []string) map[string]evsmodel.VolumeDetail {
+	out := make(map[string]evsmodel.VolumeDetail)
+	if ecs.evs == nil || len(ids) == 0 {
+		return out
+	}
+	uniq := huaweiUniqNonEmpty(ids)
+	const batch = 40
+	lim := int32(1000)
+	for i := 0; i < len(uniq); i += batch {
+		end := i + batch
+		if end > len(uniq) {
+			end = len(uniq)
+		}
+		idParam := strings.Join(uniq[i:end], ",")
+		req := &evsmodel.ListVolumesRequest{
+			Ids:   &idParam,
+			Limit: &lim,
+		}
+		resp, err := ecs.evs.ListVolumes(req)
+		if err != nil || resp.Volumes == nil {
+			continue
+		}
+		for _, vol := range *resp.Volumes {
+			out[vol.Id] = vol
+		}
+	}
+	return out
 }
 
 func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
@@ -230,6 +298,16 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	}
 
 	servers := *resp.Servers
+	var volIDs []string
+	for _, v := range servers {
+		for _, a := range v.OsExtendedVolumesvolumesAttached {
+			if a.Id != "" {
+				volIDs = append(volIDs, a.Id)
+			}
+		}
+	}
+	volByID := ecs.huaweiFetchVolumesByIDs(volIDs)
+
 	ecses := make([]*pbecs.EcsInstance, len(servers))
 	for k, v := range servers {
 		desc := ""
@@ -241,7 +319,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 		if v.EnterpriseProjectId != nil {
 			resourceGroup = *v.EnterpriseProjectId
 		}
-		sysGB, dataGB, dsum := huaweiDiskInfo(&v)
+		sysGB, dataGB, dsum := huaweiDiskInfo(&v, volByID)
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:         pbtenant.CloudProvider_huawei,
 			AccountName:      ecs.tenanter.AccountName(),
