@@ -2,6 +2,7 @@ package rdser
 
 import (
 	"context"
+	"strconv"
 	"sync"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
@@ -53,6 +54,7 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 	request := alirds.CreateDescribeDBInstancesRequest()
 	request.PageNumber = requests.NewInteger(int(req.PageNumber))
 	request.PageSize = requests.NewInteger(int(req.PageSize))
+	request.NextToken = req.NextToken
 	resp, err := rds.cli.DescribeDBInstances(request)
 	if err != nil {
 		return nil, errors.Wrap(err, "Aliyun ListDetail error")
@@ -74,34 +76,51 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 		if tagByInst != nil {
 			ev = tagByInst[v.DBInstanceId]
 		}
+		instName := v.DBInstanceName
+		if instName == "" {
+			instName = v.DBInstanceDescription
+		}
+		st := v.DBInstanceStatus
+		if st == "" {
+			st = v.Status
+		}
+		cpu := int32(0)
+		if v.DBInstanceCPU != "" {
+			if n, err := strconv.ParseInt(v.DBInstanceCPU, 10, 32); err == nil {
+				cpu = int32(n)
+			}
+		}
+		memMB := int32(v.DBInstanceMemory)
 		rdses[k] = &pbrds.RdsInstance{
 			Provider:      pbtenant.CloudProvider_ali,
 			AccoutName:    rds.tenanter.AccountName(),
 			InstanceId:    v.DBInstanceId,
-			InstanceName:  v.DBInstanceDescription,
+			InstanceName:  instName,
 			RegionName:    rds.region.GetName(),
 			InstanceType:  v.DBInstanceType,
 			Engine:        v.Engine,
 			EngineVersion: v.EngineVersion,
 			InstanceClass: v.DBInstanceClass,
-			Status:        v.DBInstanceStatus,
+			Status:        st,
 			CreationTime:  v.CreateTime,
 			ExpireTime:    v.ExpireTime,
+			Cpu:           cpu,
+			MemoryMb:      memMB,
+			VpcId:         v.VpcId,
+			ChargeType:    v.PayType,
 			EnvTagValue:   ev,
 		}
 	}
 
-	isFinished := false
-	if len(rdses) < int(req.PageSize) {
-		isFinished = true
-	}
+	// PageNumber 分页：无 NextToken，以本页条数判断；NextToken 分页：以返回 NextToken 是否为空为准（末页可能仍满页）
+	isFinished := resp.NextToken == "" && (len(rdses) < int(req.PageSize) || req.NextToken != "")
 
 	return &pbrds.ListDetailResp{
 		Rdses:      rdses,
 		Finished:   isFinished,
 		PageNumber: req.PageNumber + 1,
 		PageSize:   req.PageSize,
-		NextToken:  "",
+		NextToken:  resp.NextToken,
 		RequestId:  resp.RequestId,
 	}, nil
 }

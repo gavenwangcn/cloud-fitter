@@ -5,8 +5,8 @@ go 1.23.0
 toolchain go1.23.4
 
 require (
-	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1036
-	github.com/aliyun/aliyun-oss-go-sdk v2.1.8+incompatible
+	github.com/aliyun/alibaba-cloud-sdk-go v1.63.107
+	github.com/aliyun/aliyun-oss-go-sdk v2.2.10+incompatible
 	github.com/aws/aws-sdk-go-v2/config v1.1.6
 	github.com/aws/aws-sdk-go-v2/credentials v1.1.6
 	github.com/aws/aws-sdk-go-v2/service/configservice v1.4.0

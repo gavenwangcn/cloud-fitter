@@ -91,6 +91,42 @@ func (ecs *AliEcs) aliDiskStats(instanceId string) (sysGB, dataGB int32, summary
 	return sys, dataSum, sum, nil
 }
 
+// aliPrivateIPs 对齐新版 DescribeInstances：优先 InnerIpAddress，空时从 eni 取 PrimaryIpAddress。
+func aliPrivateIPs(v aliecs.Instance) []string {
+	ips := append([]string(nil), v.InnerIpAddress.IpAddress...)
+	if len(ips) > 0 {
+		return ips
+	}
+	for _, ni := range v.NetworkInterfaces.NetworkInterface {
+		if ni.PrimaryIpAddress != "" {
+			ips = append(ips, ni.PrimaryIpAddress)
+		}
+	}
+	return ips
+}
+
+// aliPublicIPs 合并公网 IP 与 EIP（去重）。
+func aliPublicIPs(v aliecs.Instance) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(s string) {
+		if s == "" {
+			return
+		}
+		if _, ok := seen[s]; ok {
+			return
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	for _, ip := range v.PublicIpAddress.IpAddress {
+		add(ip)
+	}
+	add(v.InternetIp)
+	add(v.EipAddress.IpAddress)
+	return out
+}
+
 func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
 	aliClientMutex.Lock()
 	defer aliClientMutex.Unlock()
@@ -121,26 +157,34 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 		for _, t := range v.Tags.Tag {
 			tagPairs = append(tagPairs, [2]string{t.TagKey, t.TagValue})
 		}
+		cpu := int32(v.Cpu)
+		if cpu == 0 {
+			cpu = int32(v.CPU)
+		}
+		imgName := v.OSName
+		if imgName == "" {
+			imgName = v.OSNameEn
+		}
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:          pbtenant.CloudProvider_ali,
 			AccountName:       ecs.tenanter.AccountName(),
 			InstanceId:        v.InstanceId,
 			InstanceName:      v.InstanceName,
 			RegionName:        ecs.region.GetName(),
-			PublicIps:         v.PublicIpAddress.IpAddress,
+			PublicIps:         aliPublicIPs(v),
 			InstanceType:      v.InstanceType,
-			Cpu:               int32(v.Cpu),
+			Cpu:               cpu,
 			Memory:            int32(v.Memory),
 			Description:       v.Description,
 			Status:            v.Status,
 			CreationTime:      v.CreationTime,
 			ExpireTime:        v.ExpiredTime,
-			InnerIps:          v.InnerIpAddress.IpAddress,
+			InnerIps:          aliPrivateIPs(v),
 			VpcId:             v.VpcAttributes.VpcId,
 			ResourceGroupId:   v.ResourceGroupId,
 			ChargeType:        v.InstanceChargeType,
 			ImageId:           v.ImageId,
-			ImageName:         v.OSName,
+			ImageName:         imgName,
 			OsType:            v.OSType,
 			OsBit:             "",
 			SystemDiskSizeGb:  sysGB,
@@ -153,10 +197,7 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 	glog.Infof("Aliyun ECS ListDetail DescribeDisks batch end account=%s region=%s disk_api_errors=%d/%d (use -v=2 for per-instance disk lines)",
 		ecs.tenanter.AccountName(), ecs.region.GetName(), diskErrN, nInst)
 
-	isFinished := false
-	if len(ecses) < int(req.PageSize) {
-		isFinished = true
-	}
+	isFinished := resp.NextToken == "" && (len(ecses) < int(req.PageSize) || req.NextToken != "")
 
 	return &pbecs.ListDetailResp{
 		Ecses:      ecses,

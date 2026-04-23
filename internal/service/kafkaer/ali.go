@@ -45,7 +45,7 @@ func newAliKafkaerClient(region tenanter.Region, tenant tenanter.Tenanter) (Kafk
 	}
 
 	if err != nil {
-		return nil, errors.Wrap(err, "init ali rds client error")
+		return nil, errors.Wrap(err, "init ali kafka client error")
 	}
 
 	return &AliKafka{

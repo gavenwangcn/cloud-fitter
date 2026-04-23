@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
-	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/service/kafkaer"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
