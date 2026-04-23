@@ -18,6 +18,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pboss"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbstatistic"
 	"github.com/cloud-fitter/cloud-fitter/internal/server"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
@@ -26,7 +27,7 @@ import (
 var (
 	// command-line options:
 	// gRPC server endpoint
-	grpcServerEndpoint = flag.String("grpc-server-endpoint", ":9090", "gRPC server endpoint")
+	grpcServerEndpoint = flag.String("grpc-server-endpoint", ":9091", "gRPC server endpoint")
 )
 
 func run() error {
@@ -46,6 +47,8 @@ func run() error {
 		return errors.Wrap(err, "RegisterStatisticServiceHandlerFromEndpoint error")
 	} else if err = pbrds.RegisterRdsServiceHandlerFromEndpoint(ctx, mux, *grpcServerEndpoint, opts); err != nil {
 		return errors.Wrap(err, "RegisterRdsServiceHandlerFromEndpoint error")
+	} else if err = pbredis.RegisterRedisServiceHandlerFromEndpoint(ctx, mux, *grpcServerEndpoint, opts); err != nil {
+		return errors.Wrap(err, "RegisterRedisServiceHandlerFromEndpoint error")
 	} else if err = pbdomain.RegisterDomainServiceHandlerFromEndpoint(ctx, mux, *grpcServerEndpoint, opts); err != nil {
 		return errors.Wrap(err, "RegisterDomainServiceHandlerFromEndpoint error")
 	} else if err = pboss.RegisterOssServiceHandlerFromEndpoint(ctx, mux, *grpcServerEndpoint, opts); err != nil {
@@ -56,8 +59,8 @@ func run() error {
 		return errors.Wrap(err, "RegisterBillingServiceHandlerFromEndpoint error")
 	}
 
-	// Start HTTP server (and proxy calls to gRPC server endpoint)
-	return http.ListenAndServe(":8081", mux)
+	// Start HTTP server (grpc-gateway JSON API，与容器/compose 暴露端口 9090 一致)
+	return http.ListenAndServe(":9090", mux)
 }
 
 func main() {
@@ -76,7 +79,7 @@ func main() {
 	glog.Infof("load tenant from file finished")
 
 	go func() {
-		lis, err := net.Listen("tcp", ":9090")
+		lis, err := net.Listen("tcp", ":9091")
 		if err != nil {
 			glog.Fatalf("failed to listen: %v", err)
 		}
@@ -86,6 +89,7 @@ func main() {
 		pbecs.RegisterEcsServiceServer(s, &server.Server{})
 		pbstatistic.RegisterStatisticServiceServer(s, &server.Server{})
 		pbrds.RegisterRdsServiceServer(s, &server.Server{})
+		pbredis.RegisterRedisServiceServer(s, &server.Server{})
 		pbdomain.RegisterDomainServiceServer(s, &server.Server{})
 		pboss.RegisterOssServiceServer(s, &server.Server{})
 		pbkafka.RegisterKafkaServiceServer(s, &server.Server{})

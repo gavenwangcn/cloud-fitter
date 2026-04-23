@@ -36,6 +36,8 @@ func NewRdsClient(provider pbtenant.CloudProvider, region tenanter.Region, tenan
 		return newTencentCdbClient(region, tenant)
 	case pbtenant.CloudProvider_aws:
 		return newAwsRdsClient(region, tenant)
+	case pbtenant.CloudProvider_huawei:
+		return newHuaweiRdsClient(region, tenant)
 	}
 
 	err = errors.WithMessagef(ErrRdsListNotSupported, "cloud provider %v region %v", provider, region)

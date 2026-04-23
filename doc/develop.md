@@ -87,7 +87,7 @@ cp config_template.yaml config.yaml
 ./cloud-fitter -conf=config_template.yaml
 
 ## 通过HTTP请求访问到结果
-curl --location --request POST 'http://localhost:8081/apis/demo'
+curl --location --request POST 'http://localhost:9090/apis/demo'
 ```
 
 ## 容器环境验证(可选)
@@ -96,10 +96,10 @@ curl --location --request POST 'http://localhost:8081/apis/demo'
 # 拉取镜像(自行安装docker)
 docker pull cloudfitter/cloud-fitter
 
-# 确保本地端口的8081和9090没有被占用，配置文件放在{config_dir}里，名字必须为 config.yaml
-# 需要定制化修改启动命令的，请参考Dockerfie
-docker run -v {config_dir}:/app/config/ -p 8081:8081 -p 9090:9090 cloudfitter/cloud-fitter:latest
+# 确保本地端口 9090（HTTP）与 9091（gRPC）未被占用；配置目录挂载到 /app/config/，其中须有 config.yaml
+# 需要定制化修改启动命令的，请参考 Dockerfile
+docker run -v {config_dir}:/app/config/ -p 9090:9090 -p 9091:9091 cloudfitter/cloud-fitter:latest
 
 ## 通过HTTP请求访问到结果
-curl --location --request POST 'http://localhost:8081/apis/demo'
+curl --location --request POST 'http://localhost:9090/apis/demo'
 ```

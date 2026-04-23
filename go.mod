@@ -1,6 +1,8 @@
 module github.com/cloud-fitter/cloud-fitter
 
-go 1.15
+go 1.23.0
+
+toolchain go1.23.4
 
 require (
 	github.com/aliyun/alibaba-cloud-sdk-go v1.61.1036
@@ -10,16 +12,34 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/configservice v1.4.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.5.0
 	github.com/aws/aws-sdk-go-v2/service/rds v1.4.0
-	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
 	github.com/go-yaml/yaml v2.1.0+incompatible
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.3.0
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.0.40-rc
 	github.com/pkg/errors v0.9.1
-	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/tencentcloud/tencentcloud-sdk-go v1.0.158
-	golang.org/x/tools v0.1.1 // indirect
 	google.golang.org/genproto v0.0.0-20210224155714-063164c882e6
 	google.golang.org/grpc v1.36.0
 	google.golang.org/protobuf v1.26.0
+)
+
+require (
+	github.com/aws/aws-sdk-go-v2 v1.5.0 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.0.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.1.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.1.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.3.0 // indirect
+	github.com/aws/smithy-go v1.4.0 // indirect
+	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
+	github.com/golang/protobuf v1.5.0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/json-iterator/go v1.1.10 // indirect
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.1 // indirect
+	github.com/satori/go.uuid v1.2.0 // indirect
+	golang.org/x/net v0.0.0-20210405180319-a5a99cb37ef4 // indirect
+	golang.org/x/sys v0.0.0-20210510120138-977fb7262007 // indirect
+	golang.org/x/text v0.3.5 // indirect
+	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
+	gopkg.in/ini.v1 v1.51.0 // indirect
 )

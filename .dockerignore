@@ -1,0 +1,9 @@
+.git
+.gitignore
+**/.idea
+**/.vscode
+*.exe
+cloud-fitter
+log
+*.md
+doc

@@ -10,6 +10,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pboss"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbstatistic"
 )
 
@@ -19,6 +20,7 @@ type Server struct {
 	pbecs.UnsafeEcsServiceServer
 	pbstatistic.UnsafeStatisticServiceServer
 	pbrds.UnsafeRdsServiceServer
+	pbredis.UnsafeRedisServiceServer
 	pbdomain.UnsafeDomainServiceServer
 	pboss.UnsafeOssServiceServer
 	pbkafka.UnsafeKafkaServiceServer

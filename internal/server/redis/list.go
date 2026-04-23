@@ -1,0 +1,95 @@
+package redis
+
+import (
+	"context"
+	"sync"
+
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
+	"github.com/cloud-fitter/cloud-fitter/internal/service/rediser"
+	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
+)
+
+func ListDetail(ctx context.Context, req *pbredis.ListDetailReq) (*pbredis.ListDetailResp, error) {
+	var (
+		cli rediser.Rediser
+	)
+
+	tenanters, err := tenanter.GetTenanters(req.Provider)
+	if err != nil {
+		return nil, errors.WithMessage(err, "getTenanters error")
+	}
+
+	region, err := tenanter.NewRegion(req.Provider, req.RegionId)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "provider %v regionId %v", req.Provider, req.RegionId)
+	}
+
+	for _, tn := range tenanters {
+		if req.AccountName == "" || tn.AccountName() == req.AccountName {
+			if cli, err = rediser.NewRedisClient(req.Provider, region, tn); err != nil {
+				return nil, errors.WithMessage(err, "NewRedisClient error")
+			}
+			break
+		}
+	}
+
+	return cli.ListDetail(ctx, req)
+}
+
+func List(ctx context.Context, req *pbredis.ListReq) (*pbredis.ListResp, error) {
+	var (
+		wg       sync.WaitGroup
+		mutex    sync.Mutex
+		redises  []*pbredis.RedisInstance
+	)
+
+	tenanters, err := tenanter.GetTenanters(req.Provider)
+	if err != nil {
+		return nil, errors.WithMessage(err, "getTenanters error")
+	}
+
+	regions := tenanter.GetAllRegionIds(req.Provider)
+
+	wg.Add(len(tenanters) * len(regions))
+	for _, t := range tenanters {
+		for _, region := range regions {
+			go func(tenant tenanter.Tenanter, region tenanter.Region) {
+				defer wg.Done()
+				cli, err := rediser.NewRedisClient(req.Provider, region, tenant)
+				if err != nil {
+					glog.Errorf("New Redis Client error %v", err)
+					return
+				}
+
+				request := &pbredis.ListDetailReq{
+					Provider:    req.Provider,
+					AccountName: tenant.AccountName(),
+					RegionId:    region.GetId(),
+					PageNumber:  1,
+					PageSize:    100,
+					NextToken:   "",
+				}
+				for {
+					resp, err := cli.ListDetail(ctx, request)
+					if err != nil {
+						glog.Errorf("ListDetail error %v", err)
+						return
+					}
+					mutex.Lock()
+					redises = append(redises, resp.Redises...)
+					mutex.Unlock()
+					if resp.Finished {
+						break
+					}
+					request.PageNumber, request.PageSize, request.NextToken = resp.PageNumber, resp.PageSize, resp.NextToken
+				}
+			}(t, region)
+
+		}
+	}
+	wg.Wait()
+
+	return &pbredis.ListResp{Redises: redises}, nil
+}

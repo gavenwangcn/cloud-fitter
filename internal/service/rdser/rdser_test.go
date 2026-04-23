@@ -18,10 +18,9 @@ func TestRdser_ListDetail(t *testing.T) {
 	tc, _ := NewRdsClient(pbtenant.CloudProvider_tencent, region, tcTenant[0])
 	tcFailed, _ := NewRdsClient(pbtenant.CloudProvider_tencent, region, tenanter.NewTenantWithAccessKey("empty", "", ""))
 
-	// region, _ = tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_southwest_2))
-	// hw, _ := NewHuaweiEcsClient(region, hwTenant[0])
-	// // hwFailed, _ := NewHuaweiEcsClient(int32(pbtenant.HuaweiRegionId_hw_cn_north_1), tenanter.NewTenantWithAccessKey("empty", "", "", ""))
-	//
+	regionHW, _ := tenanter.NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_cn_south_1))
+	hw, _ := NewRdsClient(pbtenant.CloudProvider_huawei, regionHW, hwTenant[0])
+
 	region, _ = tenanter.NewRegion(pbtenant.CloudProvider_aws, int32(pbtenant.AwsRegionId_aws_us_east_2))
 	aws, _ := NewRdsClient(pbtenant.CloudProvider_aws, region, awsTenant[0])
 
@@ -45,8 +44,7 @@ func TestRdser_ListDetail(t *testing.T) {
 		{name: "tc wrong page size", fields: tc, args: args{&pbrds.ListDetailReq{PageNumber: 1, PageSize: 0}}, wantErr: true},
 		{name: "tc right cli", fields: tc, args: args{&pbrds.ListDetailReq{PageNumber: 1, PageSize: 10}}, wantErr: false},
 
-		// {name: "hw wrong cli", fields: hwFailed, args: args{pageNumber: 1, pageSize: 1}, wantErr: true},
-		// {name: "hw right cli", fields: hw, args: args{&pbecs.ListDetailReq{PageNumber: 1, PageSize: 10}}, wantErr: false},
+		{name: "hw right cli", fields: hw, args: args{&pbrds.ListDetailReq{PageNumber: 1, PageSize: 10}}, wantErr: false},
 
 		{name: "aws right cli", fields: aws, args: args{&pbrds.ListDetailReq{PageNumber: 1, PageSize: 30}}, wantErr: false},
 

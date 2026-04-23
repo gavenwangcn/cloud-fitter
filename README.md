@@ -19,7 +19,7 @@ docker pull cloudfitter/cloud-fitter:latest
 # 参考样例 https://github.com/cloud-fitter/cloud-fitter/blob/master/config_template.yaml 
 
 # 启动容器 注意必须为绝对路径
-docker run -v {config_file}:/app/config/config.yaml -p 8081:8081 -p 9090:9090 cloudfitter/cloud-fitter:latest
+docker run -v {config_file}:/app/config/config.yaml -p 9090:9090 -p 9091:9091 cloudfitter/cloud-fitter:latest
 
 # 界面展示 (上面适用于linux，下面为指定ip的通用方式)
 docker run --add-host localnode:$(ifconfig en0 | grep inet | grep -v inet6 | awk '{print $2}') -p 8080:8080 junedayday/cloud-fitter-web:latest
