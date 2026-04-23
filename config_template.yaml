@@ -1,6 +1,6 @@
 configs:
   # provider 0:阿里云 1:腾讯云 2:华为云
-  - provider: 1
+  - provider: 2
     name: "pass"
     accessid: "NXUOOCQPYQ4MM5HOBG8D"
     accesssecret: "vXz6MfNovJv0DRbCwRL22xZRdpagJIcWDIr0pdz1"
