@@ -3,6 +3,7 @@ package ecser
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -185,6 +186,37 @@ func huaweiMetadataGet(m map[string]string, key string) string {
 	return m[key]
 }
 
+func huaweiDiskInfo(v *model.ServerDetail) (sysGB, dataGB int32, summary string) {
+	if v.Flavor != nil && v.Flavor.Disk != "" {
+		if n, err := strconv.ParseInt(v.Flavor.Disk, 10, 32); err == nil && n > 0 {
+			sysGB = int32(n)
+		}
+	}
+	attach := v.OsExtendedVolumesvolumesAttached
+	hasBoot := false
+	for _, a := range attach {
+		if a.BootIndex != nil && *a.BootIndex == "0" {
+			hasBoot = true
+			break
+		}
+	}
+	dataCnt := len(attach)
+	if hasBoot && dataCnt > 0 {
+		dataCnt--
+	}
+	var parts []string
+	if sysGB > 0 {
+		parts = append(parts, fmt.Sprintf("系统盘(规格):%dGB", sysGB))
+	}
+	if len(attach) > 0 {
+		parts = append(parts, fmt.Sprintf("云硬盘挂载:%d块", len(attach)))
+		if dataCnt > 0 {
+			parts = append(parts, fmt.Sprintf("数据盘约:%d块(容量需对接 EVS)", dataCnt))
+		}
+	}
+	return sysGB, 0, strings.Join(parts, "; ")
+}
+
 func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
 	request := new(model.ListServersDetailsRequest)
 	offset := (req.PageNumber - 1) * req.PageSize
@@ -209,28 +241,32 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 		if v.EnterpriseProjectId != nil {
 			resourceGroup = *v.EnterpriseProjectId
 		}
+		sysGB, dataGB, dsum := huaweiDiskInfo(&v)
 		ecses[k] = &pbecs.EcsInstance{
-			Provider:        pbtenant.CloudProvider_huawei,
-			AccountName:     ecs.tenanter.AccountName(),
-			InstanceId:      v.Id,
-			InstanceName:    v.Name,
-			RegionName:      ecs.region.GetName(),
-			InstanceType:    huaweiFlavorName(v.Flavor),
-			PublicIps:       pub,
-			Cpu:             huaweiFlavorVCPU(v.Flavor),
-			Memory:          huaweiFlavorRAMMB(v.Flavor),
-			Description:     desc,
-			Status:          v.Status,
-			CreationTime:    v.Created,
-			ExpireTime:      v.OSSRVUSGterminatedAt,
-			InnerIps:        priv,
-			VpcId:           huaweiMetadataVPC(v.Metadata),
-			ResourceGroupId: resourceGroup,
-			ChargeType:      huaweiMetadataChargeType(v.Metadata),
-			ImageId:         huaweiECSImageID(&v),
-			ImageName:       huaweiMetadataGet(v.Metadata, "image_name"),
-			OsType:          huaweiMetadataGet(v.Metadata, "os_type"),
-			OsBit:           huaweiMetadataGet(v.Metadata, "os_bit"),
+			Provider:         pbtenant.CloudProvider_huawei,
+			AccountName:      ecs.tenanter.AccountName(),
+			InstanceId:       v.Id,
+			InstanceName:     v.Name,
+			RegionName:       ecs.region.GetName(),
+			InstanceType:     huaweiFlavorName(v.Flavor),
+			PublicIps:        pub,
+			Cpu:              huaweiFlavorVCPU(v.Flavor),
+			Memory:           huaweiFlavorRAMMB(v.Flavor),
+			Description:      desc,
+			Status:           v.Status,
+			CreationTime:     v.Created,
+			ExpireTime:       v.OSSRVUSGterminatedAt,
+			InnerIps:         priv,
+			VpcId:            huaweiMetadataVPC(v.Metadata),
+			ResourceGroupId:  resourceGroup,
+			ChargeType:       huaweiMetadataChargeType(v.Metadata),
+			ImageId:          huaweiECSImageID(&v),
+			ImageName:        huaweiMetadataGet(v.Metadata, "image_name"),
+			OsType:           huaweiMetadataGet(v.Metadata, "os_type"),
+			OsBit:            huaweiMetadataGet(v.Metadata, "os_bit"),
+			SystemDiskSizeGb: sysGB,
+			DataDiskTotalGb:  dataGB,
+			DiskSummary:      dsum,
 		}
 	}
 

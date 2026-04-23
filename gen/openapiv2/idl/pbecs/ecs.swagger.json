@@ -211,6 +211,20 @@
         "osBit": {
           "type": "string",
           "title": "操作系统位数（如 32、64）"
+        },
+        "systemDiskSizeGb": {
+          "type": "integer",
+          "format": "int32",
+          "title": "系统盘容量（GB），无法获取时为 0"
+        },
+        "dataDiskTotalGb": {
+          "type": "integer",
+          "format": "int32",
+          "title": "数据盘总容量（GB），无法获取时为 0（华为未接 EVS 时可能为 0，见 disk_summary）"
+        },
+        "diskSummary": {
+          "type": "string",
+          "title": "磁盘类型与容量摘要（如云盘类型、多盘拼接说明）"
         }
       }
     },

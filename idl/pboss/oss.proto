@@ -15,6 +15,16 @@ message OssInstance {
   string bucket_name = 3;
   // 区域
   string location = 4;
+  // 创建时间（RFC3339）
+  string creation_time = 5;
+  // 桶类型（如华为 OBS 的 OBJECT/FS 等）
+  string bucket_type = 6;
+  // 存储类别（如标准、低频等，以云厂商返回为准）
+  string storage_class = 7;
+  // 所有者 ID
+  string owner_id = 8;
+  // 所有者显示名
+  string owner_display_name = 9;
 }
 
 message ListDetailReq {
@@ -55,6 +65,7 @@ message ListResp {
   repeated OssInstance osses = 1;
 }
 
+message ListAllReq {}
 
 // OSS类产品接口
 // 阿里云 - OSS
@@ -72,6 +83,14 @@ service OssService {
   rpc ListOss(ListReq) returns (ListResp) {
     option (google.api.http) = {
       post : "/apis/oss"
+      body : "*"
+    };
+  }
+
+  // 查询 OSS 全量 - 聚合所有已配置云账号
+  rpc ListOssAll(ListAllReq) returns (ListResp) {
+    option (google.api.http) = {
+      post : "/apis/oss/all"
       body : "*"
     };
   }

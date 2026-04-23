@@ -2,6 +2,8 @@ package ecser
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
@@ -41,6 +43,31 @@ func newTencentCvmClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecse
 	}, nil
 }
 
+func tencentDiskInfo(v *cvm.Instance) (sysGB, dataGB int32, summary string) {
+	var parts []string
+	if v.SystemDisk != nil && v.SystemDisk.DiskSize != nil {
+		sysGB = int32(*v.SystemDisk.DiskSize)
+		dt := ""
+		if v.SystemDisk.DiskType != nil {
+			dt = *v.SystemDisk.DiskType
+		}
+		parts = append(parts, fmt.Sprintf("系统盘:%dGB(%s)", sysGB, dt))
+	}
+	for _, dd := range v.DataDisks {
+		if dd == nil || dd.DiskSize == nil {
+			continue
+		}
+		sz := int32(*dd.DiskSize)
+		dataGB += sz
+		dt := ""
+		if dd.DiskType != nil {
+			dt = *dd.DiskType
+		}
+		parts = append(parts, fmt.Sprintf("数据盘:%dGB(%s)", sz, dt))
+	}
+	return sysGB, dataGB, strings.Join(parts, "; ")
+}
+
 func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
 	request := cvm.NewDescribeInstancesRequest()
 	request.Offset = common.Int64Ptr(int64((req.PageNumber - 1) * req.PageSize))
@@ -60,28 +87,32 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 		if v.OsName != nil {
 			osName = *v.OsName
 		}
+		sysGB, dataGB, dsum := tencentDiskInfo(v)
 		ecses[k] = &pbecs.EcsInstance{
-			Provider:        pbtenant.CloudProvider_tencent,
-			AccountName:     ecs.tenanter.AccountName(),
-			InstanceId:      *v.InstanceId,
-			InstanceName:    *v.InstanceName,
-			RegionName:      ecs.region.GetName(),
-			PublicIps:       make([]string, len(v.PublicIpAddresses)),
-			InstanceType:    *v.InstanceType,
-			Cpu:             int32(*v.CPU),
-			Memory:          int32(*v.Memory),
-			Description:     "",
-			Status:          *v.InstanceState,
-			CreationTime:    *v.CreatedTime,
-			ExpireTime:      *v.ExpiredTime,
-			InnerIps:        make([]string, len(v.PrivateIpAddresses)),
-			VpcId:           *v.VirtualPrivateCloud.VpcId,
-			ResourceGroupId: "",
-			ChargeType:      *v.InstanceChargeType,
-			ImageId:         imageID,
-			ImageName:       osName,
-			OsType:          "",
-			OsBit:           "",
+			Provider:         pbtenant.CloudProvider_tencent,
+			AccountName:      ecs.tenanter.AccountName(),
+			InstanceId:       *v.InstanceId,
+			InstanceName:     *v.InstanceName,
+			RegionName:       ecs.region.GetName(),
+			PublicIps:        make([]string, len(v.PublicIpAddresses)),
+			InstanceType:     *v.InstanceType,
+			Cpu:              int32(*v.CPU),
+			Memory:           int32(*v.Memory),
+			Description:      "",
+			Status:           *v.InstanceState,
+			CreationTime:     *v.CreatedTime,
+			ExpireTime:       *v.ExpiredTime,
+			InnerIps:         make([]string, len(v.PrivateIpAddresses)),
+			VpcId:            *v.VirtualPrivateCloud.VpcId,
+			ResourceGroupId:  "",
+			ChargeType:       *v.InstanceChargeType,
+			ImageId:          imageID,
+			ImageName:        osName,
+			OsType:           "",
+			OsBit:            "",
+			SystemDiskSizeGb: sysGB,
+			DataDiskTotalGb:  dataGB,
+			DiskSummary:      dsum,
 		}
 		for k1, v1 := range v.PublicIpAddresses {
 			ecses[k].PublicIps[k1] = *v1

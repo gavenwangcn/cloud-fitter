@@ -49,6 +49,39 @@
         ]
       }
     },
+    "/apis/oss/all": {
+      "post": {
+        "summary": "查询 OSS 全量 - 聚合所有已配置云账号",
+        "operationId": "OssService_ListOssAll",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbossListResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbossListAllReq"
+            }
+          }
+        ],
+        "tags": [
+          "OssService"
+        ]
+      }
+    },
     "/apis/oss/detail": {
       "post": {
         "summary": "查询OSS明细  - 支持云类型、账户、分页等过滤条件",
@@ -84,6 +117,9 @@
     }
   },
   "definitions": {
+    "pbossListAllReq": {
+      "type": "object"
+    },
     "pbossListDetailReq": {
       "type": "object",
       "properties": {
@@ -186,6 +222,26 @@
         "location": {
           "type": "string",
           "title": "区域"
+        },
+        "creationTime": {
+          "type": "string",
+          "title": "创建时间（RFC3339）"
+        },
+        "bucketType": {
+          "type": "string",
+          "title": "桶类型（如华为 OBS 的 OBJECT/FS 等）"
+        },
+        "storageClass": {
+          "type": "string",
+          "title": "存储类别（如标准、低频等，以云厂商返回为准）"
+        },
+        "ownerId": {
+          "type": "string",
+          "title": "所有者 ID"
+        },
+        "ownerDisplayName": {
+          "type": "string",
+          "title": "所有者显示名"
         }
       }
     },

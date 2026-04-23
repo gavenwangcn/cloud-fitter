@@ -13,3 +13,7 @@ func (s *Server) ListOssDetail(ctx context.Context, req *pboss.ListDetailReq) (*
 func (s *Server) ListOss(ctx context.Context, req *pboss.ListReq) (*pboss.ListResp, error) {
 	return &pboss.ListResp{}, nil
 }
+
+func (s *Server) ListOssAll(ctx context.Context, req *pboss.ListAllReq) (*pboss.ListResp, error) {
+	return &pboss.ListResp{}, nil
+}

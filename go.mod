@@ -31,6 +31,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.3.0 // indirect
 	github.com/aws/smithy-go v1.4.0 // indirect
 	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
+	github.com/huaweicloud/huaweicloud-sdk-go-obs v3.24.9+incompatible // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.10 // indirect
 	github.com/kr/text v0.2.0 // indirect

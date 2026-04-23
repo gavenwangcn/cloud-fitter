@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion7
 const (
 	OssService_ListOssDetail_FullMethodName = "/pboss.OssService/ListOssDetail"
 	OssService_ListOss_FullMethodName       = "/pboss.OssService/ListOss"
+	OssService_ListOssAll_FullMethodName    = "/pboss.OssService/ListOssAll"
 )
 
 // OssServiceClient is the client API for OssService service.
@@ -31,6 +32,8 @@ type OssServiceClient interface {
 	ListOssDetail(ctx context.Context, in *ListDetailReq, opts ...grpc.CallOption) (*ListDetailResp, error)
 	// 查询OSS全量 - 根据云类型
 	ListOss(ctx context.Context, in *ListReq, opts ...grpc.CallOption) (*ListResp, error)
+	// 查询 OSS 全量 - 聚合所有已配置云账号
+	ListOssAll(ctx context.Context, in *ListAllReq, opts ...grpc.CallOption) (*ListResp, error)
 }
 
 type ossServiceClient struct {
@@ -59,6 +62,15 @@ func (c *ossServiceClient) ListOss(ctx context.Context, in *ListReq, opts ...grp
 	return out, nil
 }
 
+func (c *ossServiceClient) ListOssAll(ctx context.Context, in *ListAllReq, opts ...grpc.CallOption) (*ListResp, error) {
+	out := new(ListResp)
+	err := c.cc.Invoke(ctx, OssService_ListOssAll_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OssServiceServer is the server API for OssService service.
 // All implementations must embed UnimplementedOssServiceServer
 // for forward compatibility
@@ -67,6 +79,8 @@ type OssServiceServer interface {
 	ListOssDetail(context.Context, *ListDetailReq) (*ListDetailResp, error)
 	// 查询OSS全量 - 根据云类型
 	ListOss(context.Context, *ListReq) (*ListResp, error)
+	// 查询 OSS 全量 - 聚合所有已配置云账号
+	ListOssAll(context.Context, *ListAllReq) (*ListResp, error)
 	mustEmbedUnimplementedOssServiceServer()
 }
 
@@ -79,6 +93,9 @@ func (UnimplementedOssServiceServer) ListOssDetail(context.Context, *ListDetailR
 }
 func (UnimplementedOssServiceServer) ListOss(context.Context, *ListReq) (*ListResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListOss not implemented")
+}
+func (UnimplementedOssServiceServer) ListOssAll(context.Context, *ListAllReq) (*ListResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOssAll not implemented")
 }
 func (UnimplementedOssServiceServer) mustEmbedUnimplementedOssServiceServer() {}
 
@@ -129,6 +146,24 @@ func _OssService_ListOss_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OssService_ListOssAll_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAllReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OssServiceServer).ListOssAll(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OssService_ListOssAll_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OssServiceServer).ListOssAll(ctx, req.(*ListAllReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OssService_ServiceDesc is the grpc.ServiceDesc for OssService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -143,6 +178,10 @@ var OssService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListOss",
 			Handler:    _OssService_ListOss_Handler,
+		},
+		{
+			MethodName: "ListOssAll",
+			Handler:    _OssService_ListOssAll_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
