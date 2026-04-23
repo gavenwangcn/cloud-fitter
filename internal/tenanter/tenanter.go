@@ -77,7 +77,18 @@ func ShowConfigJson() ([]byte, error) {
 func load(configs *pbtenant.CloudConfigs) error {
 	gStore.Lock()
 	defer gStore.Unlock()
+	return applyConfigsLocked(configs)
+}
 
+// ReloadFromConfigs 清空内存中的租户映射后按 configs 重新加载（用于 SQLite 或动态更新）。
+func ReloadFromConfigs(configs *pbtenant.CloudConfigs) error {
+	gStore.Lock()
+	defer gStore.Unlock()
+	gStore.stores = make(map[pbtenant.CloudProvider][]Tenanter)
+	return applyConfigsLocked(configs)
+}
+
+func applyConfigsLocked(configs *pbtenant.CloudConfigs) error {
 	var skipped int
 	for _, c := range configs.Configs {
 		if c.AccessId != "" && c.AccessSecret != "" {

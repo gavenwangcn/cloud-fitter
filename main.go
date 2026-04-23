@@ -21,7 +21,9 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbstatistic"
+	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/server"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -31,7 +33,7 @@ var (
 	grpcServerEndpoint = flag.String("grpc-server-endpoint", ":9091", "gRPC server endpoint")
 )
 
-func run() error {
+func run(store *configstore.Store) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -60,11 +62,31 @@ func run() error {
 		return errors.Wrap(err, "RegisterBillingServiceHandlerFromEndpoint error")
 	}
 
+	reloadTenants := func() error {
+		cfg, err := store.ToCloudConfigs()
+		if err != nil {
+			return err
+		}
+		return tenanter.ReloadFromConfigs(cfg)
+	}
+	configHandler := configstore.HTTPHandler(store, reloadTenants)
+
 	// Start HTTP server (grpc-gateway JSON API，与容器/compose 暴露端口 9090 一致)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		glog.Infof("http %s %s", r.Method, r.URL.RequestURI())
-		mux.ServeHTTP(w, r)
+		switch {
+		case r.URL.Path == "/apis/configs" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+			configHandler.ServeHTTP(w, r)
+		case r.URL.Path == "/apis/ecs/by-account" && r.Method == http.MethodPost:
+			jsonapi.EcsByAccount(w, r)
+		case r.URL.Path == "/apis/rds/by-account" && r.Method == http.MethodPost:
+			jsonapi.RdsByAccount(w, r)
+		case r.URL.Path == "/apis/redis/by-account" && r.Method == http.MethodPost:
+			jsonapi.RedisByAccount(w, r)
+		default:
+			mux.ServeHTTP(w, r)
+		}
 		glog.Infof("http %s %s done in %v", r.Method, r.URL.RequestURI(), time.Since(start))
 	})
 	return http.ListenAndServe(":9090", h)
@@ -72,18 +94,40 @@ func run() error {
 
 func main() {
 	var configFile string
+	var sqlitePath string
 	flag.StringVar(&configFile, "conf", "config.yaml", "config file path")
+	flag.StringVar(&sqlitePath, "sqlitedb", "cloud-fitter.db", "sqlite database path for cloud account configs")
 	flag.Parse()
 	defer glog.Flush()
 
-	if err := tenanter.LoadCloudConfigsFromFile(configFile); err != nil {
-		if !errors.Is(err, tenanter.ErrLoadTenanterFileEmpty) {
-			glog.Fatalf("LoadCloudConfigsFromFile error %+v", err)
-		}
-		glog.Warningf("LoadCloudConfigsFromFile empty file path %s", configFile)
+	store, err := configstore.Open(sqlitePath)
+	if err != nil {
+		glog.Fatalf("open sqlite %s: %v", sqlitePath, err)
 	}
+	defer store.Close()
 
-	glog.Infof("load tenant from file finished")
+	n, err := store.Count()
+	if err != nil {
+		glog.Fatalf("sqlite count: %v", err)
+	}
+	if n > 0 {
+		cfg, err := store.ToCloudConfigs()
+		if err != nil {
+			glog.Fatalf("sqlite ToCloudConfigs: %v", err)
+		}
+		if err := tenanter.ReloadFromConfigs(cfg); err != nil {
+			glog.Fatalf("ReloadFromConfigs: %v", err)
+		}
+		glog.Infof("loaded %d cloud config row(s) from sqlite %s", n, sqlitePath)
+	} else {
+		if err := tenanter.LoadCloudConfigsFromFile(configFile); err != nil {
+			if !errors.Is(err, tenanter.ErrLoadTenanterFileEmpty) {
+				glog.Fatalf("LoadCloudConfigsFromFile error %+v", err)
+			}
+			glog.Warningf("LoadCloudConfigsFromFile empty file path %s", configFile)
+		}
+		glog.Infof("sqlite empty: load tenant from yaml if present")
+	}
 
 	go func() {
 		lis, err := net.Listen("tcp", ":9091")
@@ -107,7 +151,7 @@ func main() {
 		}
 	}()
 
-	if err := run(); err != nil {
+	if err := run(store); err != nil {
 		glog.Fatal(err)
 	}
 }

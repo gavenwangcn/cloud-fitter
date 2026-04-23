@@ -6,3 +6,11 @@ export async function queryAllRds() {
     data: {},
   });
 }
+
+export async function queryRdsByAccount(provider: number, accountName: string) {
+  return request('/apis/rds/by-account', {
+    method: 'POST',
+    data: { provider, accountName },
+    timeout: 120000,
+  });
+}

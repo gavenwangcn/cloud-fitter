@@ -6,6 +6,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/service/rdser"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 	"github.com/golang/glog"
@@ -49,6 +50,19 @@ func List(ctx context.Context, req *pbrds.ListReq) (*pbrds.ListResp, error) {
 	tenanters, err := tenanter.GetTenanters(req.Provider)
 	if err != nil {
 		return nil, errors.WithMessage(err, "getTenanters error")
+	}
+
+	if acc := scope.AccountName(ctx); acc != "" {
+		var filtered []tenanter.Tenanter
+		for _, t := range tenanters {
+			if t.AccountName() == acc {
+				filtered = append(filtered, t)
+			}
+		}
+		tenanters = filtered
+	}
+	if len(tenanters) == 0 {
+		return nil, errors.Errorf("no tenants for provider %v account %q", req.Provider, scope.AccountName(ctx))
 	}
 
 	regions := tenanter.GetAllRegionIds(req.Provider)

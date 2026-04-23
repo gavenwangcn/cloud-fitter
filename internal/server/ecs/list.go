@@ -9,6 +9,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/service/ecser"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -56,6 +57,19 @@ func List(ctx context.Context, req *pbecs.ListReq) (*pbecs.ListResp, error) {
 	if err != nil {
 		glog.Warningf("ecs List provider=%s: no tenants (%v); skip", pname, err)
 		return nil, errors.WithMessage(err, "getTenanters error")
+	}
+
+	if acc := scope.AccountName(ctx); acc != "" {
+		var filtered []tenanter.Tenanter
+		for _, t := range tenanters {
+			if t.AccountName() == acc {
+				filtered = append(filtered, t)
+			}
+		}
+		tenanters = filtered
+	}
+	if len(tenanters) == 0 {
+		return nil, errors.Errorf("no tenants for provider %s account %q", pname, scope.AccountName(ctx))
 	}
 
 	regions := tenanter.GetAllRegionIds(req.Provider)

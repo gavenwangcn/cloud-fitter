@@ -20,6 +20,10 @@ export default [
         component: './dcs',
       },
       {
+        path: '/config',
+        component: './config',
+      },
+      {
         path: '/home',
         redirect: '/ecs',
       },

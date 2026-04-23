@@ -7,3 +7,11 @@ export async function queryAllDcs() {
     data: {},
   });
 }
+
+export async function queryDcsByAccount(provider: number, accountName: string) {
+  return request('/apis/redis/by-account', {
+    method: 'POST',
+    data: { provider, accountName },
+    timeout: 120000,
+  });
+}

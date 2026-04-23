@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useModel } from '@@/plugin-model/useModel';
 import { connect } from 'umi';
+import CloudAccountBar from '@/components/CloudAccountBar';
 import FullResourceTable from '@/components/FullResourceTable';
 import { ECS_FIELDS } from '@/constants/resourceFields';
 import { EcsPageState } from './model';
@@ -8,10 +9,16 @@ import { EcsPageState } from './model';
 interface EcsPageProps {
   ecsPage: EcsPageState;
   loading?: boolean;
-  fetchAll: () => void;
+  fetchByAccount: (p: { provider: number; accountName: string }) => void;
+  clearTable: () => void;
 }
 
-const EcsPage: React.FC<EcsPageProps> = ({ ecsPage, loading, fetchAll }) => {
+const EcsPage: React.FC<EcsPageProps> = ({
+  ecsPage,
+  loading,
+  fetchByAccount,
+  clearTable,
+}) => {
   const { setBreadcrumb } = useModel('layout');
 
   useEffect(() => {
@@ -19,11 +26,14 @@ const EcsPage: React.FC<EcsPageProps> = ({ ecsPage, loading, fetchAll }) => {
       isBack: false,
       title: 'ECS',
     });
-    fetchAll();
   }, []);
 
   return (
     <div className="pageContent">
+      <CloudAccountBar
+        onQuery={(provider, accountName) => fetchByAccount({ provider, accountName })}
+        onClear={clearTable}
+      />
       <FullResourceTable
         resourceLabel="ECS"
         fields={ECS_FIELDS}
@@ -37,9 +47,13 @@ const EcsPage: React.FC<EcsPageProps> = ({ ecsPage, loading, fetchAll }) => {
 export default connect(
   ({ ecsPage, loading }: any) => ({
     ecsPage,
-    loading: loading.effects['ecsPage/fetchAll'],
+    loading: loading.effects['ecsPage/fetchByAccount'],
   }),
   {
-    fetchAll: () => ({ type: 'ecsPage/fetchAll' }),
+    fetchByAccount: (payload: { provider: number; accountName: string }) => ({
+      type: 'ecsPage/fetchByAccount',
+      payload,
+    }),
+    clearTable: () => ({ type: 'ecsPage/resetTable' }),
   },
 )(EcsPage);

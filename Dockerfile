@@ -33,10 +33,11 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /cloud-fitter ./cloud-fitter
 
-RUN mkdir -p log config
+RUN mkdir -p log config data
 
 EXPOSE 9090 9091
 
 # 配置需挂载：docker run -v /your/config_dir:/app/config/ ...（目录内放 config.yaml）
+# SQLite 账号配置默认 data/cloud-fitter.db，可挂载 -v /your/data:/app/data
 # -logtostderr 便于 docker logs 查看；与 glog.Infof 等配合排查 API/云同步问题
-ENTRYPOINT ["./cloud-fitter", "-conf=config/config.yaml", "-log_dir=log/", "-logtostderr=true", "-stderrthreshold=INFO"]
+ENTRYPOINT ["./cloud-fitter", "-conf=config/config.yaml", "-sqlitedb=data/cloud-fitter.db", "-log_dir=log/", "-logtostderr=true", "-stderrthreshold=INFO"]
