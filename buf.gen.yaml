@@ -1,16 +1,17 @@
-version: v1beta1
+version: v1
 plugins:
-  - name: go
+  # 版本与仓库既有 grpc-gateway v2.3 / protobuf 生成风格尽量接近，降低与当前 go.mod 不兼容概率
+  - plugin: buf.build/protocolbuffers/go:v1.28.1
     out: gen
     opt:
       - paths=source_relative
-  - name: go-grpc
+  - plugin: buf.build/grpc/go:v1.3.0
     out: gen
     opt:
       - paths=source_relative
-  - name: grpc-gateway
+  - plugin: buf.build/grpc-ecosystem/grpc-gateway:v2.3.0
     out: gen
     opt:
       - paths=source_relative
-  - name: openapiv2
+  - plugin: buf.build/grpc-ecosystem/openapiv2:v2.3.0
     out: gen/openapiv2

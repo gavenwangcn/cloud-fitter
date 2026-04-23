@@ -8,6 +8,7 @@
 # 准备配置：在本仓库根目录复制 config_template.yaml 为 config.yaml 并填写云账号
 #
 # 启动：docker compose up -d --build
+# 说明：api 镜像构建时会执行 buf generate（见 Dockerfile），仅改 idl/ 也会得到新 gen/ 再编译
 # 访问：http://localhost:8080  （前端）；API 经 Nginx /apis 转发至 api:9090；宿主机与容器端口一致
 
 services:

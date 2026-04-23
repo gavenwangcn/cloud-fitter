@@ -1,4 +1,12 @@
-# 构建阶段：使用当前主流 Go（与 go.mod / toolchain 对齐；可按需改为固定补丁版本如 1.23.4-alpine）
+# 阶段 1：仅根据 idl/ 生成 gen/（改 proto 后无需在宿主机先跑 gen.sh 也可构建）
+FROM bufbuild/buf:1.28.1 AS codegen
+WORKDIR /workspace
+COPY buf.yaml buf.gen.yaml ./
+COPY idl ./idl/
+# 拉取 buf 依赖并生成 Go / gateway 代码（构建期需能访问 buf.build）
+RUN buf generate
+
+# 阶段 2：Go 编译（用生成结果覆盖上下文中的 gen/）
 FROM golang:1.23-alpine AS builder
 
 ENV GO111MODULE=on \
@@ -11,6 +19,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=codegen /workspace/gen ./gen
 # 显式输出名，避免依赖默认命名规则；strip 符号表减小体积
 RUN go build -ldflags="-s -w" -o /cloud-fitter .
 

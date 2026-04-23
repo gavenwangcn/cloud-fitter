@@ -2,7 +2,7 @@
 
 ## 后端（本仓库根目录 `Dockerfile`）
 
-多阶段构建 Go 服务，运行时需挂载 `config.yaml`：
+多阶段构建：**先**用 `bufbuild/buf` 根据 `idl/` 生成 `gen/`（构建机需能访问 `buf.build`），**再**编译 Go。`.dockerignore` 会排除宿主机上的 `gen/`，避免与镜像内生成结果不一致。运行时需挂载 `config.yaml`：
 
 ```bash
 cp config_template.yaml config.yaml

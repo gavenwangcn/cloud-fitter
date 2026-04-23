@@ -1,5 +1,7 @@
 .git
 .gitignore
+# 镜像内由 buf 根据 idl/ 重新生成，避免使用宿主机过时 gen/
+gen
 **/.idea
 **/.vscode
 *.exe
