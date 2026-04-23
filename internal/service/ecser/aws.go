@@ -61,13 +61,25 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 	var ecses []*pbecs.EcsInstance
 	for _, v := range resp.Reservations {
 		for _, v2 := range v.Instances {
+			imageID := ""
+			if v2.ImageId != nil {
+				imageID = *v2.ImageId
+			}
+			osType := ""
+			if v2.Platform != nil {
+				osType = string(*v2.Platform)
+			}
+			pub := ""
+			if v2.PublicIpAddress != nil {
+				pub = *v2.PublicIpAddress
+			}
 			ecses = append(ecses, &pbecs.EcsInstance{
 				Provider:     pbtenant.CloudProvider_aws,
 				AccountName:  ecs.tenanter.AccountName(),
 				InstanceId:   *v2.InstanceId,
 				InstanceName: "",
 				RegionName:   ecs.region.GetName(),
-				PublicIps:    []string{*v2.PublicIpAddress},
+				PublicIps:    []string{pub},
 				InstanceType: string(v2.InstanceType),
 				Cpu:          v2.CpuOptions.CoreCount,
 				Memory:       0,
@@ -75,6 +87,10 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 				Status:       string(v2.State.Name),
 				CreationTime: "",
 				ExpireTime:   "",
+				ImageId:      imageID,
+				ImageName:    "",
+				OsType:       osType,
+				OsBit:        "",
 			})
 		}
 

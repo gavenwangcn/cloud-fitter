@@ -41,6 +41,14 @@ message EcsInstance {
   string resource_group_id = 16;
   // 收费类型
   string charge_type = 17;
+  // 镜像 ID
+  string image_id = 18;
+  // 镜像/操作系统名称（如华为 metadata.image_name、阿里云 OSName）
+  string image_name = 19;
+  // 操作系统类型（如 Linux、Windows）
+  string os_type = 20;
+  // 操作系统位数（如 32、64）
+  string os_bit = 21;
 }
 
 message ListDetailReq {

@@ -52,6 +52,14 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 
 	var ecses = make([]*pbecs.EcsInstance, len(resp.Response.InstanceSet))
 	for k, v := range resp.Response.InstanceSet {
+		imageID := ""
+		if v.ImageId != nil {
+			imageID = *v.ImageId
+		}
+		osName := ""
+		if v.OsName != nil {
+			osName = *v.OsName
+		}
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:        pbtenant.CloudProvider_tencent,
 			AccountName:     ecs.tenanter.AccountName(),
@@ -70,6 +78,10 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 			VpcId:           *v.VirtualPrivateCloud.VpcId,
 			ResourceGroupId: "",
 			ChargeType:      *v.InstanceChargeType,
+			ImageId:         imageID,
+			ImageName:       osName,
+			OsType:          "",
+			OsBit:           "",
 		}
 		for k1, v1 := range v.PublicIpAddresses {
 			ecses[k].PublicIps[k1] = *v1

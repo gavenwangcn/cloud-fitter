@@ -77,6 +77,10 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			VpcId:           v.VpcAttributes.VpcId,
 			ResourceGroupId: v.ResourceGroupId,
 			ChargeType:      v.InstanceChargeType,
+			ImageId:         v.ImageId,
+			ImageName:       v.OSName,
+			OsType:          v.OSType,
+			OsBit:           "",
 		}
 	}
 

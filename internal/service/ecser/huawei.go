@@ -166,6 +166,25 @@ func huaweiMetadataChargeType(m map[string]string) string {
 	}
 }
 
+func huaweiECSImageID(v *model.ServerDetail) string {
+	if v.Image != nil && v.Image.Id != "" {
+		return v.Image.Id
+	}
+	if v.Metadata != nil {
+		if id := v.Metadata["metering.image_id"]; id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+func huaweiMetadataGet(m map[string]string, key string) string {
+	if m == nil {
+		return ""
+	}
+	return m[key]
+}
+
 func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
 	request := new(model.ListServersDetailsRequest)
 	offset := (req.PageNumber - 1) * req.PageSize
@@ -208,6 +227,10 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			VpcId:           huaweiMetadataVPC(v.Metadata),
 			ResourceGroupId: resourceGroup,
 			ChargeType:      huaweiMetadataChargeType(v.Metadata),
+			ImageId:         huaweiECSImageID(&v),
+			ImageName:       huaweiMetadataGet(v.Metadata, "image_name"),
+			OsType:          huaweiMetadataGet(v.Metadata, "os_type"),
+			OsBit:           huaweiMetadataGet(v.Metadata, "os_bit"),
 		}
 	}
 
