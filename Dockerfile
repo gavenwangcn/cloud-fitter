@@ -38,4 +38,5 @@ RUN mkdir -p log config
 EXPOSE 9090 9091
 
 # 配置需挂载：docker run -v /your/config_dir:/app/config/ ...（目录内放 config.yaml）
-ENTRYPOINT ["./cloud-fitter", "-conf=config/config.yaml", "-log_dir=log/"]
+# -logtostderr 便于 docker logs 查看；与 glog.Infof 等配合排查 API/云同步问题
+ENTRYPOINT ["./cloud-fitter", "-conf=config/config.yaml", "-log_dir=log/", "-logtostderr=true", "-stderrthreshold=INFO"]

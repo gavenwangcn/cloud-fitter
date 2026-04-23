@@ -11,6 +11,8 @@ docker build -t cloud-fitter-app:local .
 docker run --rm -p 9090:9090 -p 9091:9091 -v "$PWD/config.yaml:/app/config/config.yaml:ro" cloud-fitter-app:local
 ```
 
+排查首页 ECS 无数据：看后端日志（已输出到 stderr，Compose 下可 `docker logs -f cloud-fitter-app`）。关注 `loaded cloud`、`ecs List` / `ListAll`、`no cloud accounts loaded`、`ListDetail error` 等行。
+
 ## 前端（cloud-fitter-web）
 
 **前端以源码形式放在本仓库 `cloud-fitter-web/` 目录，与后端一并提交**（勿只提交 submodule 指针或外链而不含实际文件；`node_modules/`、`dist/` 等见根目录 `.gitignore`）。

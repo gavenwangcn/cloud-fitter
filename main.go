@@ -5,6 +5,7 @@ import (
 	"flag"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -60,7 +61,13 @@ func run() error {
 	}
 
 	// Start HTTP server (grpc-gateway JSON API，与容器/compose 暴露端口 9090 一致)
-	return http.ListenAndServe(":9090", mux)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		glog.Infof("http %s %s", r.Method, r.URL.RequestURI())
+		mux.ServeHTTP(w, r)
+		glog.Infof("http %s %s done in %v", r.Method, r.URL.RequestURI(), time.Since(start))
+	})
+	return http.ListenAndServe(":9090", h)
 }
 
 func main() {

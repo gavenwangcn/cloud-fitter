@@ -47,12 +47,19 @@ func List(ctx context.Context, req *pbecs.ListReq) (*pbecs.ListResp, error) {
 		ecses []*pbecs.EcsInstance
 	)
 
+	pname := pbtenant.CloudProvider_name[int32(req.Provider)]
+	if pname == "" {
+		pname = req.Provider.String()
+	}
+
 	tenanters, err := tenanter.GetTenanters(req.Provider)
 	if err != nil {
+		glog.Warningf("ecs List provider=%s: no tenants (%v); skip", pname, err)
 		return nil, errors.WithMessage(err, "getTenanters error")
 	}
 
 	regions := tenanter.GetAllRegionIds(req.Provider)
+	glog.Infof("ecs List provider=%s accounts=%d regions=%d (goroutines=%d)", pname, len(tenanters), len(regions), len(tenanters)*len(regions))
 
 	wg.Add(len(tenanters) * len(regions))
 	for _, t := range tenanters {
@@ -93,6 +100,7 @@ func List(ctx context.Context, req *pbecs.ListReq) (*pbecs.ListResp, error) {
 	}
 	wg.Wait()
 
+	glog.Infof("ecs List provider=%s done total_instances=%d", pname, len(ecses))
 	return &pbecs.ListResp{Ecses: ecses}, nil
 }
 
@@ -103,24 +111,29 @@ func ListAll(ctx context.Context) (*pbecs.ListResp, error) {
 		ecses []*pbecs.EcsInstance
 	)
 
+	glog.Infof("ecs ListAll: aggregating all providers (%d)", len(pbtenant.CloudProvider_name))
 	wg.Add(len(pbtenant.CloudProvider_name))
 	for k := range pbtenant.CloudProvider_name {
 		go func(provider int32) {
 			defer wg.Done()
 
+			pname := pbtenant.CloudProvider_name[provider]
 			resp, err := List(ctx, &pbecs.ListReq{Provider: pbtenant.CloudProvider(provider)})
 			if err != nil {
-				glog.Errorf("List error %v", err)
+				glog.Warningf("ecs ListAll provider=%s: %v", pname, err)
 				return
 			}
 
 			mutex.Lock()
+			n := len(resp.Ecses)
 			ecses = append(ecses, resp.Ecses...)
 			mutex.Unlock()
+			glog.Infof("ecs ListAll provider=%s instances=%d", pname, n)
 		}(k)
 	}
 
 	wg.Wait()
 
+	glog.Infof("ecs ListAll finished total_instances=%d", len(ecses))
 	return &pbecs.ListResp{Ecses: ecses}, nil
 }

@@ -30,10 +30,12 @@ func (s *Server) ListEcs(ctx context.Context, req *pbecs.ListReq) (*pbecs.ListRe
 }
 
 func (s *Server) ListEcsAll(ctx context.Context, req *pbecs.ListAllReq) (*pbecs.ListResp, error) {
+	glog.Infof("grpc/http ListEcsAll begin")
 	resp, err := ecs.ListAll(ctx)
 	if err != nil {
 		glog.Errorf("ListEcsAll error %+v", err)
 		return nil, status.Errorf(codes.Internal, err.Error())
 	}
+	glog.Infof("grpc/http ListEcsAll ok instances=%d", len(resp.Ecses))
 	return resp, nil
 }
