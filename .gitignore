@@ -30,3 +30,6 @@ go.sum
 config.yaml
 
 log/
+
+# 可选：在仓库根目录克隆前端以便 compose 默认路径可用（勿提交子仓库内容）
+cloud-fitter-web/

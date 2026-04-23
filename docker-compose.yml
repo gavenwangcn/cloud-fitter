@@ -1,9 +1,8 @@
 # 整体启动后端 cloud-fitter + 前端 cloud-fitter-web
 #
-# 目录约定（与 README 一致）：
-#   work/
-#     cloud-fitter/       ← 本仓库，在此目录执行 docker compose
-#     cloud-fitter-web/   ← https://github.com/cloud-fitter/cloud-fitter-web
+# 前端源码目录（相对本文件所在目录 = 仓库根）：
+#   默认 ./cloud-fitter-web  （在 cloud-fitter 仓库内再克隆前端，见 deploy/README）
+#   若前端与后端同级目录，可：export CLOUD_FITTER_WEB_DIR=../cloud-fitter-web
 #
 # 准备配置：在本仓库根目录复制 config_template.yaml 为 config.yaml 并填写云账号
 #
@@ -27,7 +26,7 @@ services:
 
   web:
     build:
-      context: ${CLOUD_FITTER_WEB_DIR:-../cloud-fitter-web}
+      context: ${CLOUD_FITTER_WEB_DIR:-./cloud-fitter-web}
       # 相对本 compose 文件所在目录（cloud-fitter 仓库根目录）
       dockerfile: ./deploy/web/Dockerfile
     image: cloud-fitter-web:local

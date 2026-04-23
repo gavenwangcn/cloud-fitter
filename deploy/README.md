@@ -19,12 +19,19 @@ docker run --rm -p 9090:9090 -p 9091:9091 -v "$PWD/config.yaml:/app/config/confi
 单独构建前端（将路径改为你的 `cloud-fitter-web` 克隆目录）：
 
 ```bash
+# 前端在子目录 ./cloud-fitter-web 时：
+docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local ./cloud-fitter-web
+# 或与后端同级目录时：
 docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local ../cloud-fitter-web
 ```
 
 ## 前后端一起启动
 
-1. 与 `cloud-fitter` **同级**克隆 [cloud-fitter-web](https://github.com/cloud-fitter/cloud-fitter-web)。
+1. 准备前端源码，任选一种布局：
+   - **推荐（与 compose 默认一致）**：在 **cloud-fitter 仓库根目录** 下克隆  
+     `git clone https://github.com/cloud-fitter/cloud-fitter-web.git cloud-fitter-web`
+   - **同级目录**：`../your-path/cloud-fitter` 与 `../your-path/cloud-fitter-web` 并列时，启动前执行  
+     `export CLOUD_FITTER_WEB_DIR=../cloud-fitter-web`（Windows 用 `set CLOUD_FITTER_WEB_DIR=...`）
 2. 在本仓库根目录准备好 `config.yaml`。
 3. 在 **cloud-fitter** 根目录执行：
 
@@ -34,15 +41,6 @@ docker compose up -d --build
 
 - 前端：<http://localhost:8080>（静态页 + `/apis` 反代到后端）
 - 后端 HTTP（grpc-gateway）：<http://localhost:9090>，gRPC：`9091`
-
-若前端仓库不在默认的 `../cloud-fitter-web`，可设置环境变量：
-
-```bash
-set CLOUD_FITTER_WEB_DIR=D:\path\to\cloud-fitter-web
-docker compose up -d --build
-```
-
-（Linux/macOS 使用 `export CLOUD_FITTER_WEB_DIR=...`。）
 
 ## Nginx 说明
 
