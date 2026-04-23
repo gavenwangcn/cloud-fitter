@@ -11,9 +11,6 @@ import (
 	hwecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
 	hwregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/region"
-	hwevs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2"
-	evsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2/model"
-	evsregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2/region"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	iamregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/region"
@@ -26,16 +23,14 @@ import (
 
 type HuaweiEcs struct {
 	cli      *hwecs.EcsClient
-	evs      *hwevs.EvsClient
 	region   tenanter.Region
 	tenanter tenanter.Tenanter
 }
 
 func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser, error) {
 	var (
-		client    *hwecs.EcsClient
-		evsClient *hwevs.EvsClient
-		err       error
+		client *hwecs.EcsClient
+		err    error
 	)
 
 	switch t := tenant.(type) {
@@ -55,8 +50,6 @@ func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
 		hcEcs := hwecs.EcsClientBuilder().WithRegion(hwregion.ValueOf(rName)).WithCredential(auth).Build()
 		client = hwecs.NewEcsClient(hcEcs)
-		hcEvs := hwevs.EvsClientBuilder().WithRegion(evsregion.ValueOf(rName)).WithCredential(auth).Build()
-		evsClient = hwevs.NewEvsClient(hcEvs)
 	default:
 	}
 
@@ -65,7 +58,6 @@ func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser
 	}
 	return &HuaweiEcs{
 		cli:      client,
-		evs:      evsClient,
 		region:   region,
 		tenanter: tenant,
 	}, nil
@@ -194,95 +186,50 @@ func huaweiMetadataGet(m map[string]string, key string) string {
 	return m[key]
 }
 
-func huaweiUniqNonEmpty(ids []string) []string {
-	seen := make(map[string]struct{})
-	var out []string
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
-	}
-	return out
-}
-
-func huaweiBootIndexIsZero(bi *string) bool {
-	if bi == nil {
-		return false
-	}
-	s := strings.TrimSpace(*bi)
-	return s == "0"
-}
-
-func huaweiIsBootVolume(att model.ServerExtendVolumeAttachment, vol *evsmodel.VolumeDetail) bool {
-	if vol != nil && strings.EqualFold(vol.Bootable, "true") {
-		return true
-	}
-	return huaweiBootIndexIsZero(att.BootIndex)
-}
-
-// huaweiDiskInfo 结合 ECS 挂载信息（volume id）与 EVS 云硬盘详情（size、bootable）。
-// 官方说明：ECS flavor.disk 常为 0 或无效；容量需查 EVS「查询所有云硬盘详情」接口。
-func huaweiDiskInfo(v *model.ServerDetail, volByID map[string]evsmodel.VolumeDetail) (sysGB, dataGB int32, summary string) {
+// huaweiDiskFromListServerBlockDevices 使用 ECS 磁盘管理 OpenAPI：
+// 「查询弹性云服务器挂载磁盘列表详情信息」ListServerBlockDevices
+// GET /v1/{project_id}/cloudservers/{server_id}/block_device
+// 响应 volumeAttachments 含 size（GB）、bootIndex（0 为系统盘）。见华为云 API 文档 ecs 磁盘管理。
+func huaweiDiskFromListServerBlockDevices(block *model.ListServerBlockDevicesResponse, flavor *model.ServerFlavor) (sysGB, dataGB int32, summary string) {
 	var parts []string
 	var sys int32
 	var dataSum int32
-	for _, att := range v.OsExtendedVolumesvolumesAttached {
-		if att.Id == "" {
-			continue
-		}
-		vol, ok := volByID[att.Id]
-		if !ok {
-			continue
-		}
-		if huaweiIsBootVolume(att, &vol) {
-			sys = vol.Size
-			parts = append(parts, fmt.Sprintf("系统盘:%dGB(%s)", vol.Size, vol.VolumeType))
-		} else {
-			dataSum += vol.Size
-			parts = append(parts, fmt.Sprintf("数据盘:%dGB(%s)", vol.Size, vol.VolumeType))
+	if block != nil && block.VolumeAttachments != nil {
+		for _, b := range *block.VolumeAttachments {
+			sz := int32(0)
+			if b.Size != nil {
+				sz = *b.Size
+			}
+			dev := ""
+			if b.Device != nil {
+				dev = *b.Device
+			}
+			isSys := b.BootIndex != nil && *b.BootIndex == 0
+			if isSys {
+				if sz > sys {
+					sys = sz
+				}
+				if dev != "" {
+					parts = append(parts, fmt.Sprintf("系统盘:%dGB(%s)", sz, dev))
+				} else {
+					parts = append(parts, fmt.Sprintf("系统盘:%dGB", sz))
+				}
+			} else {
+				dataSum += sz
+				if dev != "" {
+					parts = append(parts, fmt.Sprintf("数据盘:%dGB(%s)", sz, dev))
+				} else {
+					parts = append(parts, fmt.Sprintf("数据盘:%dGB", sz))
+				}
+			}
 		}
 	}
-	// flavor.disk 仅作兜底（文档称多数场景无效）
-	if sys == 0 && v.Flavor != nil && v.Flavor.Disk != "" {
-		if n, err := strconv.ParseInt(v.Flavor.Disk, 10, 32); err == nil && n > 0 {
+	if sys == 0 && flavor != nil && flavor.Disk != "" {
+		if n, err := strconv.ParseInt(flavor.Disk, 10, 32); err == nil && n > 0 {
 			sys = int32(n)
 		}
 	}
 	return sys, dataSum, strings.Join(parts, "; ")
-}
-
-func (ecs *HuaweiEcs) huaweiFetchVolumesByIDs(ids []string) map[string]evsmodel.VolumeDetail {
-	out := make(map[string]evsmodel.VolumeDetail)
-	if ecs.evs == nil || len(ids) == 0 {
-		return out
-	}
-	uniq := huaweiUniqNonEmpty(ids)
-	const batch = 40
-	lim := int32(1000)
-	for i := 0; i < len(uniq); i += batch {
-		end := i + batch
-		if end > len(uniq) {
-			end = len(uniq)
-		}
-		idParam := strings.Join(uniq[i:end], ",")
-		req := &evsmodel.ListVolumesRequest{
-			Ids:   &idParam,
-			Limit: &lim,
-		}
-		resp, err := ecs.evs.ListVolumes(req)
-		if err != nil || resp.Volumes == nil {
-			continue
-		}
-		for _, vol := range *resp.Volumes {
-			out[vol.Id] = vol
-		}
-	}
-	return out
 }
 
 func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
@@ -298,16 +245,6 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	}
 
 	servers := *resp.Servers
-	var volIDs []string
-	for _, v := range servers {
-		for _, a := range v.OsExtendedVolumesvolumesAttached {
-			if a.Id != "" {
-				volIDs = append(volIDs, a.Id)
-			}
-		}
-	}
-	volByID := ecs.huaweiFetchVolumesByIDs(volIDs)
-
 	ecses := make([]*pbecs.EcsInstance, len(servers))
 	for k, v := range servers {
 		desc := ""
@@ -319,7 +256,16 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 		if v.EnterpriseProjectId != nil {
 			resourceGroup = *v.EnterpriseProjectId
 		}
-		sysGB, dataGB, dsum := huaweiDiskInfo(&v, volByID)
+
+		var sysGB, dataGB int32
+		var dsum string
+		blkResp, blkErr := ecs.cli.ListServerBlockDevices(&model.ListServerBlockDevicesRequest{ServerId: v.Id})
+		if blkErr == nil {
+			sysGB, dataGB, dsum = huaweiDiskFromListServerBlockDevices(blkResp, v.Flavor)
+		} else {
+			sysGB, dataGB, dsum = huaweiDiskFromListServerBlockDevices(nil, v.Flavor)
+		}
+
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:         pbtenant.CloudProvider_huawei,
 			AccountName:      ecs.tenanter.AccountName(),
