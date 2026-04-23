@@ -23,8 +23,7 @@ buf.lock
 .idea/
 .vscode/
 
-# remove go sum
-go.sum
+# go.sum 应纳入版本库，保证依赖校验与可复现构建（勿再忽略）
 
 # config file
 config.yaml

@@ -15,7 +15,8 @@ ENV GO111MODULE=on \
 
 WORKDIR /src
 
-COPY go.mod go.sum ./
+# 仅复制 go.mod 即可下载依赖；部分 fork 未提交 go.sum 时避免 COPY 失败
+COPY go.mod ./
 RUN go mod download
 
 COPY . .
