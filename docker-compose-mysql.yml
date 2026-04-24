@@ -1,0 +1,76 @@
+# 使用已存在的 MySQL 作为配置/系统管理存储（不再使用 SQLite 文件）。
+# 1. 在 MySQL 中先创建空库（例如 CREATE DATABASE cloud_fitter CHARACTER SET utf8mb4;）
+# 2. 复制 env.mysql.example 为 .env 并填写 CLOUD_FITTER_MYSQL_*，并设置 CLOUD_FITTER_DB_DRIVER=mysql
+# 3. 容器访问「宿主机上的 MySQL」时：Windows/macOS 可用 host.docker.internal；Linux 可用宿主机 IP 或配 extra_hosts（见下方）
+#
+#   docker compose -f docker-compose-mysql.yml up -d --build
+#
+services:
+  init-mysql:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cloud-fitter-app:local
+    container_name: cloud-fitter-init-mysql
+    entrypoint: ["/app/init-mysql"]
+    env_file:
+      - .env
+    networks:
+      - app
+    restart: "no"
+    # 若 MySQL 在宿主机，且 Linux 上无法解析 host.docker.internal，可取消下一行注释：
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cloud-fitter-app:local
+    container_name: cloud-fitter-app-mysql
+    restart: unless-stopped
+    depends_on:
+      init-mysql:
+        condition: service_completed_successfully
+    environment:
+      CLOUD_FITTER_DB_DRIVER: ${CLOUD_FITTER_DB_DRIVER:-mysql}
+      CLOUD_FITTER_MYSQL_HOST: ${CLOUD_FITTER_MYSQL_HOST}
+      CLOUD_FITTER_MYSQL_PORT: ${CLOUD_FITTER_MYSQL_PORT:-3306}
+      CLOUD_FITTER_MYSQL_USER: ${CLOUD_FITTER_MYSQL_USER}
+      CLOUD_FITTER_MYSQL_PASSWORD: ${CLOUD_FITTER_MYSQL_PASSWORD}
+      CLOUD_FITTER_MYSQL_DATABASE: ${CLOUD_FITTER_MYSQL_DATABASE}
+      CLOUD_FITTER_ENV_TAG_KEY: ${CLOUD_FITTER_ENV_TAG_KEY:-}
+      CLOUD_FITTER_NODE_TAG_KEY: ${CLOUD_FITTER_NODE_TAG_KEY:-}
+      CLOUD_FITTER_CMDB_BASE_URL: ${CLOUD_FITTER_CMDB_BASE_URL:-}
+      CLOUD_FITTER_CMDB_KEY: ${CLOUD_FITTER_CMDB_KEY:-}
+      CLOUD_FITTER_CMDB_SECRET: ${CLOUD_FITTER_CMDB_SECRET:-}
+    networks:
+      - app
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    volumes:
+      - ./config.yaml:/app/config/config.yaml:ro
+
+  web:
+    profiles: [ "full" ]
+    build:
+      context: .
+      dockerfile: deploy/web/Dockerfile
+      args:
+        WEB_SUBDIR: ${CLOUD_FITTER_WEB_SUBDIR:-cloud-fitter-web}
+    image: cloud-fitter-web:local
+    container_name: cloud-fitter-web-mysql
+    restart: unless-stopped
+    depends_on:
+      - app
+    networks:
+      - app
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./deploy/web/nginx.compose.conf:/etc/nginx/conf.d/default.conf:ro
+
+networks:
+  app:
+    driver: bridge

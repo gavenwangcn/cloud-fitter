@@ -23,7 +23,8 @@ RUN go mod download
 COPY . .
 COPY --from=codegen /workspace/gen ./gen
 # 显式输出名，避免依赖默认命名规则；strip 符号表减小体积
-RUN go mod tidy && go build -ldflags="-s -w" -o /cloud-fitter .
+RUN go mod tidy && go build -ldflags="-s -w" -o /cloud-fitter . \
+	&& go build -ldflags="-s -w" -o /init-mysql ./cmd/init-mysql
 
 # 运行阶段：仅可执行文件 + 证书（访问各公有云 HTTPS API）
 FROM alpine:3.21
@@ -32,6 +33,7 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 COPY --from=builder /cloud-fitter ./cloud-fitter
+COPY --from=builder /init-mysql ./init-mysql
 
 RUN mkdir -p log config data
 

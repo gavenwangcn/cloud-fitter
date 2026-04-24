@@ -13,11 +13,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/configservice v1.4.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.5.0
 	github.com/aws/aws-sdk-go-v2/service/rds v1.4.0
+	github.com/go-sql-driver/mysql v1.9.3
 	github.com/go-yaml/yaml v2.1.0+incompatible
 	github.com/golang/glog v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.2
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.0.40-rc
+	github.com/joho/godotenv v1.5.1
 	github.com/pkg/errors v0.9.1
 	github.com/tencentcloud/tencentcloud-sdk-go v1.0.158
 	google.golang.org/genproto/googleapis/api v0.0.0-20240318140521-94a12d6c2237
@@ -27,6 +29,7 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.0.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.1.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.1.5 // indirect

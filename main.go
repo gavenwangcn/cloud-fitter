@@ -128,29 +128,46 @@ func main() {
 	var configFile string
 	var sqlitePath string
 	flag.StringVar(&configFile, "conf", "config.yaml", "config file path")
-	flag.StringVar(&sqlitePath, "sqlitedb", "cloud-fitter.db", "sqlite database path for cloud account configs")
+	flag.StringVar(&sqlitePath, "sqlitedb", "cloud-fitter.db", "sqlite database path (当未使用 MySQL 时)")
 	flag.Parse()
 	defer glog.Flush()
 
-	store, err := configstore.Open(sqlitePath)
-	if err != nil {
-		glog.Fatalf("open sqlite %s: %v", sqlitePath, err)
+	var store *configstore.Store
+	var err error
+	if configstore.UseMySQLFromEnv() {
+		dsn, dsnErr := configstore.MySQLDSNFromEnv()
+		if dsnErr != nil {
+			glog.Fatalf("mysql dsn: %v", dsnErr)
+		}
+		store, err = configstore.OpenMySQL(dsn)
+		if err != nil {
+			glog.Fatalf("open mysql: %v", err)
+		}
+	} else {
+		store, err = configstore.Open(sqlitePath)
+		if err != nil {
+			glog.Fatalf("open sqlite %s: %v", sqlitePath, err)
+		}
 	}
 	defer store.Close()
 
 	n, err := store.Count()
 	if err != nil {
-		glog.Fatalf("sqlite count: %v", err)
+		glog.Fatalf("config store count: %v", err)
 	}
 	if n > 0 {
 		cfg, err := store.ToCloudConfigs()
 		if err != nil {
-			glog.Fatalf("sqlite ToCloudConfigs: %v", err)
+			glog.Fatalf("ToCloudConfigs: %v", err)
 		}
 		if err := tenanter.ReloadFromConfigs(cfg); err != nil {
 			glog.Fatalf("ReloadFromConfigs: %v", err)
 		}
-		glog.Infof("loaded %d cloud config row(s) from sqlite %s", n, sqlitePath)
+		if configstore.UseMySQLFromEnv() {
+			glog.Infof("loaded %d cloud config row(s) from MySQL", n)
+		} else {
+			glog.Infof("loaded %d cloud config row(s) from sqlite %s", n, sqlitePath)
+		}
 	} else {
 		if err := tenanter.LoadCloudConfigsFromFile(configFile); err != nil {
 			if !errors.Is(err, tenanter.ErrLoadTenanterFileEmpty) {
@@ -158,7 +175,11 @@ func main() {
 			}
 			glog.Warningf("LoadCloudConfigsFromFile empty file path %s", configFile)
 		}
-		glog.Infof("sqlite empty: load tenant from yaml if present")
+		if configstore.UseMySQLFromEnv() {
+			glog.Infof("MySQL 中无云账号行: 若存在则尝试从 yaml 加载")
+		} else {
+			glog.Infof("sqlite empty: load tenant from yaml if present")
+		}
 	}
 
 	go func() {
