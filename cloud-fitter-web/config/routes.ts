@@ -32,6 +32,10 @@ export default [
         component: './config',
       },
       {
+        path: '/system',
+        component: './system',
+      },
+      {
         path: '/home',
         redirect: '/ecs',
       },

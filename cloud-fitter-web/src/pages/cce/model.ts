@@ -1,5 +1,5 @@
 import { Effect, Reducer } from 'umi';
-import { queryCceByAccount } from './service';
+import { queryCceByAccount, queryCceBySystem } from './service';
 
 export interface CcePageState {
   tableData: any[];
@@ -10,6 +10,7 @@ export interface CcePageModel {
   state: CcePageState;
   effects: {
     fetchByAccount: Effect;
+    fetchBySystem: Effect;
   };
   reducers: {
     updateStore: Reducer<CcePageState>;
@@ -29,6 +30,17 @@ const model: CcePageModel = {
     ) {
       const { provider, accountName } = action.payload;
       const { clusters = [] } = yield call(queryCceByAccount, provider, accountName);
+      const tableData = clusters.map((item: any, index: number) =>
+        Object.assign({}, item, { key: index }),
+      );
+      yield put({
+        type: 'updateStore',
+        params: { tableData },
+      });
+    },
+    *fetchBySystem(action: { payload: { systemName: string } }, { call, put }) {
+      const { systemName } = action.payload;
+      const { clusters = [] } = yield call(queryCceBySystem, systemName);
       const tableData = clusters.map((item: any, index: number) =>
         Object.assign({}, item, { key: index }),
       );

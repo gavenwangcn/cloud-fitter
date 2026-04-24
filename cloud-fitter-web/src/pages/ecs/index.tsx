@@ -10,6 +10,7 @@ interface EcsPageProps {
   ecsPage: EcsPageState;
   loading?: boolean;
   fetchByAccount: (p: { provider: number; accountName: string }) => void;
+  fetchBySystem: (p: { systemName: string }) => void;
   clearTable: () => void;
 }
 
@@ -17,6 +18,7 @@ const EcsPage: React.FC<EcsPageProps> = ({
   ecsPage,
   loading,
   fetchByAccount,
+  fetchBySystem,
   clearTable,
 }) => {
   const { setBreadcrumb } = useModel('layout');
@@ -32,6 +34,7 @@ const EcsPage: React.FC<EcsPageProps> = ({
     <div className="pageContent">
       <CloudAccountBar
         onQuery={(provider, accountName) => fetchByAccount({ provider, accountName })}
+        onQueryBySystem={(systemName) => fetchBySystem({ systemName })}
         onClear={clearTable}
       />
       <FullResourceTable
@@ -47,11 +50,16 @@ const EcsPage: React.FC<EcsPageProps> = ({
 export default connect(
   ({ ecsPage, loading }: any) => ({
     ecsPage,
-    loading: loading.effects['ecsPage/fetchByAccount'],
+    loading:
+      loading.effects['ecsPage/fetchByAccount'] || loading.effects['ecsPage/fetchBySystem'],
   }),
   {
     fetchByAccount: (payload: { provider: number; accountName: string }) => ({
       type: 'ecsPage/fetchByAccount',
+      payload,
+    }),
+    fetchBySystem: (payload: { systemName: string }) => ({
+      type: 'ecsPage/fetchBySystem',
       payload,
     }),
     clearTable: () => ({ type: 'ecsPage/resetTable' }),

@@ -10,6 +10,7 @@ interface DcsPageProps {
   dcsPage: DcsPageState;
   loading?: boolean;
   fetchByAccount: (p: { provider: number; accountName: string }) => void;
+  fetchBySystem: (p: { systemName: string }) => void;
   clearTable: () => void;
 }
 
@@ -17,6 +18,7 @@ const DcsPage: React.FC<DcsPageProps> = ({
   dcsPage,
   loading,
   fetchByAccount,
+  fetchBySystem,
   clearTable,
 }) => {
   const { setBreadcrumb } = useModel('layout');
@@ -32,6 +34,7 @@ const DcsPage: React.FC<DcsPageProps> = ({
     <div className="pageContent">
       <CloudAccountBar
         onQuery={(provider, accountName) => fetchByAccount({ provider, accountName })}
+        onQueryBySystem={(systemName) => fetchBySystem({ systemName })}
         onClear={clearTable}
       />
       <FullResourceTable
@@ -47,11 +50,16 @@ const DcsPage: React.FC<DcsPageProps> = ({
 export default connect(
   ({ dcsPage, loading }: any) => ({
     dcsPage,
-    loading: loading.effects['dcsPage/fetchByAccount'],
+    loading:
+      loading.effects['dcsPage/fetchByAccount'] || loading.effects['dcsPage/fetchBySystem'],
   }),
   {
     fetchByAccount: (payload: { provider: number; accountName: string }) => ({
       type: 'dcsPage/fetchByAccount',
+      payload,
+    }),
+    fetchBySystem: (payload: { systemName: string }) => ({
+      type: 'dcsPage/fetchBySystem',
       payload,
     }),
     clearTable: () => ({ type: 'dcsPage/resetTable' }),

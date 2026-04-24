@@ -8,3 +8,11 @@ export async function queryDmsByAccount(provider: number, accountName: string) {
     timeout: 120000,
   });
 }
+
+export async function queryDmsBySystem(systemName: string) {
+  return request('/apis/kafka/by-account', {
+    method: 'POST',
+    data: { systemName },
+    timeout: 120000,
+  });
+}

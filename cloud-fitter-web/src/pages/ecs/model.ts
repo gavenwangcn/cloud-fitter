@@ -1,5 +1,5 @@
 import { Effect, Reducer } from 'umi';
-import { queryEcsByAccount } from './service';
+import { queryEcsByAccount, queryEcsBySystem } from './service';
 
 export interface EcsPageState {
   tableData: any[];
@@ -10,6 +10,7 @@ export interface EcsPageModel {
   state: EcsPageState;
   effects: {
     fetchByAccount: Effect;
+    fetchBySystem: Effect;
   };
   reducers: {
     updateStore: Reducer<EcsPageState>;
@@ -29,6 +30,17 @@ const model: EcsPageModel = {
     ) {
       const { provider, accountName } = action.payload;
       const { ecses = [] } = yield call(queryEcsByAccount, provider, accountName);
+      const tableData = ecses.map((item: any, index: number) =>
+        Object.assign({}, item, { key: index }),
+      );
+      yield put({
+        type: 'updateStore',
+        params: { tableData },
+      });
+    },
+    *fetchBySystem(action: { payload: { systemName: string } }, { call, put }) {
+      const { systemName } = action.payload;
+      const { ecses = [] } = yield call(queryEcsBySystem, systemName);
       const tableData = ecses.map((item: any, index: number) =>
         Object.assign({}, item, { key: index }),
       );

@@ -1,5 +1,5 @@
 import { Effect, Reducer } from 'umi';
-import { queryDcsByAccount } from './service';
+import { queryDcsByAccount, queryDcsBySystem } from './service';
 
 export interface DcsPageState {
   tableData: any[];
@@ -10,6 +10,7 @@ export interface DcsPageModel {
   state: DcsPageState;
   effects: {
     fetchByAccount: Effect;
+    fetchBySystem: Effect;
   };
   reducers: {
     updateStore: Reducer<DcsPageState>;
@@ -29,6 +30,17 @@ const model: DcsPageModel = {
     ) {
       const { provider, accountName } = action.payload;
       const { redises = [] } = yield call(queryDcsByAccount, provider, accountName);
+      const tableData = redises.map((item: any, index: number) =>
+        Object.assign({}, item, { key: index }),
+      );
+      yield put({
+        type: 'updateStore',
+        params: { tableData },
+      });
+    },
+    *fetchBySystem(action: { payload: { systemName: string } }, { call, put }) {
+      const { systemName } = action.payload;
+      const { redises = [] } = yield call(queryDcsBySystem, systemName);
       const tableData = redises.map((item: any, index: number) =>
         Object.assign({}, item, { key: index }),
       );

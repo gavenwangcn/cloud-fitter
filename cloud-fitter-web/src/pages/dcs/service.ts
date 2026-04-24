@@ -15,3 +15,11 @@ export async function queryDcsByAccount(provider: number, accountName: string) {
     timeout: 120000,
   });
 }
+
+export async function queryDcsBySystem(systemName: string) {
+  return request('/apis/redis/by-account', {
+    method: 'POST',
+    data: { systemName },
+    timeout: 120000,
+  });
+}

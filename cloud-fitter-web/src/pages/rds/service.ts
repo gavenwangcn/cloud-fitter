@@ -14,3 +14,11 @@ export async function queryRdsByAccount(provider: number, accountName: string) {
     timeout: 120000,
   });
 }
+
+export async function queryRdsBySystem(systemName: string) {
+  return request('/apis/rds/by-account', {
+    method: 'POST',
+    data: { systemName },
+    timeout: 120000,
+  });
+}

@@ -1,6 +1,7 @@
 package jsonapi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -21,9 +22,21 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type AccountScope struct {
+	Provider    int32
+	AccountName string
+}
+
+var systemAccountResolver func(systemName string) ([]AccountScope, error)
+
+func SetSystemAccountResolver(resolver func(systemName string) ([]AccountScope, error)) {
+	systemAccountResolver = resolver
+}
+
 type listByAccountBody struct {
 	Provider    int32  `json:"provider"`
 	AccountName string `json:"accountName"`
+	SystemName  string `json:"systemName"`
 }
 
 func decodeListByAccount(r *http.Request) (listByAccountBody, error) {
@@ -45,6 +58,11 @@ func EcsByAccount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if body.SystemName != "" {
+		resp, err := ecsBySystemName(r.Context(), body.SystemName)
+		writeProtoJSON(w, resp, err)
+		return
+	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
 	resp, err := ecs.List(ctx, &pbecs.ListReq{Provider: pbtenant.CloudProvider(body.Provider)})
 	writeProtoJSON(w, resp, err)
@@ -55,6 +73,11 @@ func RdsByAccount(w http.ResponseWriter, r *http.Request) {
 	body, err := decodeListByAccount(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.SystemName != "" {
+		resp, err := rdsBySystemName(r.Context(), body.SystemName)
+		writeProtoJSON(w, resp, err)
 		return
 	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
@@ -69,6 +92,11 @@ func RedisByAccount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if body.SystemName != "" {
+		resp, err := redisBySystemName(r.Context(), body.SystemName)
+		writeProtoJSON(w, resp, err)
+		return
+	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
 	resp, err := redis.List(ctx, &pbredis.ListReq{Provider: pbtenant.CloudProvider(body.Provider)})
 	writeProtoJSON(w, resp, err)
@@ -79,6 +107,11 @@ func KafkaByAccount(w http.ResponseWriter, r *http.Request) {
 	body, err := decodeListByAccount(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.SystemName != "" {
+		resp, err := kafkaBySystemName(r.Context(), body.SystemName)
+		writeProtoJSON(w, resp, err)
 		return
 	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
@@ -93,9 +126,116 @@ func CceByAccount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if body.SystemName != "" {
+		resp, err := cceBySystemName(r.Context(), body.SystemName)
+		writeProtoJSON(w, resp, err)
+		return
+	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
 	resp, err := ccesvc.List(ctx, &pbcce.ListReq{Provider: pbtenant.CloudProvider(body.Provider)})
 	writeProtoJSON(w, resp, err)
+}
+
+func resolveSystemAccounts(systemName string) ([]AccountScope, error) {
+	if systemAccountResolver == nil {
+		return nil, nil
+	}
+	return systemAccountResolver(systemName)
+}
+
+func ecsBySystemName(ctx0 context.Context, systemName string) (*pbecs.ListResp, error) {
+	out := &pbecs.ListResp{}
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accounts {
+		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+		resp, err := ecs.List(ctx, &pbecs.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
+		if err != nil {
+			return nil, err
+		}
+		if resp != nil {
+			out.Ecses = append(out.Ecses, resp.Ecses...)
+		}
+	}
+	return out, nil
+}
+
+func rdsBySystemName(ctx0 context.Context, systemName string) (*pbrds.ListResp, error) {
+	out := &pbrds.ListResp{}
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accounts {
+		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+		resp, err := rds.List(ctx, &pbrds.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
+		if err != nil {
+			return nil, err
+		}
+		if resp != nil {
+			out.Rdses = append(out.Rdses, resp.Rdses...)
+		}
+	}
+	return out, nil
+}
+
+func redisBySystemName(ctx0 context.Context, systemName string) (*pbredis.ListResp, error) {
+	out := &pbredis.ListResp{}
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accounts {
+		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+		resp, err := redis.List(ctx, &pbredis.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
+		if err != nil {
+			return nil, err
+		}
+		if resp != nil {
+			out.Redises = append(out.Redises, resp.Redises...)
+		}
+	}
+	return out, nil
+}
+
+func kafkaBySystemName(ctx0 context.Context, systemName string) (*pbkafka.ListResp, error) {
+	out := &pbkafka.ListResp{}
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accounts {
+		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+		resp, err := kafka.List(ctx, &pbkafka.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
+		if err != nil {
+			return nil, err
+		}
+		if resp != nil {
+			out.Kafkas = append(out.Kafkas, resp.Kafkas...)
+		}
+	}
+	return out, nil
+}
+
+func cceBySystemName(ctx0 context.Context, systemName string) (*pbcce.ListResp, error) {
+	out := &pbcce.ListResp{}
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accounts {
+		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+		resp, err := ccesvc.List(ctx, &pbcce.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
+		if err != nil {
+			return nil, err
+		}
+		if resp != nil {
+			out.Clusters = append(out.Clusters, resp.Clusters...)
+		}
+	}
+	return out, nil
 }
 
 func writeProtoJSON(w http.ResponseWriter, msg proto.Message, err error) {

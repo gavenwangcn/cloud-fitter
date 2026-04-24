@@ -73,6 +73,21 @@ func run(store *configstore.Store) error {
 		return tenanter.ReloadFromConfigs(cfg)
 	}
 	configHandler := configstore.HTTPHandler(store, reloadTenants)
+	systemHandler := configstore.SystemHTTPHandler(store)
+	jsonapi.SetSystemAccountResolver(func(systemName string) ([]jsonapi.AccountScope, error) {
+		rows, err := store.AccountsBySystemName(systemName)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]jsonapi.AccountScope, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, jsonapi.AccountScope{
+				Provider:    r.Provider,
+				AccountName: r.Name,
+			})
+		}
+		return out, nil
+	})
 
 	// Start HTTP server (grpc-gateway JSON API，与容器/compose 暴露端口 9090 一致)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +96,8 @@ func run(store *configstore.Store) error {
 		switch {
 		case r.URL.Path == "/apis/configs" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
 			configHandler.ServeHTTP(w, r)
+		case r.URL.Path == "/apis/systems" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+			systemHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/apis/ecs/by-account" && r.Method == http.MethodPost:
 			jsonapi.EcsByAccount(w, r)
 		case r.URL.Path == "/apis/rds/by-account" && r.Method == http.MethodPost:

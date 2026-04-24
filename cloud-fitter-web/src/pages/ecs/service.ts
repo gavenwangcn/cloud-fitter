@@ -17,3 +17,11 @@ export async function queryEcsByAccount(provider: number, accountName: string) {
     timeout: 120000,
   });
 }
+
+export async function queryEcsBySystem(systemName: string) {
+  return request('/apis/ecs/by-account', {
+    method: 'POST',
+    data: { systemName },
+    timeout: 120000,
+  });
+}

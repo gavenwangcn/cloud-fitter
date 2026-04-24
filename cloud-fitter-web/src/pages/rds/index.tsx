@@ -10,6 +10,7 @@ interface RdsPageProps {
   rdsPage: RdsPageState;
   loading?: boolean;
   fetchByAccount: (p: { provider: number; accountName: string }) => void;
+  fetchBySystem: (p: { systemName: string }) => void;
   clearTable: () => void;
 }
 
@@ -17,6 +18,7 @@ const RdsPage: React.FC<RdsPageProps> = ({
   rdsPage,
   loading,
   fetchByAccount,
+  fetchBySystem,
   clearTable,
 }) => {
   const { setBreadcrumb } = useModel('layout');
@@ -32,6 +34,7 @@ const RdsPage: React.FC<RdsPageProps> = ({
     <div className="pageContent">
       <CloudAccountBar
         onQuery={(provider, accountName) => fetchByAccount({ provider, accountName })}
+        onQueryBySystem={(systemName) => fetchBySystem({ systemName })}
         onClear={clearTable}
       />
       <FullResourceTable
@@ -47,11 +50,16 @@ const RdsPage: React.FC<RdsPageProps> = ({
 export default connect(
   ({ rdsPage, loading }: any) => ({
     rdsPage,
-    loading: loading.effects['rdsPage/fetchByAccount'],
+    loading:
+      loading.effects['rdsPage/fetchByAccount'] || loading.effects['rdsPage/fetchBySystem'],
   }),
   {
     fetchByAccount: (payload: { provider: number; accountName: string }) => ({
       type: 'rdsPage/fetchByAccount',
+      payload,
+    }),
+    fetchBySystem: (payload: { systemName: string }) => ({
+      type: 'rdsPage/fetchBySystem',
       payload,
     }),
     clearTable: () => ({ type: 'rdsPage/resetTable' }),

@@ -10,6 +10,7 @@ interface CcePageProps {
   ccePage: CcePageState;
   loading?: boolean;
   fetchByAccount: (p: { provider: number; accountName: string }) => void;
+  fetchBySystem: (p: { systemName: string }) => void;
   clearTable: () => void;
 }
 
@@ -17,6 +18,7 @@ const CcePage: React.FC<CcePageProps> = ({
   ccePage,
   loading,
   fetchByAccount,
+  fetchBySystem,
   clearTable,
 }) => {
   const { setBreadcrumb } = useModel('layout');
@@ -32,6 +34,7 @@ const CcePage: React.FC<CcePageProps> = ({
     <div className="pageContent">
       <CloudAccountBar
         onQuery={(provider, accountName) => fetchByAccount({ provider, accountName })}
+        onQueryBySystem={(systemName) => fetchBySystem({ systemName })}
         onClear={clearTable}
       />
       <FullResourceTable
@@ -47,11 +50,16 @@ const CcePage: React.FC<CcePageProps> = ({
 export default connect(
   ({ ccePage, loading }: any) => ({
     ccePage,
-    loading: loading.effects['ccePage/fetchByAccount'],
+    loading:
+      loading.effects['ccePage/fetchByAccount'] || loading.effects['ccePage/fetchBySystem'],
   }),
   {
     fetchByAccount: (payload: { provider: number; accountName: string }) => ({
       type: 'ccePage/fetchByAccount',
+      payload,
+    }),
+    fetchBySystem: (payload: { systemName: string }) => ({
+      type: 'ccePage/fetchBySystem',
       payload,
     }),
     clearTable: () => ({ type: 'ccePage/resetTable' }),

@@ -5,24 +5,51 @@ import {
   listCloudConfigs,
   providerLabel,
 } from '@/services/cloudConfig';
+import { listSystems, SystemRow } from '@/services/systemManage';
 
 export interface CloudAccountBarProps {
   onQuery: (provider: number, accountName: string) => void;
+  onQueryBySystem?: (systemName: string) => void;
   /** 清空下拉选择时回调 */
   onClear?: () => void;
 }
 
-const CloudAccountBar: React.FC<CloudAccountBarProps> = ({ onQuery, onClear }) => {
+const CloudAccountBar: React.FC<CloudAccountBarProps> = ({
+  onQuery,
+  onQueryBySystem,
+  onClear,
+}) => {
   const [configs, setConfigs] = useState<CloudConfigRow[]>([]);
+  const [systems, setSystems] = useState<SystemRow[]>([]);
 
   useEffect(() => {
     listCloudConfigs()
       .then((r) => setConfigs(r.configs ?? []))
       .catch(() => setConfigs([]));
+    listSystems()
+      .then((r) => setSystems(r.systems ?? []))
+      .catch(() => setSystems([]));
   }, []);
 
   return (
     <Space style={{ marginBottom: 16 }} align="center">
+      <span>系统名称：</span>
+      <Select<string>
+        style={{ minWidth: 240 }}
+        placeholder="按系统筛选资源"
+        allowClear
+        options={systems.map((s) => ({
+          label: s.name,
+          value: s.name,
+        }))}
+        onChange={(name) => {
+          if (!name) {
+            onClear?.();
+            return;
+          }
+          onQueryBySystem?.(name);
+        }}
+      />
       <span>云账号（配置名称）：</span>
       <Select<number>
         style={{ minWidth: 300 }}
