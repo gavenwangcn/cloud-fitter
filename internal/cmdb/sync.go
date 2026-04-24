@@ -268,6 +268,7 @@ type hostRec struct {
 	Name, IP, CloudLabel, Region, SysNodeName string
 	CPU                                       int32
 	MemGBStr                                  string
+	DiskStr                                   string // 磁盘：优先 disk_summary，否则 系统盘GB+数据盘GB
 	OS                                        string
 	CceClusterID                              string
 }
@@ -284,6 +285,10 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 		if e.GetProvider() == pbtenant.CloudProvider_huawei && huaweiEcsIDToCceUID != nil {
 			cceID = huaweiEcsIDToCceUID[e.GetInstanceId()]
 		}
+		diskStr := strings.TrimSpace(e.GetDiskSummary())
+		if diskStr == "" {
+			diskStr = fmt.Sprintf("%d+%d", e.GetSystemDiskSizeGb(), e.GetDataDiskTotalGb())
+		}
 		out = append(out, hostRec{
 			Name:         e.GetInstanceName(),
 			IP:           ip,
@@ -292,6 +297,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			SysNodeName:  effectiveSysNodeName(e.GetProvider(), e.GetRegionName(), e.GetNodeTagValue()),
 			CPU:          e.GetCpu(),
 			MemGBStr:     memGB,
+			DiskStr:      diskStr,
 			OS:           firstNonEmpty(e.GetImageName(), e.GetOsType()),
 			CceClusterID: cceID, // 华为：由 CCE ListNodes 的 status.serverId 与集群 metadata.uid 映射得到，与 CceCluster.cluster_uid 一致
 		})
@@ -300,7 +306,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 }
 
 type mwRec struct {
-	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName string
+	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName, DiskStr string
 }
 
 func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafkaResp *pbkafka.ListResp) []mwRec {
@@ -317,6 +323,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CloudLabel:  cloudTypeLabel(r.GetProvider()),
 				Region:      r.GetRegionName(),
 				SysNodeName: effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
+				DiskStr:     "", // 列表 API 无独立磁盘字段
 			})
 		}
 	}
@@ -332,6 +339,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CloudLabel:  cloudTypeLabel(r.GetProvider()),
 				Region:      r.GetRegionName(),
 				SysNodeName: effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
+				DiskStr:     itoa32(r.GetSize()) + "MB", // 容量规格（与内存 GB 独立对比）
 			})
 		}
 	}
@@ -346,6 +354,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CloudLabel:  cloudTypeLabel(k.GetProvider()),
 				Region:      k.GetRegionName(),
 				SysNodeName: effectiveSysNodeName(k.GetProvider(), k.GetRegionName(), k.GetNodeTagValue()),
+				DiskStr:     itoa32(k.GetDistSize()) + "GB",
 			})
 		}
 	}
@@ -497,15 +506,34 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) {
 		if sysNode == "" {
 			continue
 		}
-		exists, err := s.Client.GetCIID(map[string]any{
+		q := map[string]any{
 			"q": fmt.Sprintf("_type:server,sys_node_name:%s,system_id:%s,private_ip:%s", sysNode, systemID, h.IP),
-		})
+		}
+		exists, err := s.Client.GetCIID(q)
 		if err != nil {
 			glog.Errorf("cmdb get server: %v", err)
 			continue
 		}
 		if exists != "" {
-			glog.Infof("cmdb: server %q %s exists id=%s", h.Name, h.IP, exists)
+			row, err := s.Client.GetCIFirst(q)
+			if err != nil {
+				glog.Errorf("cmdb get server row: %v", err)
+				continue
+			}
+			if row != nil && !serverResourceChanged(row, h) {
+				glog.Infof("cmdb: server %q %s cpu/mem/disk 未变 id=%s", h.Name, h.IP, exists)
+				continue
+			}
+			_, err = s.Client.UpdateCI(exists, map[string]any{
+				"cpu_count": int(h.CPU),
+				"ram_size":  h.MemGBStr,
+				"disk_size": h.DiskStr,
+			})
+			if err != nil {
+				glog.Errorf("cmdb update server: %v", err)
+				continue
+			}
+			glog.Infof("cmdb update server ok %q %s (cpu/mem/disk)", h.Name, h.IP)
 			continue
 		}
 		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, h.CloudLabel, h.Region)
@@ -518,6 +546,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) {
 			"private_ip":    h.IP,
 			"cpu_count":     int(h.CPU),
 			"ram_size":      h.MemGBStr,
+			"disk_size":     h.DiskStr,
 			"os_version":    h.OS,
 			"location":      locn,
 			"cloud_type":    ct,
@@ -540,15 +569,34 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) {
 		if sysNode == "" {
 			continue
 		}
-		exists, err := s.Client.GetCIID(map[string]any{
+		mq := map[string]any{
 			"q": fmt.Sprintf("_type:middle_software,sys_node_name:%s,system_id:%s,resource_name:%s", sysNode, systemID, m.Name),
-		})
+		}
+		exists, err := s.Client.GetCIID(mq)
 		if err != nil {
 			glog.Errorf("cmdb get middle_software: %v", err)
 			continue
 		}
 		if exists != "" {
-			glog.Infof("cmdb: middleware %q exists id=%s", m.Name, exists)
+			row, err := s.Client.GetCIFirst(mq)
+			if err != nil {
+				glog.Errorf("cmdb get middle_software row: %v", err)
+				continue
+			}
+			if row != nil && !middlewareResourceChanged(row, m) {
+				glog.Infof("cmdb: middleware %q cpu/mem/disk 未变 id=%s", m.Name, exists)
+				continue
+			}
+			_, err = s.Client.UpdateCI(exists, map[string]any{
+				"cpu_count": m.CPU,
+				"ram_size":  m.Mem,
+				"disk_size": m.DiskStr,
+			})
+			if err != nil {
+				glog.Errorf("cmdb update middle_software: %v", err)
+				continue
+			}
+			glog.Infof("cmdb update middleware ok %q (cpu/mem/disk)", m.Name)
 			continue
 		}
 		// 与 cmdb_api.py 中 add_cmdb_middlewares 字段一致（含 location / cloud_type 与 Python 相同赋值方式）
@@ -564,6 +612,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) {
 			"private_ip":    m.IP,
 			"cpu_count":     m.CPU,
 			"ram_size":      m.Mem,
+			"disk_size":     m.DiskStr,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {

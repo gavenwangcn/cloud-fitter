@@ -85,6 +85,23 @@ func (c *Client) GetCI(q map[string]any) (map[string]any, error) {
 	return c.doJSON("GET", u.String(), "application/json", nil)
 }
 
+// GetCIFirst 查询 CI 列表取第一条记录（与 GetCIID 同条件时的完整属性）。
+func (c *Client) GetCIFirst(q map[string]any) (map[string]any, error) {
+	data, err := c.GetCI(q)
+	if err != nil {
+		return nil, err
+	}
+	res, _ := data["result"].([]any)
+	if len(res) == 0 {
+		return nil, nil
+	}
+	first, _ := res[0].(map[string]any)
+	if first == nil {
+		return nil, nil
+	}
+	return first, nil
+}
+
 // GetCIID 与 Python get_ci_id：取 result[0]._id
 func (c *Client) GetCIID(q map[string]any) (string, error) {
 	data, err := c.GetCI(q)
@@ -162,13 +179,26 @@ func (c *Client) GetSystemLevelRelations(q map[string]any) (map[string]any, erro
 
 // AddCI POST /api/v0.1/ci
 func (c *Client) AddCI(body map[string]any) (map[string]any, error) {
+	return c.postCIBody(body)
+}
+
+// UpdateCI 对已存在 CI 做属性更新：POST /api/v0.1/ci，body 含 _id 及待更新字段（与 add_ci 签名方式一致）。
+func (c *Client) UpdateCI(_id string, fields map[string]any) (map[string]any, error) {
+	if strings.TrimSpace(_id) == "" {
+		return nil, fmt.Errorf("update ci: empty _id")
+	}
+	p := make(map[string]any, len(fields)+1)
+	for k, v := range fields {
+		p[k] = v
+	}
+	p["_id"] = _id
+	return c.postCIBody(p)
+}
+
+func (c *Client) postCIBody(p map[string]any) (map[string]any, error) {
 	u, err := url.Parse(c.BaseURL + "/api/v0.1/ci")
 	if err != nil {
 		return nil, err
-	}
-	p := make(map[string]any)
-	for k, v := range body {
-		p[k] = v
 	}
 	c.BuildAPIKey(u.Path, p)
 	b, err := json.Marshal(p)
@@ -183,7 +213,7 @@ func (c *Client) doJSON(method, fullURL, contentType string, body []byte) (map[s
 	if err != nil {
 		return nil, err
 	}
-	if method == "POST" {
+	if method == "POST" && len(body) > 0 {
 		req.Header.Set("Content-Type", contentType)
 	}
 	client := c.HTTP
