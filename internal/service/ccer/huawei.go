@@ -18,6 +18,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -185,6 +186,57 @@ func (c *HuaweiCce) clusterNodeAgg(clusterID string, flavorByID map[string]*ecsm
 	return out
 }
 
+// MapEcsInstanceIDToClusterUID 使用华为 CCE 公开接口：
+// - GET /api/v3/projects/{project_id}/clusters
+// - GET /api/v3/projects/{project_id}/clusters/{cluster_id}/nodes
+// 其中 path 的 cluster_id 为集群资源 UUID，与 ListClusters 返回的 metadata.uid 一致；节点 status.serverId 为 ECS 云服务器 ID（与 ECS List 的实例 id 一致）。
+func (c *HuaweiCce) MapEcsInstanceIDToClusterUID(ctx context.Context) (map[string]string, error) {
+	_ = ctx
+	r := new(ccemodel.ListClustersRequest)
+	clustersResp, err := c.cceCli.ListClusters(r)
+	if err != nil {
+		return nil, errors.Wrap(err, "Huawei CCE ListClusters")
+	}
+	out := make(map[string]string)
+	if clustersResp == nil || clustersResp.Items == nil {
+		return out, nil
+	}
+	for _, cl := range *clustersResp.Items {
+		if cl.Metadata == nil {
+			continue
+		}
+		clusterUID := derefStr(cl.Metadata.Uid)
+		if clusterUID == "" {
+			glog.V(1).Infof("Huawei CCE: skip cluster with empty metadata.uid name=%q account=%s region=%s",
+				cl.Metadata.Name, c.tenanter.AccountName(), c.region.GetName())
+			continue
+		}
+		nodeReq := ccemodel.ListNodesRequest{ClusterId: clusterUID}
+		nodeResp, err := c.cceCli.ListNodes(&nodeReq)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Huawei CCE ListNodes cluster_id=%s", clusterUID)
+		}
+		if nodeResp == nil || nodeResp.Items == nil {
+			continue
+		}
+		for _, node := range *nodeResp.Items {
+			if node.Status == nil {
+				continue
+			}
+			sid := derefStr(node.Status.ServerId)
+			if sid == "" {
+				continue
+			}
+			if prev, ok := out[sid]; ok && prev != clusterUID {
+				glog.Warningf("Huawei CCE: ECS %s associated with more than one cluster (was %s, now %s) account=%s region=%s",
+					sid, prev, clusterUID, c.tenanter.AccountName(), c.region.GetName())
+			}
+			out[sid] = clusterUID
+		}
+	}
+	return out, nil
+}
+
 func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*pbcce.ListDetailResp, error) {
 	r := new(ccemodel.ListClustersRequest)
 	resp, err := c.cceCli.ListClusters(r)
@@ -213,6 +265,10 @@ func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*
 				phase = derefStr(cl.Status.Phase)
 			}
 			agg := c.clusterNodeAgg(uid, flavorByID)
+			var nodeTag string
+			if cl.Metadata != nil && cl.Metadata.Labels != nil {
+				nodeTag = envtags.FromMap(envtags.NodeTagKey(), cl.Metadata.Labels)
+			}
 			clusters = append(clusters, &pbcce.CceCluster{
 				Provider:       pbtenant.CloudProvider_huawei,
 				AccoutName:     c.tenanter.AccountName(),
@@ -226,6 +282,7 @@ func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*
 				NodeNormal:     agg.normal,
 				CpuTotal:       agg.cpuTotal,
 				MemoryTotalMb:  agg.memTotalMB,
+				NodeTagValue:   nodeTag,
 			})
 		}
 	}

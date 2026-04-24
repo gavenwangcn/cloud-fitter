@@ -238,6 +238,31 @@ func cceBySystemName(ctx0 context.Context, systemName string) (*pbcce.ListResp, 
 	return out, nil
 }
 
+// ListEcsBySystemName 供 CMDB 同步等按「系统名称」拉取全量 ECS（与 POST /apis/ecs/by-account 且带 systemName 行为一致）。
+func ListEcsBySystemName(ctx context.Context, systemName string) (*pbecs.ListResp, error) {
+	return ecsBySystemName(ctx, systemName)
+}
+
+// ListRdsBySystemName 同 ListEcsBySystemName，对应 RDS。
+func ListRdsBySystemName(ctx context.Context, systemName string) (*pbrds.ListResp, error) {
+	return rdsBySystemName(ctx, systemName)
+}
+
+// ListRedisBySystemName 同 ListEcsBySystemName，对应 Redis（华为 DCS 等）。
+func ListRedisBySystemName(ctx context.Context, systemName string) (*pbredis.ListResp, error) {
+	return redisBySystemName(ctx, systemName)
+}
+
+// ListKafkaBySystemName 同 ListEcsBySystemName，对应 Kafka / DMS 等。
+func ListKafkaBySystemName(ctx context.Context, systemName string) (*pbkafka.ListResp, error) {
+	return kafkaBySystemName(ctx, systemName)
+}
+
+// ListCceBySystemName 同 ListEcsBySystemName，对应 CCE 集群。
+func ListCceBySystemName(ctx context.Context, systemName string) (*pbcce.ListResp, error) {
+	return cceBySystemName(ctx, systemName)
+}
+
 func writeProtoJSON(w http.ResponseWriter, msg proto.Message, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {

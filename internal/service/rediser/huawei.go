@@ -247,6 +247,7 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			ChargeType:     dcsChargingMode(v.ChargingMode),
 			Cpu:            resolveDcsCPU(spec, cpuBySpec),
 			EnvTagValue:    envtags.FromPairs(envtags.RedisKey(), tagPairs),
+			NodeTagValue:   envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 	}
 

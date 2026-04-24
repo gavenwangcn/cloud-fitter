@@ -19,14 +19,14 @@ services:
     image: cloud-fitter-app:local
     container_name: cloud-fitter-app
     restart: unless-stopped
-    # 根目录 .env 可设置标签键，用于列表「环境(标签)」列（见 CLOUD_FITTER_*_ENV_TAG_KEY）
+    # 统一环境类标签键；不设则默认键名 environment。节点类标签键；不设则默认 node（与 CMDB 系统节点/列表「节点(标签)」一致）
     environment:
       CLOUD_FITTER_ENV_TAG_KEY: ${CLOUD_FITTER_ENV_TAG_KEY:-}
-      CLOUD_FITTER_ECS_ENV_TAG_KEY: ${CLOUD_FITTER_ECS_ENV_TAG_KEY:-}
-      CLOUD_FITTER_RDS_ENV_TAG_KEY: ${CLOUD_FITTER_RDS_ENV_TAG_KEY:-}
-      CLOUD_FITTER_REDIS_ENV_TAG_KEY: ${CLOUD_FITTER_REDIS_ENV_TAG_KEY:-}
-      ENVIRONMENT_TAG_KEY: ${ENVIRONMENT_TAG_KEY:-}
-      environment: ${environment:-}
+      CLOUD_FITTER_NODE_TAG_KEY: ${CLOUD_FITTER_NODE_TAG_KEY:-}
+      # 与根目录 .env 中 CLOUD_FITTER_CMDB_* 一致，供后端 CMDB 定时同步使用
+      CLOUD_FITTER_CMDB_BASE_URL: ${CLOUD_FITTER_CMDB_BASE_URL:-}
+      CLOUD_FITTER_CMDB_KEY: ${CLOUD_FITTER_CMDB_KEY:-}
+      CLOUD_FITTER_CMDB_SECRET: ${CLOUD_FITTER_CMDB_SECRET:-}
     networks:
       - app
     ports:

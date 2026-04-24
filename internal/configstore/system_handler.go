@@ -19,6 +19,14 @@ type createSystemBody struct {
 	AccountIDs []int64 `json:"accountIds"`
 }
 
+type updateSystemBody struct {
+	ID         int64   `json:"id"`
+	Intro      string  `json:"intro"`
+	OnlineTime string  `json:"onlineTime"`
+	Status     string  `json:"status"`
+	AccountIDs []int64 `json:"accountIds"`
+}
+
 // SystemHTTPHandler 处理 GET/POST /apis/systems。
 func SystemHTTPHandler(store *Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,14 +36,16 @@ func SystemHTTPHandler(store *Store) http.Handler {
 		defer glog.Infof("systems api end method=%s path=%s elapsed=%v", r.Method, r.URL.Path, time.Since(start))
 		switch r.Method {
 		case http.MethodGet:
-			rows, err := store.ListSystems()
+			page := ParseIntDefault(r.URL.Query().Get("page"), 1)
+			pageSize := ParseIntDefault(r.URL.Query().Get("pageSize"), 50)
+			rows, total, err := store.ListSystemsPaged(page, pageSize)
 			if err != nil {
 				glog.Warningf("systems api list failed err=%v", err)
 				writeErr(w, http.StatusInternalServerError, err)
 				return
 			}
-			glog.Infof("systems api list ok rows=%d", len(rows))
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"systems": rows})
+			glog.Infof("systems api list ok rows=%d total=%d", len(rows), total)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"systems": rows, "total": total})
 		case http.MethodPost:
 			var body createSystemBody
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -83,6 +93,37 @@ func SystemHTTPHandler(store *Store) http.Handler {
 			glog.Infof("systems api create ok name=%s system_id=%s account_ids=%d status=%s online_time=%s",
 				body.Name, body.SystemID, len(body.AccountIDs), body.Status, body.OnlineTime)
 			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		case http.MethodPut:
+			var body updateSystemBody
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+			if body.ID < 1 {
+				writeErr(w, http.StatusBadRequest, errors.New("id 无效"))
+				return
+			}
+			body.Intro = strings.TrimSpace(body.Intro)
+			body.OnlineTime = strings.TrimSpace(body.OnlineTime)
+			body.Status = strings.TrimSpace(body.Status)
+			if body.Intro == "" || body.OnlineTime == "" || body.Status == "" || len(body.AccountIDs) == 0 {
+				writeErr(w, http.StatusBadRequest, errors.New("简介、上线时间、状态、关联账号均不能为空"))
+				return
+			}
+			if body.Status != "运行中" && body.Status != "下线" {
+				writeErr(w, http.StatusBadRequest, errors.New("状态仅支持：运行中/下线"))
+				return
+			}
+			if err := store.UpdateSystemByID(body.ID, body.Intro, body.OnlineTime, body.Status, body.AccountIDs); err != nil {
+				if err.Error() == "系统不存在或 id 错误" {
+					writeErr(w, http.StatusNotFound, err)
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			glog.Infof("systems api update ok id=%d", body.ID)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)

@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useModel } from '@@/plugin-model/useModel';
-import { Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
+import { Button, Form, Input, Modal, Popconfirm, Select, Space, Table, message } from 'antd';
 import {
   createCloudConfig,
+  deleteCloudConfig,
   listCloudConfigs,
   providerLabel,
   CloudConfigRow,
@@ -14,29 +15,38 @@ const PROVIDER_OPTIONS = [
   { label: '2 华为云', value: 2 },
 ];
 
+const DEFAULT_PAGE_SIZE = 50;
+
 const ConfigPage: React.FC = () => {
   const { setBreadcrumb } = useModel('layout');
   const [rows, setRows] = useState<CloudConfigRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [total, setTotal] = useState(0);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listCloudConfigs();
+      const res = await listCloudConfigs({ page, pageSize });
       setRows(res.configs ?? []);
+      setTotal(res.total ?? 0);
     } catch (e: any) {
       message.error(e?.message || '加载配置失败');
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize]);
 
   useEffect(() => {
     setBreadcrumb({ isBack: false, title: '配置管理' });
+  }, [setBreadcrumb]);
+
+  useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const submit = async () => {
     try {
@@ -59,6 +69,20 @@ const ConfigPage: React.FC = () => {
     }
   };
 
+  const onDelete = async (id: number) => {
+    try {
+      await deleteCloudConfig(id);
+      message.success('已删除');
+      if (rows.length <= 1 && page > 1) {
+        setPage(page - 1);
+      } else {
+        load();
+      }
+    } catch (e: any) {
+      message.error(e?.message || e?.data?.error || '删除失败');
+    }
+  };
+
   return (
     <div className="pageContent">
       <Space style={{ marginBottom: 16 }}>
@@ -70,7 +94,19 @@ const ConfigPage: React.FC = () => {
         rowKey="id"
         loading={loading}
         dataSource={rows}
-        pagination={false}
+        pagination={{
+          current: page,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 条`,
+          pageSizeOptions: ['20', '50', '100', '200'],
+          defaultPageSize: DEFAULT_PAGE_SIZE,
+        }}
+        onChange={(pg) => {
+          setPage(pg.current ?? 1);
+          setPageSize(pg.pageSize ?? DEFAULT_PAGE_SIZE);
+        }}
         columns={[
           { title: 'ID', dataIndex: 'id', align: 'center' },
           {
@@ -80,6 +116,25 @@ const ConfigPage: React.FC = () => {
             render: (p: number) => providerLabel(p),
           },
           { title: '名称', dataIndex: 'name', align: 'center' },
+          {
+            title: '操作',
+            key: 'actions',
+            align: 'center',
+            width: 100,
+            render: (_: unknown, record) => (
+              <Popconfirm
+                title="确定删除该云账号？"
+                description="若系统管理中仍有系统引用此账号，将无法删除。"
+                onConfirm={() => onDelete(record.id)}
+                okText="删除"
+                cancelText="取消"
+              >
+                <Button type="link" danger size="small">
+                  删除
+                </Button>
+              </Popconfirm>
+            ),
+          },
         ]}
       />
       <Modal

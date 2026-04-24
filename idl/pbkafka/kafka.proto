@@ -29,6 +29,8 @@ message KafkaInstance {
   string create_time = 10;
   // 过期时间
   string expired_time = 11;
+  // 节点标签值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node；各云若列表无标签则为空）
+  string node_tag_value = 12;
 }
 
 message ListDetailReq {

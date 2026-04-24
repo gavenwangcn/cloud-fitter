@@ -131,6 +131,7 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 			DataDiskTotalGb:  dataGB,
 			DiskSummary:      dsum,
 			EnvTagValue:      envtags.FromPairs(envtags.ECSKey(), tagPairs),
+			NodeTagValue:     envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 		for k1, v1 := range v.PublicIpAddresses {
 			ecses[k].PublicIps[k1] = *v1

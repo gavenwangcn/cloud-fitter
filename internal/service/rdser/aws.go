@@ -80,6 +80,7 @@ func (rds *AwsRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			CreationTime:  v.InstanceCreateTime.Format(time.RFC3339),
 			ExpireTime:    "",
 			EnvTagValue:   envtags.FromPairs(envtags.RDSKey(), tagPairs),
+			NodeTagValue:  envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 	}
 

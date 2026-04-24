@@ -57,6 +57,8 @@ message EcsInstance {
   string disk_summary = 24;
   // 环境标识：取实例上指定标签键的值（见环境变量 CLOUD_FITTER_ECS_ENV_TAG_KEY / CLOUD_FITTER_ENV_TAG_KEY）
   string env_tag_value = 25;
+  // 节点标识：取实例上「节点」标签键的值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）；用于系统节点/CMDB 与列表展示
+  string node_tag_value = 26;
 }
 
 message ListDetailReq {

@@ -5,6 +5,11 @@ export const menuList = [
     icon: 'icon-quanju1',
   },
   {
+    title: 'CMDB同步数据',
+    key: 'cmdb-sync',
+    icon: 'icon-quanju1',
+  },
+  {
     title: '配置管理',
     key: 'config',
     icon: 'icon-quanju1',

@@ -3,6 +3,7 @@ package configstore
 import (
 	"database/sql"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -119,6 +120,195 @@ func (s *Store) List() ([]Row, error) {
 	return out, nil
 }
 
+// ListPaged 分页查询云账号（不含 AK/SK）；page、pageSize 从 1、50 起为默认。
+func (s *Store) ListConfigsPaged(page, pageSize int) ([]Row, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 50
+	}
+	if pageSize > 500 {
+		pageSize = 500
+	}
+	var total int
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM cloud_configs`).Scan(&total); err != nil {
+		return nil, 0, errors.WithMessage(err, "count cloud_configs")
+	}
+	offset := (page - 1) * pageSize
+	rows, err := s.db.Query(
+		`SELECT id, provider, name FROM cloud_configs ORDER BY id LIMIT ? OFFSET ?`,
+		pageSize, offset,
+	)
+	if err != nil {
+		return nil, 0, errors.WithMessage(err, "query paged")
+	}
+	defer rows.Close()
+	var out []Row
+	for rows.Next() {
+		var r Row
+		if err := rows.Scan(&r.ID, &r.Provider, &r.Name); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+// ListSystemsPaged 分页查询系统，accountNames 与 ListSystems 一致。
+func (s *Store) ListSystemsPaged(page, pageSize int) ([]SystemRow, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 50
+	}
+	if pageSize > 500 {
+		pageSize = 500
+	}
+	var total int
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM systems`).Scan(&total); err != nil {
+		return nil, 0, errors.WithMessage(err, "count systems")
+	}
+	offset := (page - 1) * pageSize
+	cfgRows, err := s.List()
+	if err != nil {
+		return nil, 0, err
+	}
+	cfgNameByID := make(map[int64]string, len(cfgRows))
+	for _, c := range cfgRows {
+		cfgNameByID[c.ID] = c.Name
+	}
+	rows, err := s.db.Query(
+		`SELECT id, name, intro, system_id, online_time, status, account_ids FROM systems ORDER BY id LIMIT ? OFFSET ?`,
+		pageSize, offset,
+	)
+	if err != nil {
+		return nil, 0, errors.WithMessage(err, "query systems paged")
+	}
+	defer rows.Close()
+	var out []SystemRow
+	for rows.Next() {
+		var r SystemRow
+		var accountIDsRaw string
+		if err := rows.Scan(&r.ID, &r.Name, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw); err != nil {
+			return nil, 0, errors.WithMessage(err, "scan systems")
+		}
+		if accountIDsRaw != "" {
+			if err := json.Unmarshal([]byte(accountIDsRaw), &r.AccountIDs); err != nil {
+				return nil, 0, errors.WithMessage(err, "decode account_ids")
+			}
+		}
+		for _, id := range r.AccountIDs {
+			if n, ok := cfgNameByID[id]; ok {
+				r.AccountNames = append(r.AccountNames, n)
+			}
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+// CountSystemsReferencingConfigID 统计有多少个系统将指定云账号 id 包含在 account_ids 中。
+func (s *Store) CountSystemsReferencingConfigID(configID int64) (int, error) {
+	rows, err := s.db.Query(`SELECT account_ids FROM systems`)
+	if err != nil {
+		return 0, errors.WithMessage(err, "query systems account_ids")
+	}
+	defer rows.Close()
+	var n int
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return 0, err
+		}
+		var ids []int64
+		if raw != "" {
+			if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+				continue
+			}
+		}
+		for _, id := range ids {
+			if id == configID {
+				n++
+				break
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// DeleteConfigByID 删除云账号；若仍被系统引用则返回错误。
+func (s *Store) DeleteConfigByID(id int64) error {
+	acc, err := s.CountSystemsReferencingConfigID(id)
+	if err != nil {
+		return err
+	}
+	if acc > 0 {
+		return errors.New("该云账号仍被系统管理中的系统引用，无法删除")
+	}
+	res, err := s.db.Exec(`DELETE FROM cloud_configs WHERE id = ?`, id)
+	if err != nil {
+		return errors.WithMessage(err, "delete cloud_config")
+	}
+	aff, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if aff == 0 {
+		return errors.New("配置不存在或已删除")
+	}
+	return nil
+}
+
+// UpdateSystemByID 更新系统；不允许修改 name、system_id，仅 intro、上线时间、状态、关联账号。
+func (s *Store) UpdateSystemByID(id int64, intro, onlineTime, status string, accountIDs []int64) error {
+	if len(accountIDs) == 0 {
+		return errors.New("至少选择一个关联账号")
+	}
+	idsJSON, err := json.Marshal(accountIDs)
+	if err != nil {
+		return errors.WithMessage(err, "marshal account ids")
+	}
+	res, err := s.db.Exec(
+		`UPDATE systems SET intro = ?, online_time = ?, status = ?, account_ids = ? WHERE id = ?`,
+		strings.TrimSpace(intro), strings.TrimSpace(onlineTime), strings.TrimSpace(status), string(idsJSON), id,
+	)
+	if err != nil {
+		return errors.WithMessage(err, "update system")
+	}
+	aff, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if aff == 0 {
+		return errors.New("系统不存在或 id 错误")
+	}
+	return nil
+}
+
+// ParseIntDefault 从 URL 参数解析正整数，缺省用 def。
+func ParseIntDefault(s string, def int) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
+}
+
 // Create 插入一条配置。
 func (s *Store) Create(provider int32, name, accessID, accessSecret string) error {
 	_, err := s.db.Exec(
@@ -194,6 +384,77 @@ func (s *Store) HasSystemID(systemID string) (bool, error) {
 		return false, errors.WithMessage(err, "count systems by system_id")
 	}
 	return n > 0, nil
+}
+
+// SystemBySystemID 按 CMDB 的 system_id 查询本库中的系统行（与 CMDB 全量 system 列表对齐，用于反查系统名称与关联账号）。
+func (s *Store) SystemBySystemID(systemID string) (SystemRow, error) {
+	var r SystemRow
+	var accountIDsRaw string
+	err := s.db.QueryRow(
+		`SELECT id, name, intro, system_id, online_time, status, account_ids FROM systems WHERE system_id = ? LIMIT 1`,
+		systemID,
+	).Scan(&r.ID, &r.Name, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return r, errors.New("system not found")
+		}
+		return r, errors.WithMessage(err, "query system by system_id")
+	}
+	if accountIDsRaw != "" {
+		if err := json.Unmarshal([]byte(accountIDsRaw), &r.AccountIDs); err != nil {
+			return r, errors.WithMessage(err, "decode systems.account_ids")
+		}
+	}
+	cfgNameByID := make(map[int64]string)
+	cfgRows, err := s.List()
+	if err != nil {
+		return r, errors.WithMessage(err, "list configs for system row")
+	}
+	for _, c := range cfgRows {
+		cfgNameByID[c.ID] = c.Name
+	}
+	for _, id := range r.AccountIDs {
+		if n, ok := cfgNameByID[id]; ok {
+			r.AccountNames = append(r.AccountNames, n)
+		}
+	}
+	return r, nil
+}
+
+// SystemByName 按本库「系统名称」查完整系统行（供 CMDB 单系统同步等使用）。
+func (s *Store) SystemByName(name string) (SystemRow, error) {
+	var r SystemRow
+	var accountIDsRaw string
+	n := strings.TrimSpace(name)
+	err := s.db.QueryRow(
+		`SELECT id, name, intro, system_id, online_time, status, account_ids FROM systems WHERE name = ? LIMIT 1`,
+		n,
+	).Scan(&r.ID, &r.Name, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return r, errors.New("未找到该系统")
+		}
+		return r, errors.WithMessage(err, "query system by name")
+	}
+	if accountIDsRaw != "" {
+		if err := json.Unmarshal([]byte(accountIDsRaw), &r.AccountIDs); err != nil {
+			return r, errors.WithMessage(err, "decode systems.account_ids")
+		}
+	}
+	cfgNameByID := make(map[int64]string)
+	cfgRows, err := s.List()
+	if err != nil {
+		return r, errors.WithMessage(err, "list configs for system row")
+	}
+	for _, c := range cfgRows {
+		cfgNameByID[c.ID] = c.Name
+	}
+	for _, id := range r.AccountIDs {
+		if n, ok := cfgNameByID[id]; ok {
+			r.AccountNames = append(r.AccountNames, n)
+		}
+	}
+	return r, nil
 }
 
 // AccountsBySystemName 按系统名称解析其关联账号（provider + name）。

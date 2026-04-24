@@ -133,6 +133,10 @@
           "type": "integer",
           "format": "int32",
           "title": "节点内存合计（MB，同上）"
+        },
+        "nodeTagValue": {
+          "type": "string",
+          "title": "节点标签值：取自集群 metadata.labels 中配置的键（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）"
         }
       },
       "title": "华为云 CCE 等 Kubernetes 托管集群（字段对应 API 中 metadata / spec / status）"

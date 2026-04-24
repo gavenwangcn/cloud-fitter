@@ -60,13 +60,14 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 		return nil, errors.Wrap(err, "Aliyun ListDetail error")
 	}
 
-	tagKey := envtags.RDSKey()
-	var tagByInst map[string]string
-	if tagKey != "" {
-		tagByInst, err = envtags.AliRDSInstanceTagMap(rds.cli, tagKey)
+	envKey := envtags.RDSKey()
+	nodeKey := envtags.NodeTagKey()
+	var tagByInst, nodeByInst map[string]string
+	if envKey != "" || nodeKey != "" {
+		tagByInst, nodeByInst, err = envtags.AliRDSInstanceTagValues(rds.cli, envKey, nodeKey)
 		if err != nil {
 			glog.Warningf("Aliyun RDS DescribeTags account=%s region=%s: %v", rds.tenanter.AccountName(), rds.region.GetName(), err)
-			tagByInst = nil
+			tagByInst, nodeByInst = nil, nil
 		}
 	}
 
@@ -75,6 +76,10 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 		ev := ""
 		if tagByInst != nil {
 			ev = tagByInst[v.DBInstanceId]
+		}
+		nv := ""
+		if nodeByInst != nil {
+			nv = nodeByInst[v.DBInstanceId]
 		}
 		instName := v.DBInstanceName
 		if instName == "" {
@@ -109,6 +114,7 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			VpcId:         v.VpcId,
 			ChargeType:    v.PayType,
 			EnvTagValue:   ev,
+			NodeTagValue:  nv,
 		}
 	}
 

@@ -18,6 +18,7 @@ export type ResourceFieldDef = {
 export const ECS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
   { dataIndex: 'envTagValue', title: '环境(标签)' },
+  { dataIndex: 'nodeTagValue', title: '节点(标签)' },
   { dataIndex: 'accountName', title: '账号名称' },
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },
@@ -46,6 +47,7 @@ export const ECS_FIELDS: ResourceFieldDef[] = [
 export const RDS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
   { dataIndex: 'envTagValue', title: '环境(标签)' },
+  { dataIndex: 'nodeTagValue', title: '节点(标签)' },
   { dataIndex: 'accoutName', title: '账号名称' },
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },
@@ -73,6 +75,7 @@ export const RDS_FIELDS: ResourceFieldDef[] = [
 export const DCS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
   { dataIndex: 'envTagValue', title: '环境(标签)' },
+  { dataIndex: 'nodeTagValue', title: '节点(标签)' },
   { dataIndex: 'accoutName', title: '账号名称' },
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },
@@ -108,6 +111,7 @@ export const DMS_FIELDS: ResourceFieldDef[] = [
 /** pbcce.CceCluster（华为云 CCE 等；对应 metadata/spec/status） */
 export const CCE_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'nodeTagValue', title: '节点(标签)' },
   { dataIndex: 'accoutName', title: '账号名称' },
   { dataIndex: 'regionName', title: '地域' },
   { dataIndex: 'clusterName', title: '集群名称 (metadata.name)' },

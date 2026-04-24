@@ -36,6 +36,10 @@ export default [
         component: './system',
       },
       {
+        path: '/cmdb-sync',
+        component: './cmdb-sync',
+      },
+      {
         path: '/home',
         redirect: '/ecs',
       },

@@ -7,6 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/aliyun/alibaba-cloud-sdk-go v1.63.107
 	github.com/aliyun/aliyun-oss-go-sdk v2.2.10+incompatible
+	github.com/aws/aws-sdk-go-v2 v1.5.0
 	github.com/aws/aws-sdk-go-v2/config v1.1.6
 	github.com/aws/aws-sdk-go-v2/credentials v1.1.6
 	github.com/aws/aws-sdk-go-v2/service/configservice v1.4.0
@@ -14,6 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/rds v1.4.0
 	github.com/go-yaml/yaml v2.1.0+incompatible
 	github.com/golang/glog v1.2.0
+	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.2
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.0.40-rc
 	github.com/pkg/errors v0.9.1
@@ -25,19 +27,14 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.5.0 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.0.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.1.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.1.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.3.0 // indirect
 	github.com/aws/smithy-go v1.4.0 // indirect
-	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/huaweicloud/huaweicloud-sdk-go-obs v3.24.9+incompatible // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -45,11 +42,12 @@ require (
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/satori/go.uuid v1.2.0 // indirect
-	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/mod v0.21.0 // indirect
+	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/text v0.19.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
+	golang.org/x/tools v0.26.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	modernc.org/libc v1.55.3 // indirect

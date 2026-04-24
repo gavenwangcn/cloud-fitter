@@ -37,6 +37,8 @@ message RedisInstance {
   int32 cpu = 16;
   // 环境标识：指定标签键的值（CLOUD_FITTER_REDIS_ENV_TAG_KEY / CLOUD_FITTER_ENV_TAG_KEY）
   string env_tag_value = 17;
+  // 节点标签值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）
+  string node_tag_value = 18;
 }
 
 message ListDetailReq {

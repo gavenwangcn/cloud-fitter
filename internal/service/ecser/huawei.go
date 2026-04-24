@@ -326,6 +326,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			DataDiskTotalGb:  disks[k].data,
 			DiskSummary:      disks[k].summary,
 			EnvTagValue:      envtags.HuaweiECSFromServerDetail(v, envtags.ECSKey()),
+			NodeTagValue:     envtags.HuaweiECSFromServerDetail(v, envtags.NodeTagKey()),
 		}
 	}
 

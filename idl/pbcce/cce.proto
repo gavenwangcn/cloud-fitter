@@ -29,6 +29,8 @@ message CceCluster {
   int32 cpu_total = 11;
   // 节点内存合计（MB，同上）
   int32 memory_total_mb = 12;
+  // 节点标签值：取自集群 metadata.labels 中配置的键（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）
+  string node_tag_value = 13;
 }
 
 message ListDetailReq {

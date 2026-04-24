@@ -3,6 +3,7 @@ package configstore
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,14 +29,16 @@ func HTTPHandler(store *Store, reload reloadFn) http.Handler {
 		defer glog.Infof("configs api end method=%s path=%s elapsed=%v", r.Method, r.URL.Path, time.Since(start))
 		switch r.Method {
 		case http.MethodGet:
-			rows, err := store.List()
+			page := ParseIntDefault(r.URL.Query().Get("page"), 1)
+			pageSize := ParseIntDefault(r.URL.Query().Get("pageSize"), 50)
+			rows, total, err := store.ListConfigsPaged(page, pageSize)
 			if err != nil {
 				glog.Warningf("configs api list failed err=%v", err)
 				writeErr(w, http.StatusInternalServerError, err)
 				return
 			}
-			glog.Infof("configs api list ok rows=%d", len(rows))
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"configs": rows})
+			glog.Infof("configs api list ok rows=%d total=%d page=%d pageSize=%d", len(rows), total, page, pageSize)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"configs": rows, "total": total})
 		case http.MethodPost:
 			var body createBody
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -71,6 +74,38 @@ func HTTPHandler(store *Store, reload reloadFn) http.Handler {
 				}
 			}
 			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		case http.MethodDelete:
+			idStr := strings.TrimSpace(r.URL.Query().Get("id"))
+			if idStr == "" {
+				writeErr(w, http.StatusBadRequest, errors.New("query id required"))
+				return
+			}
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || id < 1 {
+				writeErr(w, http.StatusBadRequest, errors.New("invalid id"))
+				return
+			}
+			if err := store.DeleteConfigByID(id); err != nil {
+				if strings.Contains(err.Error(), "仍被系统") {
+					writeErr(w, http.StatusConflict, err)
+					return
+				}
+				if strings.Contains(err.Error(), "不存在") {
+					writeErr(w, http.StatusNotFound, err)
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			glog.Infof("configs api delete ok id=%d", id)
+			if reload != nil {
+				if err := reload(); err != nil {
+					glog.Errorf("reload tenants after config delete: %v", err)
+					writeErr(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)

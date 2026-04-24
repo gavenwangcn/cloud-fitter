@@ -170,6 +170,7 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			Port:          v.Port,
 			ChargeType:    charge,
 			EnvTagValue:   envtags.FromPairs(envtags.RDSKey(), tagPairs),
+			NodeTagValue:  envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 	}
 

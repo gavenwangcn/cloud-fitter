@@ -11,8 +11,11 @@ export interface SystemRow {
   accountNames: string[];
 }
 
-export async function listSystems(): Promise<{ systems: SystemRow[] }> {
-  return request('/apis/systems', { method: 'GET' });
+export async function listSystems(params?: {
+  page?: number;
+  pageSize?: number;
+}): Promise<{ systems: SystemRow[]; total?: number }> {
+  return request('/apis/systems', { method: 'GET', params: params || {} });
 }
 
 export async function createSystem(data: {
@@ -24,4 +27,14 @@ export async function createSystem(data: {
   accountIds: number[];
 }) {
   return request('/apis/systems', { method: 'POST', data });
+}
+
+export async function updateSystem(data: {
+  id: number;
+  intro: string;
+  onlineTime: string;
+  status: string;
+  accountIds: number[];
+}) {
+  return request('/apis/systems', { method: 'PUT', data });
 }

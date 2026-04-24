@@ -210,6 +210,7 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 				DataDiskTotalGb:  dataGB,
 				DiskSummary:      dsum,
 				EnvTagValue:      envtags.FromPairs(envtags.ECSKey(), tagPairs),
+				NodeTagValue:     envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 			})
 		}
 	}

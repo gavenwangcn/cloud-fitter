@@ -6,6 +6,33 @@ import {
   ResourceFieldDef,
 } from '@/constants/resourceFields';
 
+/** 与后端 cloudTypeLabel 一致，用于无「节点」标签时展示 云名-地域 */
+const PROVIDER_ENUM_CN: Record<number, string> = {
+  0: '阿里云',
+  1: '腾讯云',
+  2: '华为云',
+  3: 'AWS',
+};
+
+function effectiveNodeLabel(record: any): string {
+  const raw = record?.nodeTagValue;
+  if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+    return String(raw);
+  }
+  const pv = record?.provider;
+  const p =
+    typeof pv === 'number'
+      ? PROVIDER_ENUM_CN[pv] ?? '云'
+      : { ali: '阿里云', tencent: '腾讯云', huawei: '华为云', aws: 'AWS' }[
+          String(pv)
+        ] ?? '云';
+  const r = String(record?.regionName ?? '').trim();
+  if (!r) {
+    return '—';
+  }
+  return `${p}-${r}`;
+}
+
 function renderCell(val: unknown) {
   if (val === null || val === undefined || val === '') {
     return '—';
@@ -61,7 +88,10 @@ const FullResourceTable: React.FC<FullResourceTableProps> = ({
         ? (value: string | number | boolean, record: any) =>
             String(record[f.dataIndex] ?? '') === String(value)
         : undefined,
-      render: (_: unknown, record: any) => renderCell(record[f.dataIndex]),
+      render: (_: unknown, record: any) =>
+        f.dataIndex === 'nodeTagValue'
+          ? renderCell(effectiveNodeLabel(record))
+          : renderCell(record[f.dataIndex]),
     })),
   ];
 

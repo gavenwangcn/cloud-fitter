@@ -5,6 +5,7 @@ import (
 	"flag"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -22,6 +23,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbstatistic"
+	"github.com/cloud-fitter/cloud-fitter/internal/cmdb"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/server"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
@@ -32,9 +34,13 @@ var (
 	// command-line options:
 	// gRPC server endpoint
 	grpcServerEndpoint = flag.String("grpc-server-endpoint", ":9091", "gRPC server endpoint")
+	// CMDB 同步（与 cmdb-sync 写入逻辑一致，云数据来自本进程 jsonapi 同源 List）。留空则不从命令行启用；环境变量见 cmdb.CMDBConfigFromEnv
+	cmdbBaseURL  = flag.String("cmdb-base-url", "", "CMDB API base URL, enables daily CMDB sync at 02:00 if key/secret set")
+	cmdbKey      = flag.String("cmdb-key", "", "CMDB API _key (overrides CLOUD_FITTER_CMDB_KEY if set)")
+	cmdbSecret   = flag.String("cmdb-secret", "", "CMDB API signing secret (overrides CLOUD_FITTER_CMDB_SECRET if set)")
 )
 
-func run(store *configstore.Store) error {
+func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -94,10 +100,12 @@ func run(store *configstore.Store) error {
 		start := time.Now()
 		glog.Infof("http %s %s", r.Method, r.URL.RequestURI())
 		switch {
-		case r.URL.Path == "/apis/configs" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		case r.URL.Path == "/apis/configs" && (r.Method == http.MethodGet || r.Method == http.MethodPost || r.Method == http.MethodDelete):
 			configHandler.ServeHTTP(w, r)
-		case r.URL.Path == "/apis/systems" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		case r.URL.Path == "/apis/systems" && (r.Method == http.MethodGet || r.Method == http.MethodPost || r.Method == http.MethodPut):
 			systemHandler.ServeHTTP(w, r)
+		case r.URL.Path == "/apis/cmdb/sync" && r.Method == http.MethodPost:
+			cmdb.SyncHTTPHandler(cmdbSyncer).ServeHTTP(w, r)
 		case r.URL.Path == "/apis/ecs/by-account" && r.Method == http.MethodPost:
 			jsonapi.EcsByAccount(w, r)
 		case r.URL.Path == "/apis/rds/by-account" && r.Method == http.MethodPost:
@@ -176,7 +184,29 @@ func main() {
 		}
 	}()
 
-	if err := run(store); err != nil {
+	var cmdbSyncer *cmdb.Syncer
+	{
+		base, key, sec, _ := cmdb.CMDBConfigFromEnv()
+		if b := strings.TrimSpace(*cmdbBaseURL); b != "" {
+			base = b
+		}
+		if v := strings.TrimSpace(*cmdbKey); v != "" {
+			key = v
+		}
+		if v := strings.TrimSpace(*cmdbSecret); v != "" {
+			sec = v
+		}
+		if base != "" && key != "" && sec != "" {
+			cmdbSyncer = &cmdb.Syncer{Client: cmdb.NewClient(base, key, sec), Store: store}
+			glog.Infof("CMDB client configured baseURL=%q", base)
+		}
+	}
+	if cmdbSyncer != nil {
+		cmdbSyncer.StartDailyAt(2, 0)
+		glog.Infof("CMDB daily sync enabled at 02:00 (local)")
+	}
+
+	if err := run(store, cmdbSyncer); err != nil {
 		glog.Fatal(err)
 	}
 }

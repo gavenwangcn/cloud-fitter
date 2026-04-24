@@ -6,8 +6,15 @@ export interface CloudConfigRow {
   name: string;
 }
 
-export async function listCloudConfigs(): Promise<{ configs: CloudConfigRow[] }> {
-  return request('/apis/configs', { method: 'GET' });
+export async function listCloudConfigs(params?: {
+  page?: number;
+  pageSize?: number;
+}): Promise<{ configs: CloudConfigRow[]; total?: number }> {
+  return request('/apis/configs', { method: 'GET', params: params || {} });
+}
+
+export async function deleteCloudConfig(id: number) {
+  return request(`/apis/configs?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export async function createCloudConfig(data: {
