@@ -5,6 +5,8 @@ export interface SystemRow {
   name: string;
   intro: string;
   systemId: string;
+  onlineTime: string;
+  status: string;
   accountIds: number[];
   accountNames: string[];
 }
@@ -17,6 +19,8 @@ export async function createSystem(data: {
   name: string;
   intro: string;
   systemId: string;
+  onlineTime: string;
+  status: string;
   accountIds: number[];
 }) {
   return request('/apis/systems', { method: 'POST', data });

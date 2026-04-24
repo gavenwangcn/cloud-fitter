@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useModel } from '@@/plugin-model/useModel';
-import { Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
+import { Button, DatePicker, Form, Input, Modal, Select, Space, Table, message } from 'antd';
 import { listCloudConfigs, CloudConfigRow } from '@/services/cloudConfig';
 import { createSystem, listSystems, SystemRow } from '@/services/systemManage';
 
@@ -39,6 +39,8 @@ const SystemPage: React.FC = () => {
         name: v.name,
         intro: v.intro,
         systemId: v.systemId,
+        onlineTime: v.onlineTime.format('YYYY-MM-DD'),
+        status: v.status,
         accountIds: v.accountIds ?? [],
       });
       message.success('系统创建成功');
@@ -76,6 +78,8 @@ const SystemPage: React.FC = () => {
           { title: '系统名称', dataIndex: 'name', align: 'center' },
           { title: '系统功能简介', dataIndex: 'intro', align: 'center' },
           { title: '系统ID', dataIndex: 'systemId', align: 'center' },
+          { title: '上线时间', dataIndex: 'onlineTime', align: 'center' },
+          { title: '状态', dataIndex: 'status', align: 'center' },
           {
             title: '关联账号',
             dataIndex: 'accountNames',
@@ -139,6 +143,26 @@ const SystemPage: React.FC = () => {
               placeholder="请选择配置管理中的账号"
               options={configs.map((c) => ({ label: c.name, value: c.id }))}
               allowClear
+            />
+          </Form.Item>
+          <Form.Item
+            name="onlineTime"
+            label="上线时间"
+            rules={[{ required: true, message: '请选择上线时间' }]}
+          >
+            <DatePicker style={{ width: '100%' }} placeholder="请选择上线时间" />
+          </Form.Item>
+          <Form.Item
+            name="status"
+            label="状态"
+            rules={[{ required: true, message: '请选择状态' }]}
+          >
+            <Select
+              placeholder="请选择状态"
+              options={[
+                { label: '运行中', value: '运行中' },
+                { label: '下线', value: '下线' },
+              ]}
             />
           </Form.Item>
         </Form>
