@@ -8,6 +8,10 @@ export default [
         redirect: '/ecs',
       },
       {
+        path: '/billing',
+        component: './billing',
+      },
+      {
         path: '/ecs',
         component: './ecs',
       },

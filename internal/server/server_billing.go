@@ -28,3 +28,12 @@ func (s *Server) ListBilling(ctx context.Context, req *pbbilling.ListReq) (*pbbi
 	}
 	return resp, nil
 }
+
+func (s *Server) ListBillingSummary(ctx context.Context, req *pbbilling.ListBillingSummaryReq) (*pbbilling.ListBillingSummaryResp, error) {
+	resp, err := billing.ListSummary(ctx, req)
+	if err != nil {
+		glog.Errorf("ListBillingSummary error %+v", err)
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+	return resp, nil
+}

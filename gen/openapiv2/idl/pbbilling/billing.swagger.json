@@ -81,9 +81,74 @@
           "BillingService"
         ]
       }
+    },
+    "/apis/billing/summary": {
+      "post": {
+        "summary": "按 ECS/RDS/DCS 等大类的月度消费汇总（阿里云/腾讯云由明细聚合；华为云走 BSS 汇总账单接口）",
+        "operationId": "BillingService_ListBillingSummary",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/pbbillingListBillingSummaryResp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbbillingListBillingSummaryReq"
+            }
+          }
+        ],
+        "tags": [
+          "BillingService"
+        ]
+      }
     }
   },
   "definitions": {
+    "pbbillingBillingCategoryRow": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider"
+        },
+        "accountName": {
+          "type": "string"
+        },
+        "billingCycle": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "title": "大类展示名：ECS、RDS、DCS、DMS、CCE、其他"
+        },
+        "totalConsumeAmount": {
+          "type": "number",
+          "format": "double",
+          "title": "该大类应付/消费金额合计"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "sourceRowCount": {
+          "type": "integer",
+          "format": "int32",
+          "title": "参与汇总的原始账单行数"
+        }
+      },
+      "title": "按资源大类汇总的消费总账（如 ECS、RDS、DCS），金额单位与云厂商账单一致（通常为「元」）。"
+    },
     "pbbillingBillingInstance": {
       "type": "object",
       "properties": {
@@ -131,6 +196,40 @@
         "subscriptionType": {
           "type": "string",
           "title": "订阅类型：Subscription：预付费 PayAsYouGo：后付费"
+        }
+      }
+    },
+    "pbbillingListBillingSummaryReq": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/pbtenantCloudProvider"
+        },
+        "billingCycle": {
+          "type": "string",
+          "title": "账期 YYYY-MM（东八区自然月）"
+        },
+        "accountName": {
+          "type": "string"
+        }
+      }
+    },
+    "pbbillingListBillingSummaryResp": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/pbbillingBillingCategoryRow"
+          }
+        },
+        "grandTotalConsume": {
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "type": "string"
         }
       }
     },

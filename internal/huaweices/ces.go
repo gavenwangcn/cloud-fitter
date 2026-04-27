@@ -3,6 +3,7 @@ package huaweices
 import (
 	"context"
 	"math"
+	"strings"
 
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -43,16 +44,27 @@ func NewClient(regionName string, tenant tenanter.Tenanter) (*hwces.CesClient, e
 	return hwces.NewCesClient(hc), nil
 }
 
-// MetricQuery 单个指标维度 + 名称。
+// DimPair CES 指标除首维度外的其它维度（如 AGT.ECS 的 disk_usedPercent 需 mount_point）。
+type DimPair struct {
+	Name  string
+	Value string
+}
+
+// MetricQuery 单个指标：首维度 DimName/DimValue + 可选 ExtraDims；mapKey 与响应侧按维度取值顺序拼接一致。
 type MetricQuery struct {
 	Namespace  string
 	DimName    string
 	DimValue   string
+	ExtraDims  []DimPair
 	MetricName string
 }
 
 func (q MetricQuery) mapKey() string {
-	return q.DimValue + "\x00" + q.MetricName
+	parts := []string{q.DimValue}
+	for _, e := range q.ExtraDims {
+		parts = append(parts, e.Value)
+	}
+	return strings.Join(parts, "\x00") + "\x00" + q.MetricName
 }
 
 // BatchQueryAverageSeries 调用华为云监控 CES 官方接口批量查询监控数据：
@@ -73,12 +85,15 @@ func BatchQueryAverageSeries(ctx context.Context, cli *hwces.CesClient, queries 
 		metrics := make([]cesmodel.MetricInfo, 0, len(chunk))
 		for _, q := range chunk {
 			v := q.DimValue
+			dims := make([]cesmodel.MetricsDimension, 0, 1+len(q.ExtraDims))
+			dims = append(dims, cesmodel.MetricsDimension{Name: q.DimName, Value: &v})
+			for _, e := range q.ExtraDims {
+				ev := e.Value
+				en := e.Name
+				dims = append(dims, cesmodel.MetricsDimension{Name: en, Value: &ev})
+			}
 			metrics = append(metrics, cesmodel.MetricInfo{
-				Namespace:  q.Namespace,
-				MetricName: q.MetricName,
-				Dimensions: []cesmodel.MetricsDimension{
-					{Name: q.DimName, Value: &v},
-				},
+				Namespace:  q.Namespace, MetricName: q.MetricName, Dimensions: dims,
 			})
 		}
 		body := &cesmodel.BatchListMetricDataRequestBody{
@@ -97,16 +112,15 @@ func BatchQueryAverageSeries(ctx context.Context, cli *hwces.CesClient, queries 
 			continue
 		}
 		for _, m := range *resp.Metrics {
-			dimVal := ""
+			var keyParts []string
 			if m.Dimensions != nil {
 				for _, d := range *m.Dimensions {
 					if d.Value != nil && *d.Value != "" {
-						dimVal = *d.Value
-						break
+						keyParts = append(keyParts, *d.Value)
 					}
 				}
 			}
-			k := dimVal + "\x00" + m.MetricName
+			k := strings.Join(keyParts, "\x00") + "\x00" + m.MetricName
 			out[k] = append(out[k], m.Datapoints...)
 		}
 	}

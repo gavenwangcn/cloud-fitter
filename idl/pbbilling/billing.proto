@@ -68,6 +68,32 @@ message ListResp {
   repeated BillingInstance billings = 1;
 }
 
+// 按资源大类汇总的消费总账（如 ECS、RDS、DCS），金额单位与云厂商账单一致（通常为「元」）。
+message BillingCategoryRow {
+  pbtenant.CloudProvider provider = 1;
+  string account_name = 2;
+  string billing_cycle = 3;
+  // 大类展示名：ECS、RDS、DCS、DMS、CCE、其他
+  string category = 4;
+  // 该大类应付/消费金额合计
+  double total_consume_amount = 5;
+  string currency = 6;
+  // 参与汇总的原始账单行数
+  int32 source_row_count = 7;
+}
+
+message ListBillingSummaryReq {
+  pbtenant.CloudProvider provider = 1;
+  // 账期 YYYY-MM（东八区自然月）
+  string billing_cycle = 2;
+  string account_name = 3;
+}
+
+message ListBillingSummaryResp {
+  repeated BillingCategoryRow rows = 1;
+  double grand_total_consume = 2;
+  string currency = 3;
+}
 
 // 计费接口
 // 阿里云 - bssopenapi
@@ -85,6 +111,14 @@ service BillingService {
   rpc ListBilling(ListReq) returns (ListResp) {
     option (google.api.http) = {
       post : "/apis/billing"
+      body : "*"
+    };
+  }
+
+  // 按 ECS/RDS/DCS 等大类的月度消费汇总（阿里云/腾讯云由明细聚合；华为云走 BSS 汇总账单接口）
+  rpc ListBillingSummary(ListBillingSummaryReq) returns (ListBillingSummaryResp) {
+    option (google.api.http) = {
+      post : "/apis/billing/summary"
       body : "*"
     };
   }

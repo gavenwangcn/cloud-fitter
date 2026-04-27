@@ -15,6 +15,11 @@ export const menuList = [
     icon: 'icon-quanju1',
   },
   {
+    title: '账单汇总',
+    key: 'billing',
+    icon: 'icon-quanju1',
+  },
+  {
     title: 'ECS',
     key: 'ecs',
     icon: 'icon-quanju1',

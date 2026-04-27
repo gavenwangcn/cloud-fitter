@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   PROVIDER_FILTERS,
   ResourceFieldDef,
 } from '@/constants/resourceFields';
+import {
+  RESOURCE_TABLE_DEFAULT_PAGE_SIZE,
+  RESOURCE_TABLE_PAGE_SIZE_OPTIONS,
+} from '@/constants/tablePagination';
 
 /** 与后端 cloudTypeLabel 一致，用于无「节点」标签时展示 云名-地域 */
 const PROVIDER_ENUM_CN: Record<number, string> = {
@@ -68,7 +72,23 @@ const FullResourceTable: React.FC<FullResourceTableProps> = ({
   dataSource,
   loading,
 }) => {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(RESOURCE_TABLE_DEFAULT_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [dataSource]);
+
   const columns: ColumnsType<any> = [
+    {
+      title: '序号',
+      key: '_index',
+      fixed: 'left',
+      width: 72,
+      align: 'center',
+      render: (_: unknown, __: any, index: number) =>
+        (page - 1) * pageSize + index + 1,
+    },
     {
       title: '资源类型',
       key: '_resourceType',
@@ -105,7 +125,20 @@ const FullResourceTable: React.FC<FullResourceTableProps> = ({
       loading={loading}
       dataSource={dataSource}
       columns={columns}
-      pagination={false}
+      pagination={{
+        current: page,
+        pageSize,
+        total: dataSource.length,
+        showTotal: (total) => `共 ${total} 条`,
+        showSizeChanger: true,
+        pageSizeOptions: [...RESOURCE_TABLE_PAGE_SIZE_OPTIONS],
+        onChange: (p, ps) => {
+          setPage(p);
+          if (ps) {
+            setPageSize(ps);
+          }
+        },
+      }}
       scroll={{ x: 'max-content' }}
     />
   );

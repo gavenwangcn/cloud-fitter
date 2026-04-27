@@ -244,13 +244,17 @@ const (
 	huaweiCESDimECSInstance = "instance_id"
 	huaweiCESMetricECSCPU   = "cpu_util"
 	huaweiCESMetricECSMem   = "mem_util"
-	// disk_util_inband：带内磁盘使用率；与 mem_util 均依赖镜像 VMTools，见同页 SYS.ECS。
+	// disk_util_inband：带内磁盘使用率（SYS.ECS）。官方要求镜像安装 UVP VMTools，否则无数据；与 mem_util 同页说明。
+	// https://support.huaweicloud.com/intl/zh-cn/usermanual-ecs/ecs_03_1002.html
 	huaweiCESMetricECSDisk = "disk_util_inband"
-	// 操作系统监控 AGT.ECS（需安装云监控 Agent）：mem_usedPercent，见 https://support.huaweicloud.com/usermanual-ecs/ecs_03_1003.html
-	huaweiCESNamespaceAGTECS          = "AGT.ECS"
-	huaweiCESMetricAGTMemUsedPercent = "mem_usedPercent"
-	// 每台实例 4 条指标：SYS cpu/mem/disk + AGT mem（同一 BatchListMetricData 一次查出，无二次请求）。
-	metricsPerEcsInstance = 4
+	// 操作系统监控 AGT.ECS（需安装云监控 Agent），见 https://support.huaweicloud.com/usermanual-ecs/ecs_03_1003.html
+	huaweiCESNamespaceAGTECS           = "AGT.ECS"
+	huaweiCESMetricAGTMemUsedPercent   = "mem_usedPercent"
+	huaweiCESMetricAGTDiskUsedPercent  = "disk_usedPercent"
+	huaweiCESDimAGTMountPoint          = "mount_point"
+	huaweiAGTDiskMountPointLinuxRoot   = "/"
+	// 每台实例 5 条指标：SYS cpu/mem/disk + AGT mem + AGT 根分区磁盘使用率（无 VMTools 时 disk_util_inband 常为空，用 Agent 补磁盘）。
+	metricsPerEcsInstance = 5
 )
 
 type ecsUtilWindowAgg struct {
@@ -292,6 +296,21 @@ func ecsMemWindowPreferSYS(sysP, sysA, sysM float64, sysOK bool, agtP, agtA, agt
 		return agtP, agtA, agtM, true
 	}
 	return 0, 0, 0, false
+}
+
+// ecsDiskPreferSYS：优先 SYS.ECS disk_util_inband（整机磁盘，需 VMTools）；无数据时用 AGT.ECS disk_usedPercent（根分区 /，需 Agent）。
+func ecsDiskPreferSYS(sysU float64, sysOK bool, agtU float64, agtOK bool) (u float64, ok bool) {
+	if sysOK {
+		return sysU, true
+	}
+	if agtOK {
+		return agtU, true
+	}
+	return 0, false
+}
+
+func agtDiskSeriesKey(instanceID string) string {
+	return instanceID + "\x00" + huaweiAGTDiskMountPointLinuxRoot + "\x00" + huaweiCESMetricAGTDiskUsedPercent
 }
 
 func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance, regionName string, tenant tenanter.Tenanter, accountName string) {
@@ -342,6 +361,14 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 					Namespace: huaweiCESNamespaceAGTECS, DimName: huaweiCESDimECSInstance,
 					DimValue: id, MetricName: huaweiCESMetricAGTMemUsedPercent,
 				},
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceAGTECS, DimName: huaweiCESDimECSInstance,
+					DimValue: id,
+					ExtraDims: []huaweices.DimPair{
+						{Name: huaweiCESDimAGTMountPoint, Value: huaweiAGTDiskMountPointLinuxRoot},
+					},
+					MetricName: huaweiCESMetricAGTDiskUsedPercent,
+				},
 			)
 		}
 		if series30, err30 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from30, toMs); err30 != nil {
@@ -352,7 +379,9 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 				smP, smA, smM, smOK := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSMem])
 				agtP, agtA, agtM, agtOK := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricAGTMemUsedPercent])
 				pm, am, mm, mok := ecsMemWindowPreferSYS(smP, smA, smM, smOK, agtP, agtA, agtM, agtOK)
-				du, dok := huaweices.AvgFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSDisk])
+				duSys, dokSys := huaweices.AvgFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSDisk])
+				duAgt, dokAgt := huaweices.AvgFromAveragePoints(series30[agtDiskSeriesKey(id)])
+				du, dok := ecsDiskPreferSYS(duSys, dokSys, duAgt, dokAgt)
 				m30[id] = ecsUtilWindowAgg{
 					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
 					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
@@ -368,7 +397,9 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 				smP, smA, smM, smOK := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSMem])
 				agtP, agtA, agtM, agtOK := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricAGTMemUsedPercent])
 				pm, am, mm, mok := ecsMemWindowPreferSYS(smP, smA, smM, smOK, agtP, agtA, agtM, agtOK)
-				du, dok := huaweices.AvgFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSDisk])
+				duSys, dokSys := huaweices.AvgFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSDisk])
+				duAgt, dokAgt := huaweices.AvgFromAveragePoints(series180[agtDiskSeriesKey(id)])
+				du, dok := ecsDiskPreferSYS(duSys, dokSys, duAgt, dokAgt)
 				m180[id] = ecsUtilWindowAgg{
 					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
 					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,

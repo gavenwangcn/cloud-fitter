@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	BillingService_ListBillingDetail_FullMethodName = "/pbbilling.BillingService/ListBillingDetail"
-	BillingService_ListBilling_FullMethodName       = "/pbbilling.BillingService/ListBilling"
+	BillingService_ListBillingDetail_FullMethodName  = "/pbbilling.BillingService/ListBillingDetail"
+	BillingService_ListBilling_FullMethodName        = "/pbbilling.BillingService/ListBilling"
+	BillingService_ListBillingSummary_FullMethodName = "/pbbilling.BillingService/ListBillingSummary"
 )
 
 // BillingServiceClient is the client API for BillingService service.
@@ -31,6 +32,8 @@ type BillingServiceClient interface {
 	ListBillingDetail(ctx context.Context, in *ListDetailReq, opts ...grpc.CallOption) (*ListDetailResp, error)
 	// 查询费用全量 - 根据云类型
 	ListBilling(ctx context.Context, in *ListReq, opts ...grpc.CallOption) (*ListResp, error)
+	// 按 ECS/RDS/DCS 等大类的月度消费汇总（阿里云/腾讯云由明细聚合；华为云走 BSS 汇总账单接口）
+	ListBillingSummary(ctx context.Context, in *ListBillingSummaryReq, opts ...grpc.CallOption) (*ListBillingSummaryResp, error)
 }
 
 type billingServiceClient struct {
@@ -59,6 +62,15 @@ func (c *billingServiceClient) ListBilling(ctx context.Context, in *ListReq, opt
 	return out, nil
 }
 
+func (c *billingServiceClient) ListBillingSummary(ctx context.Context, in *ListBillingSummaryReq, opts ...grpc.CallOption) (*ListBillingSummaryResp, error) {
+	out := new(ListBillingSummaryResp)
+	err := c.cc.Invoke(ctx, BillingService_ListBillingSummary_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BillingServiceServer is the server API for BillingService service.
 // All implementations must embed UnimplementedBillingServiceServer
 // for forward compatibility
@@ -67,6 +79,8 @@ type BillingServiceServer interface {
 	ListBillingDetail(context.Context, *ListDetailReq) (*ListDetailResp, error)
 	// 查询费用全量 - 根据云类型
 	ListBilling(context.Context, *ListReq) (*ListResp, error)
+	// 按 ECS/RDS/DCS 等大类的月度消费汇总（阿里云/腾讯云由明细聚合；华为云走 BSS 汇总账单接口）
+	ListBillingSummary(context.Context, *ListBillingSummaryReq) (*ListBillingSummaryResp, error)
 	mustEmbedUnimplementedBillingServiceServer()
 }
 
@@ -79,6 +93,9 @@ func (UnimplementedBillingServiceServer) ListBillingDetail(context.Context, *Lis
 }
 func (UnimplementedBillingServiceServer) ListBilling(context.Context, *ListReq) (*ListResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListBilling not implemented")
+}
+func (UnimplementedBillingServiceServer) ListBillingSummary(context.Context, *ListBillingSummaryReq) (*ListBillingSummaryResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBillingSummary not implemented")
 }
 func (UnimplementedBillingServiceServer) mustEmbedUnimplementedBillingServiceServer() {}
 
@@ -129,6 +146,24 @@ func _BillingService_ListBilling_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BillingService_ListBillingSummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBillingSummaryReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BillingServiceServer).ListBillingSummary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BillingService_ListBillingSummary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BillingServiceServer).ListBillingSummary(ctx, req.(*ListBillingSummaryReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BillingService_ServiceDesc is the grpc.ServiceDesc for BillingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -143,6 +178,10 @@ var BillingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListBilling",
 			Handler:    _BillingService_ListBilling_Handler,
+		},
+		{
+			MethodName: "ListBillingSummary",
+			Handler:    _BillingService_ListBillingSummary_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
