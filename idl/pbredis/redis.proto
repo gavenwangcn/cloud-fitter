@@ -4,6 +4,7 @@ package pbredis;
 option go_package = "github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis";
 
 import "idl/pbtenant/tenant.proto";
+import "idl/pbutilization/utilization.proto";
 import "google/api/annotations.proto";
 
 message RedisInstance {
@@ -39,6 +40,8 @@ message RedisInstance {
   string env_tag_value = 17;
   // 节点标签值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）
   string node_tag_value = 18;
+  // 内存利用率审计（DCS）；华为云 CES memory_usage，其它云未填充
+  pbutilization.MemoryUtilizationAudit memory_utilization_audit = 19;
 }
 
 message ListDetailReq {

@@ -300,6 +300,10 @@
         "nodeTagValue": {
           "type": "string",
           "title": "节点标签值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）"
+        },
+        "utilizationAudit": {
+          "$ref": "#/definitions/pbutilizationComputeUtilizationAudit",
+          "title": "资源利用率审计（CPU/内存）；华为云 CES，其它云未填充"
         }
       }
     },
@@ -314,6 +318,46 @@
       "default": "ali",
       "description": "- ali: 0 - 阿里云\n - tencent: 1 - 腾讯云\n - huawei: 2 - 华为云\n - aws: 3 - 亚马逊云",
       "title": "云提供商"
+    },
+    "pbutilizationComputeUtilizationAudit": {
+      "type": "object",
+      "properties": {
+        "cpuLast30d": {
+          "$ref": "#/definitions/pbutilizationUtilizationWindow"
+        },
+        "cpuLast180d": {
+          "$ref": "#/definitions/pbutilizationUtilizationWindow"
+        },
+        "memLast30d": {
+          "$ref": "#/definitions/pbutilizationUtilizationWindow"
+        },
+        "memLast180d": {
+          "$ref": "#/definitions/pbutilizationUtilizationWindow"
+        }
+      },
+      "title": "ECS / RDS：CPU 与内存各两个窗口（约 30 天、约 180 天）。"
+    },
+    "pbutilizationUtilizationWindow": {
+      "type": "object",
+      "properties": {
+        "peakPercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "avgPercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "minPercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "available": {
+          "type": "boolean",
+          "title": "是否在窗口内成功拉取到至少一个有效监控点"
+        }
+      },
+      "title": "某一时间窗口内资源使用率统计（百分比 0–100，来自云监控聚合序列再统计峰/均/谷）。"
     },
     "protobufAny": {
       "type": "object",

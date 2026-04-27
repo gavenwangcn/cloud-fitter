@@ -5,7 +5,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwdcs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dcs/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dcs/v2/model"
@@ -15,7 +17,9 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -186,6 +190,93 @@ func resolveDcsCPU(spec string, bySpec map[string]int32) int32 {
 	return cpuFromSpecCodeFallback(spec)
 }
 
+const (
+	huaweiCESNamespaceDCS   = "SYS.DCS"
+	huaweiCESDimDCSInstance = "dcs_instance_id"
+	huaweiCESMetricDCSMem   = "memory_usage"
+	metricsPerDcsInstance   = 1
+)
+
+func dcsMemWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
+	if !ok {
+		return &pbutilization.UtilizationWindow{Available: false}
+	}
+	return &pbutilization.UtilizationWindow{
+		PeakPercent: peak, AvgPercent: avg, MinPercent: min, Available: true,
+	}
+}
+
+func fillHuaweiDCSMemoryUtilization(ctx context.Context, list []*pbredis.RedisInstance, regionName string, tenant tenanter.Tenanter, accountName string) {
+	if len(list) == 0 {
+		return
+	}
+	cli, err := huaweices.NewClient(regionName, tenant)
+	if err != nil {
+		glog.Warningf("Huawei DCS CES client init failed account=%s region=%s err=%v", accountName, regionName, err)
+		return
+	}
+	now := time.Now().UTC()
+	toMs := now.UnixMilli()
+	from30 := now.Add(-30 * 24 * time.Hour).UnixMilli()
+	from180 := now.Add(-180 * 24 * time.Hour).UnixMilli()
+
+	ids := make([]string, 0, len(list))
+	for _, e := range list {
+		if e == nil || e.InstanceId == "" {
+			continue
+		}
+		ids = append(ids, e.InstanceId)
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	type memAgg struct {
+		p, a, m float64
+		ok      bool
+	}
+	m30 := make(map[string]memAgg, len(ids))
+	m180 := make(map[string]memAgg, len(ids))
+
+	for _, batch := range huaweices.ChunkInstanceIDs(ids, metricsPerDcsInstance, huaweices.MaxMetricsPerBatch) {
+		q := make([]huaweices.MetricQuery, 0, len(batch))
+		for _, id := range batch {
+			q = append(q, huaweices.MetricQuery{
+				Namespace: huaweiCESNamespaceDCS, DimName: huaweiCESDimDCSInstance,
+				DimValue: id, MetricName: huaweiCESMetricDCSMem,
+			})
+		}
+		if s30, e30 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from30, toMs); e30 != nil {
+			huaweices.LogBatchError("DCS", accountName, regionName, e30)
+		} else {
+			for _, id := range batch {
+				p, a, m, ok := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricDCSMem])
+				m30[id] = memAgg{p, a, m, ok}
+			}
+		}
+		if s180, e180 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from180, toMs); e180 != nil {
+			huaweices.LogBatchError("DCS", accountName, regionName, e180)
+		} else {
+			for _, id := range batch {
+				p, a, m, ok := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricDCSMem])
+				m180[id] = memAgg{p, a, m, ok}
+			}
+		}
+	}
+
+	for _, e := range list {
+		if e == nil || e.InstanceId == "" {
+			continue
+		}
+		a30 := m30[e.InstanceId]
+		a180 := m180[e.InstanceId]
+		e.MemoryUtilizationAudit = &pbutilization.MemoryUtilizationAudit{
+			MemLast_30D:  dcsMemWindowProto(a30.p, a30.a, a30.m, a30.ok),
+			MemLast_180D: dcsMemWindowProto(a180.p, a180.a, a180.m, a180.ok),
+		}
+	}
+}
+
 func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailReq) (*pbredis.ListDetailResp, error) {
 	request := new(model.ListInstancesRequest)
 	offset := (req.PageNumber - 1) * req.PageSize
@@ -255,6 +346,8 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 	if len(redises) < int(req.PageSize) {
 		isFinished = true
 	}
+
+	fillHuaweiDCSMemoryUtilization(ctx, redises, redis.region.GetName(), redis.tenanter, redis.tenanter.AccountName())
 
 	return &pbredis.ListDetailResp{
 		Redises:    redises,

@@ -4,6 +4,7 @@ package pbrds;
 option go_package = "github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds";
 
 import "idl/pbtenant/tenant.proto";
+import "idl/pbutilization/utilization.proto";
 import "google/api/annotations.proto";
 
 message RdsInstance {
@@ -45,6 +46,8 @@ message RdsInstance {
   string env_tag_value = 20;
   // 节点标签值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）
   string node_tag_value = 21;
+  // 资源利用率审计（CPU/内存）；华为云 CES，其它云未填充
+  pbutilization.ComputeUtilizationAudit utilization_audit = 22;
 }
 
 message ListDetailReq {

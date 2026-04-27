@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwrds "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3/model"
@@ -15,7 +17,9 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -86,6 +90,112 @@ func formatHuaweiRDSInstanceMode(v model.InstanceResponse) string {
 		return t
 	}
 	return t + " (" + rm + ")"
+}
+
+const (
+	huaweiCESNamespaceRDS       = "SYS.RDS"
+	huaweiCESDimRDSInstance     = "rds_instance_id"
+	huaweiCESMetricRDSCPU       = "rds001_cpu_util"
+	huaweiCESMetricRDSMem       = "rds002_mem_util"
+	metricsPerRdsInstance       = 2
+)
+
+func rdsUtilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
+	if !ok {
+		return &pbutilization.UtilizationWindow{Available: false}
+	}
+	return &pbutilization.UtilizationWindow{
+		PeakPercent: peak, AvgPercent: avg, MinPercent: min, Available: true,
+	}
+}
+
+func fillHuaweiRDSUtilization(ctx context.Context, rdsList []*pbrds.RdsInstance, regionName string, tenant tenanter.Tenanter, accountName string) {
+	if len(rdsList) == 0 {
+		return
+	}
+	cli, err := huaweices.NewClient(regionName, tenant)
+	if err != nil {
+		glog.Warningf("Huawei RDS CES client init failed account=%s region=%s err=%v", accountName, regionName, err)
+		return
+	}
+	now := time.Now().UTC()
+	toMs := now.UnixMilli()
+	from30 := now.Add(-30 * 24 * time.Hour).UnixMilli()
+	from180 := now.Add(-180 * 24 * time.Hour).UnixMilli()
+
+	ids := make([]string, 0, len(rdsList))
+	for _, e := range rdsList {
+		if e == nil || e.InstanceId == "" {
+			continue
+		}
+		ids = append(ids, e.InstanceId)
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	type agg struct {
+		cpuPeak, cpuAvg, cpuMin float64
+		cpuOK                 bool
+		memPeak, memAvg, memMin float64
+		memOK                 bool
+	}
+	m30 := make(map[string]agg, len(ids))
+	m180 := make(map[string]agg, len(ids))
+
+	for _, batch := range huaweices.ChunkInstanceIDs(ids, metricsPerRdsInstance, huaweices.MaxMetricsPerBatch) {
+		q := make([]huaweices.MetricQuery, 0, len(batch)*2)
+		for _, id := range batch {
+			q = append(q,
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceRDS, DimName: huaweiCESDimRDSInstance,
+					DimValue: id, MetricName: huaweiCESMetricRDSCPU,
+				},
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceRDS, DimName: huaweiCESDimRDSInstance,
+					DimValue: id, MetricName: huaweiCESMetricRDSMem,
+				},
+			)
+		}
+		if s30, e30 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from30, toMs); e30 != nil {
+			huaweices.LogBatchError("RDS", accountName, regionName, e30)
+		} else {
+			for _, id := range batch {
+				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSCPU])
+				pm, am, mm, okm := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSMem])
+				m30[id] = agg{
+					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
+					memPeak: pm, memAvg: am, memMin: mm, memOK: okm,
+				}
+			}
+		}
+		if s180, e180 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from180, toMs); e180 != nil {
+			huaweices.LogBatchError("RDS", accountName, regionName, e180)
+		} else {
+			for _, id := range batch {
+				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSCPU])
+				pm, am, mm, okm := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSMem])
+				m180[id] = agg{
+					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
+					memPeak: pm, memAvg: am, memMin: mm, memOK: okm,
+				}
+			}
+		}
+	}
+
+	for _, e := range rdsList {
+		if e == nil || e.InstanceId == "" {
+			continue
+		}
+		a30 := m30[e.InstanceId]
+		a180 := m180[e.InstanceId]
+		e.UtilizationAudit = &pbutilization.ComputeUtilizationAudit{
+			CpuLast_30D:  rdsUtilizationWindowProto(a30.cpuPeak, a30.cpuAvg, a30.cpuMin, a30.cpuOK),
+			CpuLast_180D: rdsUtilizationWindowProto(a180.cpuPeak, a180.cpuAvg, a180.cpuMin, a180.cpuOK),
+			MemLast_30D:  rdsUtilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
+			MemLast_180D: rdsUtilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
+		}
+	}
 }
 
 func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*pbrds.ListDetailResp, error) {
@@ -178,6 +288,8 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 	if len(rdses) < int(req.PageSize) {
 		isFinished = true
 	}
+
+	fillHuaweiRDSUtilization(ctx, rdses, r.region.GetName(), r.tenanter, r.tenanter.AccountName())
 
 	return &pbrds.ListDetailResp{
 		Rdses:      rdses,

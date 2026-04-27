@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -19,7 +20,9 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -235,6 +238,113 @@ func huaweiDiskFromListServerBlockDevices(block *model.ListServerBlockDevicesRes
 	return sys, dataSum, strings.Join(parts, "; ")
 }
 
+const (
+	huaweiCESNamespaceECS   = "SYS.ECS"
+	huaweiCESDimECSInstance = "instance_id"
+	huaweiCESMetricECSCPU   = "cpu_util"
+	huaweiCESMetricECSMem   = "mem_util"
+	metricsPerEcsInstance   = 2
+)
+
+type ecsUtilWindowAgg struct {
+	cpuPeak, cpuAvg, cpuMin float64
+	cpuOK                   bool
+	memPeak, memAvg, memMin float64
+	memOK                   bool
+}
+
+func utilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
+	if !ok {
+		return &pbutilization.UtilizationWindow{Available: false}
+	}
+	return &pbutilization.UtilizationWindow{
+		PeakPercent: peak, AvgPercent: avg, MinPercent: min, Available: true,
+	}
+}
+
+func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance, regionName string, tenant tenanter.Tenanter, accountName string) {
+	if len(ecsList) == 0 {
+		return
+	}
+	cli, err := huaweices.NewClient(regionName, tenant)
+	if err != nil {
+		glog.Warningf("Huawei ECS CES client init failed account=%s region=%s err=%v", accountName, regionName, err)
+		return
+	}
+	now := time.Now().UTC()
+	toMs := now.UnixMilli()
+	from30 := now.Add(-30 * 24 * time.Hour).UnixMilli()
+	from180 := now.Add(-180 * 24 * time.Hour).UnixMilli()
+
+	ids := make([]string, 0, len(ecsList))
+	for _, e := range ecsList {
+		if e == nil || e.InstanceId == "" {
+			continue
+		}
+		ids = append(ids, e.InstanceId)
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	m30 := make(map[string]ecsUtilWindowAgg, len(ids))
+	m180 := make(map[string]ecsUtilWindowAgg, len(ids))
+
+	for _, batch := range huaweices.ChunkInstanceIDs(ids, metricsPerEcsInstance, huaweices.MaxMetricsPerBatch) {
+		q := make([]huaweices.MetricQuery, 0, len(batch)*2)
+		for _, id := range batch {
+			q = append(q,
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceECS, DimName: huaweiCESDimECSInstance,
+					DimValue: id, MetricName: huaweiCESMetricECSCPU,
+				},
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceECS, DimName: huaweiCESDimECSInstance,
+					DimValue: id, MetricName: huaweiCESMetricECSMem,
+				},
+			)
+		}
+		if series30, err30 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from30, toMs); err30 != nil {
+			huaweices.LogBatchError("ECS", accountName, regionName, err30)
+		} else {
+			for _, id := range batch {
+				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSCPU])
+				pm, am, mm, okm := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSMem])
+				m30[id] = ecsUtilWindowAgg{
+					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
+					memPeak: pm, memAvg: am, memMin: mm, memOK: okm,
+				}
+			}
+		}
+		if series180, err180 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from180, toMs); err180 != nil {
+			huaweices.LogBatchError("ECS", accountName, regionName, err180)
+		} else {
+			for _, id := range batch {
+				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSCPU])
+				pm, am, mm, okm := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSMem])
+				m180[id] = ecsUtilWindowAgg{
+					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
+					memPeak: pm, memAvg: am, memMin: mm, memOK: okm,
+				}
+			}
+		}
+	}
+
+	for _, e := range ecsList {
+		if e == nil || e.InstanceId == "" {
+			continue
+		}
+		a30 := m30[e.InstanceId]
+		a180 := m180[e.InstanceId]
+		e.UtilizationAudit = &pbutilization.ComputeUtilizationAudit{
+			CpuLast_30D:   utilizationWindowProto(a30.cpuPeak, a30.cpuAvg, a30.cpuMin, a30.cpuOK),
+			CpuLast_180D:  utilizationWindowProto(a180.cpuPeak, a180.cpuAvg, a180.cpuMin, a180.cpuOK),
+			MemLast_30D:   utilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
+			MemLast_180D:  utilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
+		}
+	}
+}
+
 func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
 	request := new(model.ListServersDetailsRequest)
 	offset := (req.PageNumber - 1) * req.PageSize
@@ -334,6 +444,8 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	if len(ecses) < int(req.PageSize) {
 		isFinished = true
 	}
+
+	fillHuaweiECSUtilization(ctx, ecses, ecs.region.GetName(), ecs.tenanter, ecs.tenanter.AccountName())
 
 	return &pbecs.ListDetailResp{
 		Ecses:      ecses,

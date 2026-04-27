@@ -4,6 +4,7 @@ package pbecs;
 option go_package = "github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs";
 
 import "idl/pbtenant/tenant.proto";
+import "idl/pbutilization/utilization.proto";
 import "google/api/annotations.proto";
 
 message EcsInstance {
@@ -59,6 +60,8 @@ message EcsInstance {
   string env_tag_value = 25;
   // 节点标识：取实例上「节点」标签键的值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）；用于系统节点/CMDB 与列表展示
   string node_tag_value = 26;
+  // 资源利用率审计（CPU/内存，约 30 天与约 180 天窗口）；当前主要对华为云通过 CES 拉取，其它云未填充
+  pbutilization.ComputeUtilizationAudit utilization_audit = 27;
 }
 
 message ListDetailReq {
