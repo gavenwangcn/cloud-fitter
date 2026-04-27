@@ -239,11 +239,18 @@ func huaweiDiskFromListServerBlockDevices(block *model.ListServerBlockDevicesRes
 }
 
 const (
+	// 基础监控 SYS.ECS：附录见 https://support.huaweicloud.com/intl/en-us/eu-west-0-api-ces/en-us_topic_0171212508.html
 	huaweiCESNamespaceECS   = "SYS.ECS"
 	huaweiCESDimECSInstance = "instance_id"
 	huaweiCESMetricECSCPU   = "cpu_util"
 	huaweiCESMetricECSMem   = "mem_util"
-	metricsPerEcsInstance   = 2
+	// disk_util_inband：带内磁盘使用率；与 mem_util 均依赖镜像 VMTools，见同页 SYS.ECS。
+	huaweiCESMetricECSDisk = "disk_util_inband"
+	// 操作系统监控 AGT.ECS（需安装云监控 Agent）：mem_usedPercent，见 https://support.huaweicloud.com/usermanual-ecs/ecs_03_1003.html
+	huaweiCESNamespaceAGTECS          = "AGT.ECS"
+	huaweiCESMetricAGTMemUsedPercent = "mem_usedPercent"
+	// 每台实例 4 条指标：SYS cpu/mem/disk + AGT mem（同一 BatchListMetricData 一次查出，无二次请求）。
+	metricsPerEcsInstance = 4
 )
 
 type ecsUtilWindowAgg struct {
@@ -251,6 +258,8 @@ type ecsUtilWindowAgg struct {
 	cpuOK                   bool
 	memPeak, memAvg, memMin float64
 	memOK                   bool
+	diskUtil                float64
+	diskOK                  bool
 }
 
 func utilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
@@ -258,8 +267,31 @@ func utilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.Util
 		return &pbutilization.UtilizationWindow{Available: false}
 	}
 	return &pbutilization.UtilizationWindow{
-		PeakPercent: peak, AvgPercent: avg, MinPercent: min, Available: true,
+		PeakPercent: huaweices.RoundPercent2(peak),
+		AvgPercent:  huaweices.RoundPercent2(avg),
+		MinPercent:  huaweices.RoundPercent2(min),
+		Available:   true,
 	}
+}
+
+func periodUtilizationRateProto(util float64, ok bool) *pbutilization.PeriodUtilizationRate {
+	if !ok {
+		return &pbutilization.PeriodUtilizationRate{Available: false}
+	}
+	return &pbutilization.PeriodUtilizationRate{
+		UtilizationPercent: huaweices.RoundPercent2(util), Available: true,
+	}
+}
+
+// ecsMemWindowPreferSYS：同次批量已拉取 SYS.mem_util 与 AGT.mem_usedPercent 时，优先用基础监控 mem_util，否则用 Agent 指标。
+func ecsMemWindowPreferSYS(sysP, sysA, sysM float64, sysOK bool, agtP, agtA, agtM float64, agtOK bool) (p, a, m float64, ok bool) {
+	if sysOK {
+		return sysP, sysA, sysM, true
+	}
+	if agtOK {
+		return agtP, agtA, agtM, true
+	}
+	return 0, 0, 0, false
 }
 
 func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance, regionName string, tenant tenanter.Tenanter, accountName string) {
@@ -291,7 +323,7 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 	m180 := make(map[string]ecsUtilWindowAgg, len(ids))
 
 	for _, batch := range huaweices.ChunkInstanceIDs(ids, metricsPerEcsInstance, huaweices.MaxMetricsPerBatch) {
-		q := make([]huaweices.MetricQuery, 0, len(batch)*2)
+		q := make([]huaweices.MetricQuery, 0, len(batch)*metricsPerEcsInstance)
 		for _, id := range batch {
 			q = append(q,
 				huaweices.MetricQuery{
@@ -302,6 +334,14 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 					Namespace: huaweiCESNamespaceECS, DimName: huaweiCESDimECSInstance,
 					DimValue: id, MetricName: huaweiCESMetricECSMem,
 				},
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceECS, DimName: huaweiCESDimECSInstance,
+					DimValue: id, MetricName: huaweiCESMetricECSDisk,
+				},
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceAGTECS, DimName: huaweiCESDimECSInstance,
+					DimValue: id, MetricName: huaweiCESMetricAGTMemUsedPercent,
+				},
 			)
 		}
 		if series30, err30 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from30, toMs); err30 != nil {
@@ -309,10 +349,14 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 		} else {
 			for _, id := range batch {
 				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSCPU])
-				pm, am, mm, okm := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSMem])
+				smP, smA, smM, smOK := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSMem])
+				agtP, agtA, agtM, agtOK := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricAGTMemUsedPercent])
+				pm, am, mm, mok := ecsMemWindowPreferSYS(smP, smA, smM, smOK, agtP, agtA, agtM, agtOK)
+				du, dok := huaweices.AvgFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSDisk])
 				m30[id] = ecsUtilWindowAgg{
 					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
-					memPeak: pm, memAvg: am, memMin: mm, memOK: okm,
+					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
+					diskUtil: du, diskOK: dok,
 				}
 			}
 		}
@@ -321,10 +365,14 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 		} else {
 			for _, id := range batch {
 				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSCPU])
-				pm, am, mm, okm := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSMem])
+				smP, smA, smM, smOK := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSMem])
+				agtP, agtA, agtM, agtOK := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricAGTMemUsedPercent])
+				pm, am, mm, mok := ecsMemWindowPreferSYS(smP, smA, smM, smOK, agtP, agtA, agtM, agtOK)
+				du, dok := huaweices.AvgFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSDisk])
 				m180[id] = ecsUtilWindowAgg{
 					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
-					memPeak: pm, memAvg: am, memMin: mm, memOK: okm,
+					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
+					diskUtil: du, diskOK: dok,
 				}
 			}
 		}
@@ -341,6 +389,8 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 			CpuLast_180D:  utilizationWindowProto(a180.cpuPeak, a180.cpuAvg, a180.cpuMin, a180.cpuOK),
 			MemLast_30D:   utilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
 			MemLast_180D:  utilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
+			DiskLast_30D:  periodUtilizationRateProto(a30.diskUtil, a30.diskOK),
+			DiskLast_180D: periodUtilizationRateProto(a180.diskUtil, a180.diskOK),
 		}
 	}
 }

@@ -291,7 +291,7 @@
         },
         "memoryUtilizationAudit": {
           "$ref": "#/definitions/pbutilizationMemoryUtilizationAudit",
-          "title": "内存利用率审计（DCS）；华为云 CES memory_usage，其它云未填充"
+          "title": "内存与磁盘利用率审计（DCS）；华为云 CES memory_usage、disk_util_inband 等，其它云未填充"
         }
       }
     },
@@ -315,9 +315,28 @@
         },
         "memLast180d": {
           "$ref": "#/definitions/pbutilizationUtilizationWindow"
+        },
+        "diskLast30d": {
+          "$ref": "#/definitions/pbutilizationPeriodUtilizationRate"
+        },
+        "diskLast180d": {
+          "$ref": "#/definitions/pbutilizationPeriodUtilizationRate"
         }
       },
-      "title": "DCS（Redis）：仅内存利用率两个窗口。"
+      "title": "DCS（Redis）：内存为峰/均/谷；磁盘为期间平均利用率。"
+    },
+    "pbutilizationPeriodUtilizationRate": {
+      "type": "object",
+      "properties": {
+        "utilizationPercent": {
+          "type": "number",
+          "format": "double"
+        },
+        "available": {
+          "type": "boolean"
+        }
+      },
+      "title": "时间窗口内单一利用率：对 CES 小时级 average 序列再取算术平均（0–100）。"
     },
     "pbutilizationUtilizationWindow": {
       "type": "object",
@@ -335,11 +354,10 @@
           "format": "double"
         },
         "available": {
-          "type": "boolean",
-          "title": "是否在窗口内成功拉取到至少一个有效监控点"
+          "type": "boolean"
         }
       },
-      "title": "某一时间窗口内资源使用率统计（百分比 0–100，来自云监控聚合序列再统计峰/均/谷）。"
+      "title": "某一时间窗口内资源使用率统计（百分比 0–100）：峰 / 均 / 谷。\r\n数据来自华为云监控 CES BatchListMetricData（OpenAPI：POST .../batch-query-metric-data），\r\n对 filter=average、period=3600 返回的序列在本地再算 max/mean/min。"
     },
     "protobufAny": {
       "type": "object",

@@ -60,7 +60,7 @@ type RedisInstance struct {
 	EnvTagValue string `protobuf:"bytes,17,opt,name=env_tag_value,json=envTagValue,proto3" json:"env_tag_value,omitempty"`
 	// 节点标签值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）
 	NodeTagValue string `protobuf:"bytes,18,opt,name=node_tag_value,json=nodeTagValue,proto3" json:"node_tag_value,omitempty"`
-	// 内存利用率审计（DCS）；华为云 CES memory_usage，其它云未填充
+	// 内存与磁盘利用率审计（DCS）；华为云 CES memory_usage、disk_util_inband 等，其它云未填充
 	MemoryUtilizationAudit *pbutilization.MemoryUtilizationAudit `protobuf:"bytes,19,opt,name=memory_utilization_audit,json=memoryUtilizationAudit,proto3" json:"memory_utilization_audit,omitempty"`
 }
 

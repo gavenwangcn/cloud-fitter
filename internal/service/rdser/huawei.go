@@ -93,19 +93,49 @@ func formatHuaweiRDSInstanceMode(v model.InstanceResponse) string {
 }
 
 const (
-	huaweiCESNamespaceRDS       = "SYS.RDS"
-	huaweiCESDimRDSInstance     = "rds_instance_id"
-	huaweiCESMetricRDSCPU       = "rds001_cpu_util"
-	huaweiCESMetricRDSMem       = "rds002_mem_util"
-	metricsPerRdsInstance       = 2
+	huaweiCESNamespaceRDS  = "SYS.RDS"
+	huaweiCESMetricRDSCPU  = "rds001_cpu_util"
+	huaweiCESMetricRDSMem  = "rds002_mem_util"
+	huaweiCESMetricRDSDisk = "rds039_disk_util"
+	metricsPerRdsInstance  = 3
 )
+
+// huaweiRDSCESDimName 与华为云 CES「SYS.RDS」文档一致：不同引擎维度名不同，统一用 rds_instance_id 会查不到数据。
+// 参考：RDS 监控指标说明（MySQL：rds_cluster_id；PostgreSQL：postgresql_cluster_id；SQL Server：rds_instance_sqlserver_id）。
+func huaweiRDSCESDimName(engine string) string {
+	e := strings.ToLower(strings.TrimSpace(engine))
+	switch {
+	case strings.Contains(e, "mysql"), strings.Contains(e, "mariadb"):
+		return "rds_cluster_id"
+	case strings.Contains(e, "postgresql"), strings.Contains(e, "postgres"):
+		// 与 RDS API 附录「postgresql_cluster_id：RDS for PostgreSQL DB instance ID」一致；若仍无数据可再核对控制台指标维度。
+		return "postgresql_cluster_id"
+	case strings.Contains(e, "sqlserver"), strings.Contains(e, "sql server"):
+		return "rds_instance_sqlserver_id"
+	default:
+		// 空引擎或未知类型：与 MySQL 最常见写法一致（ListInstances 的 id 对应 rds_cluster_id）
+		return "rds_cluster_id"
+	}
+}
 
 func rdsUtilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
 	if !ok {
 		return &pbutilization.UtilizationWindow{Available: false}
 	}
 	return &pbutilization.UtilizationWindow{
-		PeakPercent: peak, AvgPercent: avg, MinPercent: min, Available: true,
+		PeakPercent: huaweices.RoundPercent2(peak),
+		AvgPercent:  huaweices.RoundPercent2(avg),
+		MinPercent:  huaweices.RoundPercent2(min),
+		Available:   true,
+	}
+}
+
+func rdsPeriodUtilizationRateProto(util float64, ok bool) *pbutilization.PeriodUtilizationRate {
+	if !ok {
+		return &pbutilization.PeriodUtilizationRate{Available: false}
+	}
+	return &pbutilization.PeriodUtilizationRate{
+		UtilizationPercent: huaweices.RoundPercent2(util), Available: true,
 	}
 }
 
@@ -123,61 +153,84 @@ func fillHuaweiRDSUtilization(ctx context.Context, rdsList []*pbrds.RdsInstance,
 	from30 := now.Add(-30 * 24 * time.Hour).UnixMilli()
 	from180 := now.Add(-180 * 24 * time.Hour).UnixMilli()
 
-	ids := make([]string, 0, len(rdsList))
+	filtered := make([]*pbrds.RdsInstance, 0, len(rdsList))
 	for _, e := range rdsList {
 		if e == nil || e.InstanceId == "" {
 			continue
 		}
-		ids = append(ids, e.InstanceId)
+		filtered = append(filtered, e)
 	}
-	if len(ids) == 0 {
+	if len(filtered) == 0 {
 		return
 	}
 
 	type agg struct {
 		cpuPeak, cpuAvg, cpuMin float64
-		cpuOK                 bool
+		cpuOK                   bool
 		memPeak, memAvg, memMin float64
-		memOK                 bool
+		memOK                   bool
+		diskUtil                float64
+		diskOK                  bool
 	}
-	m30 := make(map[string]agg, len(ids))
-	m180 := make(map[string]agg, len(ids))
+	m30 := make(map[string]agg, len(filtered))
+	m180 := make(map[string]agg, len(filtered))
 
-	for _, batch := range huaweices.ChunkInstanceIDs(ids, metricsPerRdsInstance, huaweices.MaxMetricsPerBatch) {
-		q := make([]huaweices.MetricQuery, 0, len(batch)*2)
-		for _, id := range batch {
+	perBatch := huaweices.MaxMetricsPerBatch / metricsPerRdsInstance
+	if perBatch < 1 {
+		perBatch = 1
+	}
+	for i := 0; i < len(filtered); i += perBatch {
+		j := i + perBatch
+		if j > len(filtered) {
+			j = len(filtered)
+		}
+		batch := filtered[i:j]
+		q := make([]huaweices.MetricQuery, 0, len(batch)*metricsPerRdsInstance)
+		for _, e := range batch {
+			dim := huaweiRDSCESDimName(e.Engine)
+			id := e.InstanceId
 			q = append(q,
 				huaweices.MetricQuery{
-					Namespace: huaweiCESNamespaceRDS, DimName: huaweiCESDimRDSInstance,
+					Namespace: huaweiCESNamespaceRDS, DimName: dim,
 					DimValue: id, MetricName: huaweiCESMetricRDSCPU,
 				},
 				huaweices.MetricQuery{
-					Namespace: huaweiCESNamespaceRDS, DimName: huaweiCESDimRDSInstance,
+					Namespace: huaweiCESNamespaceRDS, DimName: dim,
 					DimValue: id, MetricName: huaweiCESMetricRDSMem,
+				},
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceRDS, DimName: dim,
+					DimValue: id, MetricName: huaweiCESMetricRDSDisk,
 				},
 			)
 		}
 		if s30, e30 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from30, toMs); e30 != nil {
 			huaweices.LogBatchError("RDS", accountName, regionName, e30)
 		} else {
-			for _, id := range batch {
+			for _, e := range batch {
+				id := e.InstanceId
 				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSCPU])
-				pm, am, mm, okm := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSMem])
+				pm, am, mm, mok := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSMem])
+				du, dok := huaweices.AvgFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSDisk])
 				m30[id] = agg{
 					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
-					memPeak: pm, memAvg: am, memMin: mm, memOK: okm,
+					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
+					diskUtil: du, diskOK: dok,
 				}
 			}
 		}
 		if s180, e180 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from180, toMs); e180 != nil {
 			huaweices.LogBatchError("RDS", accountName, regionName, e180)
 		} else {
-			for _, id := range batch {
+			for _, e := range batch {
+				id := e.InstanceId
 				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSCPU])
-				pm, am, mm, okm := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSMem])
+				pm, am, mm, mok := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSMem])
+				du, dok := huaweices.AvgFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSDisk])
 				m180[id] = agg{
 					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
-					memPeak: pm, memAvg: am, memMin: mm, memOK: okm,
+					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
+					diskUtil: du, diskOK: dok,
 				}
 			}
 		}
@@ -190,10 +243,12 @@ func fillHuaweiRDSUtilization(ctx context.Context, rdsList []*pbrds.RdsInstance,
 		a30 := m30[e.InstanceId]
 		a180 := m180[e.InstanceId]
 		e.UtilizationAudit = &pbutilization.ComputeUtilizationAudit{
-			CpuLast_30D:  rdsUtilizationWindowProto(a30.cpuPeak, a30.cpuAvg, a30.cpuMin, a30.cpuOK),
-			CpuLast_180D: rdsUtilizationWindowProto(a180.cpuPeak, a180.cpuAvg, a180.cpuMin, a180.cpuOK),
-			MemLast_30D:  rdsUtilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
-			MemLast_180D: rdsUtilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
+			CpuLast_30D:   rdsUtilizationWindowProto(a30.cpuPeak, a30.cpuAvg, a30.cpuMin, a30.cpuOK),
+			CpuLast_180D:  rdsUtilizationWindowProto(a180.cpuPeak, a180.cpuAvg, a180.cpuMin, a180.cpuOK),
+			MemLast_30D:   rdsUtilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
+			MemLast_180D:  rdsUtilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
+			DiskLast_30D:  rdsPeriodUtilizationRateProto(a30.diskUtil, a30.diskOK),
+			DiskLast_180D: rdsPeriodUtilizationRateProto(a180.diskUtil, a180.diskOK),
 		}
 	}
 }

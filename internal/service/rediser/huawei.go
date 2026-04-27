@@ -194,15 +194,29 @@ const (
 	huaweiCESNamespaceDCS   = "SYS.DCS"
 	huaweiCESDimDCSInstance = "dcs_instance_id"
 	huaweiCESMetricDCSMem   = "memory_usage"
-	metricsPerDcsInstance   = 1
+	// 带内磁盘使用率（部分实例类型/版本可能无此指标，与控制台一致）
+	huaweiCESMetricDCSDisk = "disk_util_inband"
+	metricsPerDcsInstance  = 2
 )
 
-func dcsMemWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
+func dcsUtilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
 	if !ok {
 		return &pbutilization.UtilizationWindow{Available: false}
 	}
 	return &pbutilization.UtilizationWindow{
-		PeakPercent: peak, AvgPercent: avg, MinPercent: min, Available: true,
+		PeakPercent: huaweices.RoundPercent2(peak),
+		AvgPercent:  huaweices.RoundPercent2(avg),
+		MinPercent:  huaweices.RoundPercent2(min),
+		Available:   true,
+	}
+}
+
+func dcsPeriodUtilizationRateProto(util float64, ok bool) *pbutilization.PeriodUtilizationRate {
+	if !ok {
+		return &pbutilization.PeriodUtilizationRate{Available: false}
+	}
+	return &pbutilization.PeriodUtilizationRate{
+		UtilizationPercent: huaweices.RoundPercent2(util), Available: true,
 	}
 }
 
@@ -231,35 +245,45 @@ func fillHuaweiDCSMemoryUtilization(ctx context.Context, list []*pbredis.RedisIn
 		return
 	}
 
-	type memAgg struct {
-		p, a, m float64
-		ok      bool
+	type dcsAgg struct {
+		memPeak, memAvg, memMin float64
+		memOK                   bool
+		diskUtil                float64
+		diskOK                  bool
 	}
-	m30 := make(map[string]memAgg, len(ids))
-	m180 := make(map[string]memAgg, len(ids))
+	m30 := make(map[string]dcsAgg, len(ids))
+	m180 := make(map[string]dcsAgg, len(ids))
 
 	for _, batch := range huaweices.ChunkInstanceIDs(ids, metricsPerDcsInstance, huaweices.MaxMetricsPerBatch) {
-		q := make([]huaweices.MetricQuery, 0, len(batch))
+		q := make([]huaweices.MetricQuery, 0, len(batch)*metricsPerDcsInstance)
 		for _, id := range batch {
-			q = append(q, huaweices.MetricQuery{
-				Namespace: huaweiCESNamespaceDCS, DimName: huaweiCESDimDCSInstance,
-				DimValue: id, MetricName: huaweiCESMetricDCSMem,
-			})
+			q = append(q,
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceDCS, DimName: huaweiCESDimDCSInstance,
+					DimValue: id, MetricName: huaweiCESMetricDCSMem,
+				},
+				huaweices.MetricQuery{
+					Namespace: huaweiCESNamespaceDCS, DimName: huaweiCESDimDCSInstance,
+					DimValue: id, MetricName: huaweiCESMetricDCSDisk,
+				},
+			)
 		}
 		if s30, e30 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from30, toMs); e30 != nil {
 			huaweices.LogBatchError("DCS", accountName, regionName, e30)
 		} else {
 			for _, id := range batch {
-				p, a, m, ok := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricDCSMem])
-				m30[id] = memAgg{p, a, m, ok}
+				pm, am, mm, mok := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricDCSMem])
+				du, dok := huaweices.AvgFromAveragePoints(s30[id+"\x00"+huaweiCESMetricDCSDisk])
+				m30[id] = dcsAgg{memPeak: pm, memAvg: am, memMin: mm, memOK: mok, diskUtil: du, diskOK: dok}
 			}
 		}
 		if s180, e180 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from180, toMs); e180 != nil {
 			huaweices.LogBatchError("DCS", accountName, regionName, e180)
 		} else {
 			for _, id := range batch {
-				p, a, m, ok := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricDCSMem])
-				m180[id] = memAgg{p, a, m, ok}
+				pm, am, mm, mok := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricDCSMem])
+				du, dok := huaweices.AvgFromAveragePoints(s180[id+"\x00"+huaweiCESMetricDCSDisk])
+				m180[id] = dcsAgg{memPeak: pm, memAvg: am, memMin: mm, memOK: mok, diskUtil: du, diskOK: dok}
 			}
 		}
 	}
@@ -271,8 +295,10 @@ func fillHuaweiDCSMemoryUtilization(ctx context.Context, list []*pbredis.RedisIn
 		a30 := m30[e.InstanceId]
 		a180 := m180[e.InstanceId]
 		e.MemoryUtilizationAudit = &pbutilization.MemoryUtilizationAudit{
-			MemLast_30D:  dcsMemWindowProto(a30.p, a30.a, a30.m, a30.ok),
-			MemLast_180D: dcsMemWindowProto(a180.p, a180.a, a180.m, a180.ok),
+			MemLast_30D:   dcsUtilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
+			MemLast_180D:  dcsUtilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
+			DiskLast_30D:  dcsPeriodUtilizationRateProto(a30.diskUtil, a30.diskOK),
+			DiskLast_180D: dcsPeriodUtilizationRateProto(a180.diskUtil, a180.diskOK),
 		}
 	}
 }

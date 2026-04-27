@@ -55,7 +55,10 @@ func (q MetricQuery) mapKey() string {
 	return q.DimValue + "\x00" + q.MetricName
 }
 
-// BatchQueryAverageSeries 使用 filter=average 拉取时间序列，返回 mapKey -> 数据点（各点 Average 字段有效）。
+// BatchQueryAverageSeries 调用华为云监控 CES 官方接口批量查询监控数据：
+// OpenAPI「Querying Monitoring Data of Multiple Metrics」— POST /V1.0/{project_id}/batch-query-metric-data
+// 文档：https://support.huaweicloud.com/intl/en-us/api-ces/ces_03_0034.html
+// SDK：CesClient.BatchListMetricData。本函数固定 filter=average、period 见 Period1Hour。
 func BatchQueryAverageSeries(ctx context.Context, cli *hwces.CesClient, queries []MetricQuery, fromMs, toMs int64) (map[string][]cesmodel.DatapointForBatchMetric, error) {
 	if len(queries) == 0 {
 		return map[string][]cesmodel.DatapointForBatchMetric{}, nil
@@ -110,6 +113,14 @@ func BatchQueryAverageSeries(ctx context.Context, cli *hwces.CesClient, queries 
 	return out, nil
 }
 
+// RoundPercent2 将百分比（0–100）四舍五入到至多两位小数，供 API JSON 展示。
+func RoundPercent2(x float64) float64 {
+	if math.IsNaN(x) || math.IsInf(x, 0) {
+		return x
+	}
+	return math.Round(x*100) / 100
+}
+
 // PeakAvgMinFromAveragePoints 对「各周期平均值」序列再求峰值、算术均值、谷值（百分比指标，0–100）。
 func PeakAvgMinFromAveragePoints(dps []cesmodel.DatapointForBatchMetric) (peak, avg, min float64, ok bool) {
 	if len(dps) == 0 {
@@ -144,6 +155,12 @@ func PeakAvgMinFromAveragePoints(dps []cesmodel.DatapointForBatchMetric) (peak, 
 		return 0, 0, 0, false
 	}
 	return peak, sum / float64(n), min, true
+}
+
+// AvgFromAveragePoints 仅返回期间算术平均利用率（与 UtilizationWindow 中 avg 口径一致）。
+func AvgFromAveragePoints(dps []cesmodel.DatapointForBatchMetric) (avg float64, ok bool) {
+	_, avg, _, ok = PeakAvgMinFromAveragePoints(dps)
+	return avg, ok
 }
 
 // ChunkByPairBudget 将实例 ID 列表按「每实例占 metricsPerInstance 个指标、每批最多 maxMetrics」分批。

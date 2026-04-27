@@ -43,7 +43,8 @@ export const ECS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'chargeType', title: '计费类型' },
   {
     dataIndex: 'utilizationAudit',
-    title: '利用率审计(CPU/内存 30d·180d 峰/均/谷%)',
+    title:
+      '利用率审计(CPU/内存 峰/均/谷%；磁盘为期间平均利用率 30d·180d)',
   },
 ];
 
@@ -75,7 +76,8 @@ export const RDS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'expireTime', title: '过期时间' },
   {
     dataIndex: 'utilizationAudit',
-    title: '利用率审计(CPU/内存 30d·180d 峰/均/谷%)',
+    title:
+      '利用率审计(CPU/内存 峰/均/谷%；磁盘为期间平均利用率 30d·180d)',
   },
 ];
 
@@ -101,7 +103,7 @@ export const DCS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'expireTime', title: '过期时间' },
   {
     dataIndex: 'memoryUtilizationAudit',
-    title: '内存利用率审计(30d·180d 峰/均/谷%)',
+    title: 'DCS 利用率审计(内存 峰/均/谷%；磁盘期间平均 约30d·约180d %)',
   },
 ];
 

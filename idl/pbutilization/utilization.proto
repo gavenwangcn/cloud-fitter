@@ -3,25 +3,36 @@ package pbutilization;
 
 option go_package = "github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization";
 
-// 某一时间窗口内资源使用率统计（百分比 0–100，来自云监控聚合序列再统计峰/均/谷）。
+// 某一时间窗口内资源使用率统计（百分比 0–100）：峰 / 均 / 谷。
+// 数据来自华为云监控 CES BatchListMetricData（OpenAPI：POST .../batch-query-metric-data），
+// 对 filter=average、period=3600 返回的序列在本地再算 max/mean/min。
 message UtilizationWindow {
   double peak_percent = 1;
   double avg_percent = 2;
   double min_percent = 3;
-  // 是否在窗口内成功拉取到至少一个有效监控点
   bool available = 4;
 }
 
-// ECS / RDS：CPU 与内存各两个窗口（约 30 天、约 180 天）。
+// 时间窗口内单一利用率：对 CES 小时级 average 序列再取算术平均（0–100）。
+message PeriodUtilizationRate {
+  double utilization_percent = 1;
+  bool available = 2;
+}
+
+// ECS / RDS：CPU、内存为峰/均/谷；磁盘为期间平均利用率。
 message ComputeUtilizationAudit {
   UtilizationWindow cpu_last_30d = 1;
   UtilizationWindow cpu_last_180d = 2;
   UtilizationWindow mem_last_30d = 3;
   UtilizationWindow mem_last_180d = 4;
+  PeriodUtilizationRate disk_last_30d = 5;
+  PeriodUtilizationRate disk_last_180d = 6;
 }
 
-// DCS（Redis）：仅内存利用率两个窗口。
+// DCS（Redis）：内存为峰/均/谷；磁盘为期间平均利用率。
 message MemoryUtilizationAudit {
   UtilizationWindow mem_last_30d = 1;
   UtilizationWindow mem_last_180d = 2;
+  PeriodUtilizationRate disk_last_30d = 3;
+  PeriodUtilizationRate disk_last_180d = 4;
 }
