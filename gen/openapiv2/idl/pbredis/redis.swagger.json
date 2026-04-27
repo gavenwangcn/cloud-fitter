@@ -291,7 +291,7 @@
         },
         "memoryUtilizationAudit": {
           "$ref": "#/definitions/pbutilizationMemoryUtilizationAudit",
-          "title": "内存与磁盘利用率审计（DCS）；华为云 CES memory_usage、disk_util_inband 等，其它云未填充"
+          "title": "内存利用率审计（DCS）；华为云 CES memory_usage 等，其它云未填充"
         }
       }
     },
@@ -315,28 +315,9 @@
         },
         "memLast180d": {
           "$ref": "#/definitions/pbutilizationUtilizationWindow"
-        },
-        "diskLast30d": {
-          "$ref": "#/definitions/pbutilizationPeriodUtilizationRate"
-        },
-        "diskLast180d": {
-          "$ref": "#/definitions/pbutilizationPeriodUtilizationRate"
         }
       },
-      "title": "DCS（Redis）：内存为峰/均/谷；磁盘为期间平均利用率。"
-    },
-    "pbutilizationPeriodUtilizationRate": {
-      "type": "object",
-      "properties": {
-        "utilizationPercent": {
-          "type": "number",
-          "format": "double"
-        },
-        "available": {
-          "type": "boolean"
-        }
-      },
-      "title": "时间窗口内单一利用率：对 CES 小时级 average 序列再取算术平均（0–100）。"
+      "title": "DCS（Redis）：仅内存峰/均/谷（不采集磁盘利用率）。"
     },
     "pbutilizationUtilizationWindow": {
       "type": "object",

@@ -103,7 +103,7 @@ export const DCS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'expireTime', title: '过期时间' },
   {
     dataIndex: 'memoryUtilizationAudit',
-    title: 'DCS 利用率审计(内存 峰/均/谷%；磁盘期间平均 约30d·约180d %)',
+    title: 'DCS 内存利用率审计(峰/均/谷%，约30d·约180d)',
   },
 ];
 

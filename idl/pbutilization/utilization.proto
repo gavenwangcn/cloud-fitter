@@ -29,10 +29,10 @@ message ComputeUtilizationAudit {
   PeriodUtilizationRate disk_last_180d = 6;
 }
 
-// DCS（Redis）：内存为峰/均/谷；磁盘为期间平均利用率。
+// DCS（Redis）：仅内存峰/均/谷（不采集磁盘利用率）。
 message MemoryUtilizationAudit {
   UtilizationWindow mem_last_30d = 1;
   UtilizationWindow mem_last_180d = 2;
-  PeriodUtilizationRate disk_last_30d = 3;
-  PeriodUtilizationRate disk_last_180d = 4;
+  reserved 3, 4;
+  reserved "disk_last_30d", "disk_last_180d";
 }
