@@ -54,9 +54,6 @@ func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, bil
 			break
 		}
 		for _, row := range *resp.BillSums {
-			if row == nil {
-				continue
-			}
 			svc := ""
 			if row.ServiceTypeCode != nil {
 				svc = *row.ServiceTypeCode
