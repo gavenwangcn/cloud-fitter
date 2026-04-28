@@ -27,10 +27,6 @@ vendor/
 # config file
 config.yaml
 
-# local secrets / env overrides (use env.mysql.example 等模板)
-.env
-.env.*
-!.env.example
 
 # Compose 挂载的持久化目录（含 SQLite cloud-fitter.db）
 data/
