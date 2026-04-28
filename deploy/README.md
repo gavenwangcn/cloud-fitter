@@ -7,9 +7,26 @@
 ```bash
 cp config_template.yaml config.yaml
 # 编辑 config.yaml 后
+# 本地运行：普通 docker build 即可
 docker build -t cloud-fitter-app:local .
+# 若需 push 到华为云 SWR 等仅接受传统清单的仓库，请用 buildx 并关闭 provenance/SBOM（见下文「镜像仓库」）
 docker run --rm -p 9090:9090 -p 9091:9091 -v "$PWD/config.yaml:/app/config/config.yaml:ro" cloud-fitter-app:local
 ```
+
+### 镜像仓库（华为云 SWR 基础版等）
+
+BuildKit/`docker buildx` 默认会附加 provenance（及可能 SBOM），镜像清单呈现 OCI 形态，部分仓库（如华为云 **SWR 基础版**）会报 `Invalid image, fail to parse 'manifest.json'`。
+
+- **推荐 `docker compose build`**：Compose 里已为各服务的 `build` 设置 `provenance: false`、`sbom: false`，构建完成后对 `cloud-fitter-app:local` / `cloud-fitter-web:local` 执行 `docker tag` 再打 `docker push` 即可，与单独脚本等价。
+- **不用 Compose、仅命令行一键 build 并推送**时可用：
+
+```bash
+docker buildx build --provenance=false --sbom=false -f Dockerfile \
+  -t swr.cn-east-3.myhuaweicloud.com/<组织>/cloud-fitter-app:<标签> \
+  --push .
+```
+
+前端镜像同理：`deploy/web/Dockerfile` 加 `-f`，并关闭 provenance/SBOM。
 
 排查首页 ECS 无数据：看后端日志（已输出到 stderr，Compose 下可 `docker logs -f cloud-fitter-app`）。关注 `loaded cloud`、`ecs List` / `ListAll`、`no cloud accounts loaded`、`ListDetail error` 等行。
 
@@ -25,6 +42,13 @@ docker run --rm -p 9090:9090 -p 9091:9091 -v "$PWD/config.yaml:/app/config/confi
 docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local .
 # 若前端目录名不是 cloud-fitter-web：
 docker build -f deploy/web/Dockerfile -t cloud-fitter-web:local --build-arg WEB_SUBDIR=你的目录名 .
+```
+
+推送到不接受 OCI attestations 的仓库时：
+
+```bash
+docker buildx build --provenance=false --sbom=false -f deploy/web/Dockerfile \
+  -t <仓库地址>/<组织>/cloud-fitter-web:<标签> --push .
 ```
 
 ## Compose

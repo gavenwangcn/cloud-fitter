@@ -10,6 +10,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      provenance: false
+      sbom: false
     image: cloud-fitter-app:local
     container_name: cloud-fitter-init-mysql
     entrypoint: ["/app/init-mysql"]
@@ -26,6 +28,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      provenance: false
+      sbom: false
     image: cloud-fitter-app:local
     container_name: cloud-fitter-app-mysql
     restart: unless-stopped
@@ -57,6 +61,8 @@ services:
     build:
       context: .
       dockerfile: deploy/web/Dockerfile
+      provenance: false
+      sbom: false
       args:
         WEB_SUBDIR: ${CLOUD_FITTER_WEB_SUBDIR:-cloud-fitter-web}
     image: cloud-fitter-web:local
