@@ -233,10 +233,6 @@
         "nodeTagValue": {
           "type": "string",
           "title": "节点标识：取实例上「节点」标签键的值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）；用于系统节点/CMDB 与列表展示"
-        },
-        "utilizationAudit": {
-          "$ref": "#/definitions/pbutilizationComputeUtilizationAudit",
-          "title": "资源利用率审计（CPU/内存，约 30 天与约 180 天窗口）；当前主要对华为云通过 CES 拉取，其它云未填充"
         }
       }
     },
@@ -343,64 +339,6 @@
       "default": "ali",
       "description": "- ali: 0 - 阿里云\n - tencent: 1 - 腾讯云\n - huawei: 2 - 华为云\n - aws: 3 - 亚马逊云",
       "title": "云提供商"
-    },
-    "pbutilizationComputeUtilizationAudit": {
-      "type": "object",
-      "properties": {
-        "cpuLast30d": {
-          "$ref": "#/definitions/pbutilizationUtilizationWindow"
-        },
-        "cpuLast180d": {
-          "$ref": "#/definitions/pbutilizationUtilizationWindow"
-        },
-        "memLast30d": {
-          "$ref": "#/definitions/pbutilizationUtilizationWindow"
-        },
-        "memLast180d": {
-          "$ref": "#/definitions/pbutilizationUtilizationWindow"
-        },
-        "diskLast30d": {
-          "$ref": "#/definitions/pbutilizationPeriodUtilizationRate"
-        },
-        "diskLast180d": {
-          "$ref": "#/definitions/pbutilizationPeriodUtilizationRate"
-        }
-      },
-      "title": "ECS / RDS：CPU、内存为峰/均/谷；磁盘为期间平均利用率。"
-    },
-    "pbutilizationPeriodUtilizationRate": {
-      "type": "object",
-      "properties": {
-        "utilizationPercent": {
-          "type": "number",
-          "format": "double"
-        },
-        "available": {
-          "type": "boolean"
-        }
-      },
-      "title": "时间窗口内单一利用率：对 CES 小时级 average 序列再取算术平均（0–100）。"
-    },
-    "pbutilizationUtilizationWindow": {
-      "type": "object",
-      "properties": {
-        "peakPercent": {
-          "type": "number",
-          "format": "double"
-        },
-        "avgPercent": {
-          "type": "number",
-          "format": "double"
-        },
-        "minPercent": {
-          "type": "number",
-          "format": "double"
-        },
-        "available": {
-          "type": "boolean"
-        }
-      },
-      "title": "某一时间窗口内资源使用率统计（百分比 0–100）：峰 / 均 / 谷。\r\n数据来自华为云监控 CES BatchListMetricData（OpenAPI：POST .../batch-query-metric-data），\r\n对 filter=average、period=3600 返回的序列在本地再算 max/mean/min。"
     },
     "protobufAny": {
       "type": "object",

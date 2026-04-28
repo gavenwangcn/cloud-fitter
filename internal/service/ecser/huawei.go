@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -20,9 +19,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
-	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
-	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -238,194 +235,6 @@ func huaweiDiskFromListServerBlockDevices(block *model.ListServerBlockDevicesRes
 	return sys, dataSum, strings.Join(parts, "; ")
 }
 
-const (
-	// 基础监控 SYS.ECS：附录见 https://support.huaweicloud.com/intl/en-us/eu-west-0-api-ces/en-us_topic_0171212508.html
-	huaweiCESNamespaceECS   = "SYS.ECS"
-	huaweiCESDimECSInstance = "instance_id"
-	huaweiCESMetricECSCPU   = "cpu_util"
-	huaweiCESMetricECSMem   = "mem_util"
-	// disk_util_inband：带内磁盘使用率（SYS.ECS）。官方要求镜像安装 UVP VMTools，否则无数据；与 mem_util 同页说明。
-	// https://support.huaweicloud.com/intl/zh-cn/usermanual-ecs/ecs_03_1002.html
-	huaweiCESMetricECSDisk = "disk_util_inband"
-	// 操作系统监控 AGT.ECS（需安装云监控 Agent），见 https://support.huaweicloud.com/usermanual-ecs/ecs_03_1003.html
-	huaweiCESNamespaceAGTECS           = "AGT.ECS"
-	huaweiCESMetricAGTMemUsedPercent   = "mem_usedPercent"
-	huaweiCESMetricAGTDiskUsedPercent  = "disk_usedPercent"
-	huaweiCESDimAGTMountPoint          = "mount_point"
-	huaweiAGTDiskMountPointLinuxRoot   = "/"
-	// 每台实例 5 条指标：SYS cpu/mem/disk + AGT mem + AGT 根分区磁盘使用率（无 VMTools 时 disk_util_inband 常为空，用 Agent 补磁盘）。
-	metricsPerEcsInstance = 5
-)
-
-type ecsUtilWindowAgg struct {
-	cpuPeak, cpuAvg, cpuMin float64
-	cpuOK                   bool
-	memPeak, memAvg, memMin float64
-	memOK                   bool
-	diskUtil                float64
-	diskOK                  bool
-}
-
-func utilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
-	if !ok {
-		return &pbutilization.UtilizationWindow{Available: false}
-	}
-	return &pbutilization.UtilizationWindow{
-		PeakPercent: huaweices.RoundPercent2(peak),
-		AvgPercent:  huaweices.RoundPercent2(avg),
-		MinPercent:  huaweices.RoundPercent2(min),
-		Available:   true,
-	}
-}
-
-func periodUtilizationRateProto(util float64, ok bool) *pbutilization.PeriodUtilizationRate {
-	if !ok {
-		return &pbutilization.PeriodUtilizationRate{Available: false}
-	}
-	return &pbutilization.PeriodUtilizationRate{
-		UtilizationPercent: huaweices.RoundPercent2(util), Available: true,
-	}
-}
-
-// ecsMemWindowPreferSYS：同次批量已拉取 SYS.mem_util 与 AGT.mem_usedPercent 时，优先用基础监控 mem_util，否则用 Agent 指标。
-func ecsMemWindowPreferSYS(sysP, sysA, sysM float64, sysOK bool, agtP, agtA, agtM float64, agtOK bool) (p, a, m float64, ok bool) {
-	if sysOK {
-		return sysP, sysA, sysM, true
-	}
-	if agtOK {
-		return agtP, agtA, agtM, true
-	}
-	return 0, 0, 0, false
-}
-
-// ecsDiskPreferSYS：优先 SYS.ECS disk_util_inband（整机磁盘，需 VMTools）；无数据时用 AGT.ECS disk_usedPercent（根分区 /，需 Agent）。
-func ecsDiskPreferSYS(sysU float64, sysOK bool, agtU float64, agtOK bool) (u float64, ok bool) {
-	if sysOK {
-		return sysU, true
-	}
-	if agtOK {
-		return agtU, true
-	}
-	return 0, false
-}
-
-func agtDiskSeriesKey(instanceID string) string {
-	return instanceID + "\x00" + huaweiAGTDiskMountPointLinuxRoot + "\x00" + huaweiCESMetricAGTDiskUsedPercent
-}
-
-func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance, regionName string, tenant tenanter.Tenanter, accountName string) {
-	if len(ecsList) == 0 {
-		return
-	}
-	cli, err := huaweices.NewClient(regionName, tenant)
-	if err != nil {
-		glog.Warningf("Huawei ECS CES client init failed account=%s region=%s err=%v", accountName, regionName, err)
-		return
-	}
-	now := time.Now().UTC()
-	toMs := now.UnixMilli()
-	from30 := now.Add(-30 * 24 * time.Hour).UnixMilli()
-	from180 := now.Add(-180 * 24 * time.Hour).UnixMilli()
-
-	ids := make([]string, 0, len(ecsList))
-	for _, e := range ecsList {
-		if e == nil || e.InstanceId == "" {
-			continue
-		}
-		ids = append(ids, e.InstanceId)
-	}
-	if len(ids) == 0 {
-		return
-	}
-
-	m30 := make(map[string]ecsUtilWindowAgg, len(ids))
-	m180 := make(map[string]ecsUtilWindowAgg, len(ids))
-
-	for _, batch := range huaweices.ChunkInstanceIDs(ids, metricsPerEcsInstance, huaweices.MaxMetricsPerBatch) {
-		q := make([]huaweices.MetricQuery, 0, len(batch)*metricsPerEcsInstance)
-		for _, id := range batch {
-			q = append(q,
-				huaweices.MetricQuery{
-					Namespace: huaweiCESNamespaceECS, DimName: huaweiCESDimECSInstance,
-					DimValue: id, MetricName: huaweiCESMetricECSCPU,
-				},
-				huaweices.MetricQuery{
-					Namespace: huaweiCESNamespaceECS, DimName: huaweiCESDimECSInstance,
-					DimValue: id, MetricName: huaweiCESMetricECSMem,
-				},
-				huaweices.MetricQuery{
-					Namespace: huaweiCESNamespaceECS, DimName: huaweiCESDimECSInstance,
-					DimValue: id, MetricName: huaweiCESMetricECSDisk,
-				},
-				huaweices.MetricQuery{
-					Namespace: huaweiCESNamespaceAGTECS, DimName: huaweiCESDimECSInstance,
-					DimValue: id, MetricName: huaweiCESMetricAGTMemUsedPercent,
-				},
-				huaweices.MetricQuery{
-					Namespace: huaweiCESNamespaceAGTECS, DimName: huaweiCESDimECSInstance,
-					DimValue: id,
-					ExtraDims: []huaweices.DimPair{
-						{Name: huaweiCESDimAGTMountPoint, Value: huaweiAGTDiskMountPointLinuxRoot},
-					},
-					MetricName: huaweiCESMetricAGTDiskUsedPercent,
-				},
-			)
-		}
-		if series30, err30 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from30, toMs); err30 != nil {
-			huaweices.LogBatchError("ECS", accountName, regionName, err30)
-		} else {
-			for _, id := range batch {
-				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSCPU])
-				smP, smA, smM, smOK := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSMem])
-				agtP, agtA, agtM, agtOK := huaweices.PeakAvgMinFromAveragePoints(series30[id+"\x00"+huaweiCESMetricAGTMemUsedPercent])
-				pm, am, mm, mok := ecsMemWindowPreferSYS(smP, smA, smM, smOK, agtP, agtA, agtM, agtOK)
-				duSys, dokSys := huaweices.AvgFromAveragePoints(series30[id+"\x00"+huaweiCESMetricECSDisk])
-				duAgt, dokAgt := huaweices.AvgFromAveragePoints(series30[agtDiskSeriesKey(id)])
-				du, dok := ecsDiskPreferSYS(duSys, dokSys, duAgt, dokAgt)
-				m30[id] = ecsUtilWindowAgg{
-					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
-					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
-					diskUtil: du, diskOK: dok,
-				}
-			}
-		}
-		if series180, err180 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from180, toMs); err180 != nil {
-			huaweices.LogBatchError("ECS", accountName, regionName, err180)
-		} else {
-			for _, id := range batch {
-				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSCPU])
-				smP, smA, smM, smOK := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSMem])
-				agtP, agtA, agtM, agtOK := huaweices.PeakAvgMinFromAveragePoints(series180[id+"\x00"+huaweiCESMetricAGTMemUsedPercent])
-				pm, am, mm, mok := ecsMemWindowPreferSYS(smP, smA, smM, smOK, agtP, agtA, agtM, agtOK)
-				duSys, dokSys := huaweices.AvgFromAveragePoints(series180[id+"\x00"+huaweiCESMetricECSDisk])
-				duAgt, dokAgt := huaweices.AvgFromAveragePoints(series180[agtDiskSeriesKey(id)])
-				du, dok := ecsDiskPreferSYS(duSys, dokSys, duAgt, dokAgt)
-				m180[id] = ecsUtilWindowAgg{
-					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
-					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
-					diskUtil: du, diskOK: dok,
-				}
-			}
-		}
-	}
-
-	for _, e := range ecsList {
-		if e == nil || e.InstanceId == "" {
-			continue
-		}
-		a30 := m30[e.InstanceId]
-		a180 := m180[e.InstanceId]
-		e.UtilizationAudit = &pbutilization.ComputeUtilizationAudit{
-			CpuLast_30D:   utilizationWindowProto(a30.cpuPeak, a30.cpuAvg, a30.cpuMin, a30.cpuOK),
-			CpuLast_180D:  utilizationWindowProto(a180.cpuPeak, a180.cpuAvg, a180.cpuMin, a180.cpuOK),
-			MemLast_30D:   utilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
-			MemLast_180D:  utilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
-			DiskLast_30D:  periodUtilizationRateProto(a30.diskUtil, a30.diskOK),
-			DiskLast_180D: periodUtilizationRateProto(a180.diskUtil, a180.diskOK),
-		}
-	}
-}
-
 func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
 	request := new(model.ListServersDetailsRequest)
 	offset := (req.PageNumber - 1) * req.PageSize
@@ -525,8 +334,6 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	if len(ecses) < int(req.PageSize) {
 		isFinished = true
 	}
-
-	fillHuaweiECSUtilization(ctx, ecses, ecs.region.GetName(), ecs.tenanter, ecs.tenanter.AccountName())
 
 	return &pbecs.ListDetailResp{
 		Ecses:      ecses,

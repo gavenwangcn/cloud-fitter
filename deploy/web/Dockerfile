@@ -3,7 +3,7 @@
 
 ARG WEB_SUBDIR=cloud-fitter-web
 
-FROM node:22-bookworm-slim AS builder
+FROM swr.cn-east-3.myhuaweicloud.com/asdwjl/node:22-bookworm-slim AS builder
 ARG WEB_SUBDIR
 
 WORKDIR /app
@@ -20,7 +20,7 @@ COPY ${WEB_SUBDIR}/ ./
 ENV NODE_OPTIONS=--openssl-legacy-provider
 RUN npm run build
 
-FROM nginx:1.26-alpine
+FROM swr.cn-east-3.myhuaweicloud.com/asdwjl/nginx:1.26-alpine
 
 COPY --from=builder /app/dist /usr/share/nginx/html/
 # 文件在本仓库 deploy/web/，不依赖前端仓库内是否有 default.conf

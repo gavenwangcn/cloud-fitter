@@ -41,11 +41,6 @@ export const ECS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'vpcId', title: 'VPC ID' },
   { dataIndex: 'resourceGroupId', title: '资源组 ID' },
   { dataIndex: 'chargeType', title: '计费类型' },
-  {
-    dataIndex: 'utilizationAudit',
-    title:
-      '利用率审计(CPU/内存 峰/均/谷%；磁盘为期间平均利用率 30d·180d)',
-  },
 ];
 
 /** pbrds.RdsInstance（proto 中账号字段为 accoutName） */
@@ -74,11 +69,6 @@ export const RDS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'status', title: '状态' },
   { dataIndex: 'creationTime', title: '创建时间' },
   { dataIndex: 'expireTime', title: '过期时间' },
-  {
-    dataIndex: 'utilizationAudit',
-    title:
-      '利用率审计(CPU/内存 峰/均/谷%；磁盘为期间平均利用率 30d·180d)',
-  },
 ];
 
 /** pbredis.RedisInstance（华为 DCS 等走 Redis 接口） */
@@ -101,10 +91,6 @@ export const DCS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'status', title: '状态' },
   { dataIndex: 'creationTime', title: '创建时间' },
   { dataIndex: 'expireTime', title: '过期时间' },
-  {
-    dataIndex: 'memoryUtilizationAudit',
-    title: 'DCS 内存利用率审计(峰/均/谷%，约30d·约180d)',
-  },
 ];
 
 /** pbkafka.KafkaInstance（DMS Kafka / CKafka 等） */

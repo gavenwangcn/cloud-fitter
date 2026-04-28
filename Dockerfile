@@ -1,5 +1,5 @@
 # 阶段 1：仅根据 idl/ 生成 gen/（改 proto 后无需在宿主机先跑 gen.sh 也可构建）
-FROM bufbuild/buf:1.28.1 AS codegen
+FROM swr.cn-east-3.myhuaweicloud.com/asdwjl/bufbuild/buf:1.28.1 AS codegen
 WORKDIR /workspace
 COPY buf.yaml buf.gen.yaml ./
 COPY idl ./idl/
@@ -8,7 +8,7 @@ COPY idl ./idl/
 RUN buf mod update && buf generate
 
 # 阶段 2：Go 编译（用生成结果覆盖上下文中的 gen/）
-FROM golang:1.23-alpine AS builder
+FROM swr.cn-east-3.myhuaweicloud.com/asdwjl/golang:1.23-alpine AS builder
 
 ENV GO111MODULE=on \
     CGO_ENABLED=0 \
@@ -27,7 +27,7 @@ RUN go mod tidy && go build -ldflags="-s -w" -o /cloud-fitter . \
 	&& go build -ldflags="-s -w" -o /init-mysql ./cmd/init-mysql
 
 # 运行阶段：仅可执行文件 + 证书（访问各公有云 HTTPS API）
-FROM alpine:3.21
+FROM swr.cn-east-3.myhuaweicloud.com/asdwjl/alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata
 

@@ -27,10 +27,19 @@ vendor/
 # config file
 config.yaml
 
+# local secrets / env overrides (use env.mysql.example 等模板)
+.env
+.env.*
+!.env.example
+
 # Compose 挂载的持久化目录（含 SQLite cloud-fitter.db）
 data/
 
 log/
+
+# Python
+__pycache__/
+*.py[cod]
 
 # 前端源码目录 cloud-fitter-web/ 与后端同库提交（业务代码），勿使用仅引用/子模块而不含文件
 # 以下仅为构建产物与依赖，勿提交

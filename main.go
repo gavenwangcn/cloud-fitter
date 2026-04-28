@@ -116,8 +116,6 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
 			jsonapi.KafkaByAccount(w, r)
 		case r.URL.Path == "/apis/cce/by-account" && r.Method == http.MethodPost:
 			jsonapi.CceByAccount(w, r)
-		case r.URL.Path == "/apis/billing/by-account" && r.Method == http.MethodPost:
-			jsonapi.BillingSummaryByAccount(w, r)
 		default:
 			mux.ServeHTTP(w, r)
 		}
