@@ -1,0 +1,75 @@
+# 生产/离线部署（MySQL）：仅使用预构建镜像，不执行 build。
+# init-mysql 与 app 共用同一后端镜像，仅 entrypoint 不同。
+#
+# 配置来源（与 docker-compose-mysql.yml 一致）：
+#   - 默认从项目目录下的 .env 读取（见 env.mysql.example / env.deploy.example）。
+#   - init-mysql、app 均使用 env_file 将同一文件注入容器（默认 .env，可通过 CLOUD_FITTER_DEPLOY_ENV_FILE 改成 .env.prod 等）。
+#   - 下方 environment 中的 ${VAR} 仍由 Compose 在解析 compose 时替换（同样来自 .env / --env-file）；
+#     与 env_file 重复时，以 environment 为准（覆盖 env_file 中的同名变量）。
+#
+# 必填：CLOUD_FITTER_APP_IMAGE、CLOUD_FITTER_WEB_IMAGE；MySQL：CLOUD_FITTER_MYSQL_*、CLOUD_FITTER_DB_DRIVER=mysql
+#
+# 示例：docker compose -f docker-compose-deploy-mysql.yml up -d
+#
+# Linux 上若需访问宿主机 MySQL 且无法解析 host.docker.internal，可为 init-mysql / app 取消注释 extra_hosts。
+
+services:
+  init-mysql:
+    image: ${CLOUD_FITTER_APP_IMAGE:?required}
+    container_name: cloud-fitter-init-mysql
+    entrypoint: ["/app/init-mysql"]
+    env_file:
+      - ${CLOUD_FITTER_DEPLOY_ENV_FILE:-.env}
+    networks:
+      - app
+    restart: "no"
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+  app:
+    image: ${CLOUD_FITTER_APP_IMAGE:?required}
+    container_name: cloud-fitter-app-mysql
+    restart: unless-stopped
+    depends_on:
+      init-mysql:
+        condition: service_completed_successfully
+    env_file:
+      - ${CLOUD_FITTER_DEPLOY_ENV_FILE:-.env}
+    environment:
+      CLOUD_FITTER_DB_DRIVER: ${CLOUD_FITTER_DB_DRIVER:-mysql}
+      CLOUD_FITTER_MYSQL_HOST: ${CLOUD_FITTER_MYSQL_HOST}
+      CLOUD_FITTER_MYSQL_PORT: ${CLOUD_FITTER_MYSQL_PORT:-3306}
+      CLOUD_FITTER_MYSQL_USER: ${CLOUD_FITTER_MYSQL_USER}
+      CLOUD_FITTER_MYSQL_PASSWORD: ${CLOUD_FITTER_MYSQL_PASSWORD}
+      CLOUD_FITTER_MYSQL_DATABASE: ${CLOUD_FITTER_MYSQL_DATABASE}
+      CLOUD_FITTER_ENV_TAG_KEY: ${CLOUD_FITTER_ENV_TAG_KEY:-}
+      CLOUD_FITTER_NODE_TAG_KEY: ${CLOUD_FITTER_NODE_TAG_KEY:-}
+      CLOUD_FITTER_CMDB_BASE_URL: ${CLOUD_FITTER_CMDB_BASE_URL:-}
+      CLOUD_FITTER_CMDB_KEY: ${CLOUD_FITTER_CMDB_KEY:-}
+      CLOUD_FITTER_CMDB_SECRET: ${CLOUD_FITTER_CMDB_SECRET:-}
+    networks:
+      - app
+    ports:
+      - "${CLOUD_FITTER_APP_PORT_HTTP:-9090}:9090"
+      - "${CLOUD_FITTER_APP_PORT_GRPC:-9091}:9091"
+    volumes:
+      - ${CLOUD_FITTER_CONFIG_PATH:-./config.yaml}:/app/config/config.yaml:ro
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+  web:
+    image: ${CLOUD_FITTER_WEB_IMAGE:?required}
+    container_name: cloud-fitter-web-mysql
+    restart: unless-stopped
+    depends_on:
+      - app
+    networks:
+      - app
+    ports:
+      - "${CLOUD_FITTER_WEB_PORT:-8089}:8089"
+    volumes:
+      - ${CLOUD_FITTER_NGINX_COMPOSE_CONF:-./deploy/web/nginx.compose.conf}:/etc/nginx/conf.d/default.conf:ro
+
+networks:
+  app:
+    driver: bridge
