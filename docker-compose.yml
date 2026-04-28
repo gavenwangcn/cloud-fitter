@@ -16,9 +16,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # BuildKit 默认附加 provenance/SBOM（OCI 清单），华为云 SWR 部分实例会报错 fail to parse manifest.json；推送前关闭
-      provenance: false
-      sbom: false
     image: cloud-fitter-app:local
     container_name: cloud-fitter-app
     restart: unless-stopped
@@ -44,8 +41,6 @@ services:
     build:
       context: .
       dockerfile: deploy/web/Dockerfile
-      provenance: false
-      sbom: false
       args:
         WEB_SUBDIR: ${CLOUD_FITTER_WEB_SUBDIR:-cloud-fitter-web}
     image: cloud-fitter-web:local
