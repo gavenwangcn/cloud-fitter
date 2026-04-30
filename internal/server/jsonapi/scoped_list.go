@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
@@ -20,6 +21,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/server/rds"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/redis"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
+	"github.com/golang/glog"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -140,35 +142,48 @@ func CceByAccount(w http.ResponseWriter, r *http.Request) {
 
 // EipByAccount POST /apis/eip/by-account（当前：华为云 EIP）
 func EipByAccount(w http.ResponseWriter, r *http.Request) {
+	begin := time.Now()
 	body, err := decodeListByAccount(r)
 	if err != nil {
+		glog.Errorf("eip api decode body failed: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	glog.Infof("eip api request provider=%d account=%q system=%q", body.Provider, body.AccountName, body.SystemName)
 	if body.SystemName != "" {
 		resp, err := eipBySystemName(r.Context(), body.SystemName)
+		glog.Infof("eip api response(by-system) system=%q rows=%d err=%v elapsed=%v",
+			body.SystemName, len(resp), err, time.Since(begin))
 		writeJSON(w, map[string]any{"eips": resp}, err)
 		return
 	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
 	resp, err := eip.List(ctx, pbtenant.CloudProvider(body.Provider))
+	glog.Infof("eip api response(by-account) provider=%d account=%q rows=%d err=%v elapsed=%v",
+		body.Provider, body.AccountName, len(resp), err, time.Since(begin))
 	writeJSON(w, map[string]any{"eips": resp}, err)
 }
 
 // ElbByAccount POST /apis/elb/by-account（当前：华为云 ELB）
 func ElbByAccount(w http.ResponseWriter, r *http.Request) {
+	begin := time.Now()
 	body, err := decodeListByAccount(r)
 	if err != nil {
+		glog.Errorf("elb api decode body failed: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	glog.Infof("elb api request provider=%d account=%q system=%q", body.Provider, body.AccountName, body.SystemName)
 	if body.SystemName != "" {
 		resp, err := elbBySystemName(r.Context(), body.SystemName)
+		glog.Infof("elb api response(by-system) system=%q rows=%d err=%v elapsed=%v", body.SystemName, len(resp), err, time.Since(begin))
 		writeJSON(w, map[string]any{"elbs": resp}, err)
 		return
 	}
 	ctx := scope.WithAccountName(r.Context(), body.AccountName)
 	resp, err := elb.List(ctx, pbtenant.CloudProvider(body.Provider))
+	glog.Infof("elb api response(by-account) provider=%d account=%q rows=%d err=%v elapsed=%v",
+		body.Provider, body.AccountName, len(resp), err, time.Since(begin))
 	writeJSON(w, map[string]any{"elbs": resp}, err)
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -39,6 +40,7 @@ type Instance struct {
 }
 
 func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, error) {
+	begin := time.Now()
 	if provider != pbtenant.CloudProvider_huawei {
 		return nil, nil
 	}
@@ -59,6 +61,8 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 		return nil, errors.Errorf("no tenants for provider %v account %q", provider, scope.AccountName(ctx))
 	}
 	regions := tenanter.GetAllRegionIds(provider)
+	glog.Infof("elb list start provider=%s account_filter=%q tenant_count=%d region_count=%d",
+		provider.String(), scope.AccountName(ctx), len(tenanters), len(regions))
 
 	var (
 		wg  sync.WaitGroup
@@ -82,10 +86,13 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 		}
 	}
 	wg.Wait()
+	glog.Infof("elb list done provider=%s total=%d elapsed=%v",
+		provider.String(), len(all), time.Since(begin))
 	return all, nil
 }
 
 func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]*Instance, error) {
+	begin := time.Now()
 	t, ok := tenant.(*tenanter.AccessKeyTenant)
 	if !ok {
 		return nil, nil
@@ -111,7 +118,8 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 		WithCredential(auth).
 		Build())
 	eipCli := hweip.NewEipClient(hweip.EipClientBuilder().
-		WithRegion(huaweicloudregion.EndpointForService("eip", rName)).
+		// 华为云 EIP(v2) 走 vpc.<region>.myhuaweicloud.com
+		WithRegion(huaweicloudregion.EndpointForService("vpc", rName)).
 		WithCredential(auth).
 		Build())
 
@@ -119,7 +127,9 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 	eipReq := new(eipmodel.ListPublicipsRequest)
 	eipLimit := int32(2000)
 	eipReq.Limit = &eipLimit
+	var eipCount int
 	if eipResp, e := eipCli.ListPublicips(eipReq); e == nil && eipResp != nil && eipResp.Publicips != nil {
+		eipCount = len(*eipResp.Publicips)
 		for _, ip := range *eipResp.Publicips {
 			id := strings.TrimSpace(deref(ip.Id))
 			addr := strings.TrimSpace(deref(ip.PublicIpAddress))
@@ -131,21 +141,33 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 				eipBandwidth[addr] = bw
 			}
 		}
+	} else if e != nil {
+		glog.Warningf("elb list eip preload failed account=%s region=%s err=%v", tenant.AccountName(), rName, e)
 	}
+	glog.Infof("elb list eip preload account=%s region=%s eips=%d lookup_keys=%d", tenant.AccountName(), rName, eipCount, len(eipBandwidth))
 
 	var out []*Instance
 	req := new(elbmodel.ListLoadBalancersRequest)
 	limit := int32(200)
 	req.Limit = &limit
+	page := 0
+	var lbCount, listenerErrCount int
 	for {
+		page++
 		resp, err := elbCli.ListLoadBalancers(req)
 		if err != nil {
 			return nil, errors.Wrap(err, "Huawei ELB ListLoadBalancers error")
 		}
 		if resp != nil && resp.Loadbalancers != nil {
+			lbCount += len(*resp.Loadbalancers)
 			for _, lb := range *resp.Loadbalancers {
 				publicIP, bandwidth := pickPublicIPAndBandwidth(lb, eipBandwidth)
-				listeners, _ := queryListeners(elbCli, lb.Id)
+				listeners, lerr := queryListeners(elbCli, lb.Id)
+				if lerr != nil {
+					listenerErrCount++
+					glog.Warningf("elb list listeners failed account=%s region=%s lb_id=%s lb_name=%q err=%v",
+						tenant.AccountName(), rName, lb.Id, lb.Name, lerr)
+				}
 				out = append(out, &Instance{
 					Provider:          "huawei",
 					AccountName:       tenant.AccountName(),
@@ -168,6 +190,8 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 		}
 		req.Marker = resp.PageInfo.NextMarker
 	}
+	glog.Infof("elb list region done account=%s region=%s pages=%d lbs=%d out=%d listener_err=%d elapsed=%v",
+		tenant.AccountName(), rName, page, lbCount, len(out), listenerErrCount, time.Since(begin))
 	return out, nil
 }
 

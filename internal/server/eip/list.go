@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -37,6 +38,7 @@ type Instance struct {
 }
 
 func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, error) {
+	begin := time.Now()
 	if provider != pbtenant.CloudProvider_huawei {
 		return nil, nil
 	}
@@ -58,6 +60,8 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 	}
 
 	regions := tenanter.GetAllRegionIds(provider)
+	glog.Infof("eip list start provider=%s account_filter=%q tenant_count=%d region_count=%d",
+		provider.String(), scope.AccountName(ctx), len(tenanters), len(regions))
 	var (
 		wg  sync.WaitGroup
 		mu  sync.Mutex
@@ -80,10 +84,13 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 		}
 	}
 	wg.Wait()
+	glog.Infof("eip list done provider=%s total=%d elapsed=%v",
+		provider.String(), len(all), time.Since(begin))
 	return all, nil
 }
 
 func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]*Instance, error) {
+	begin := time.Now()
 	t, ok := tenant.(*tenanter.AccessKeyTenant)
 	if !ok {
 		return nil, nil
@@ -105,7 +112,8 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 
 	auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectID).Build()
 	eipHc := hweip.EipClientBuilder().
-		WithRegion(huaweicloudregion.EndpointForService("eip", rName)).
+		// 华为云 EIP(v2) 走 vpc.<region>.myhuaweicloud.com
+		WithRegion(huaweicloudregion.EndpointForService("vpc", rName)).
 		WithCredential(auth).
 		Build()
 	eipCli := hweip.NewEipClient(eipHc)
@@ -117,6 +125,8 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 		return nil, errors.Wrap(err, "Huawei EIP ListPublicips error")
 	}
 	if resp == nil || resp.Publicips == nil {
+		glog.Infof("eip list region done account=%s region=%s rows=0 elapsed=%v",
+			tenant.AccountName(), rName, time.Since(begin))
 		return nil, nil
 	}
 	out := make([]*Instance, 0, len(*resp.Publicips))
@@ -139,6 +149,8 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 		}
 		out = append(out, row)
 	}
+	glog.Infof("eip list region done account=%s region=%s rows=%d elapsed=%v",
+		tenant.AccountName(), rName, len(out), time.Since(begin))
 	return out, nil
 }
 
