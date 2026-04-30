@@ -158,6 +158,24 @@ func (c *Client) SystemIDExistsInCMDB(systemID string) (bool, error) {
 	}
 }
 
+// GetSystemNameBySystemID 按 system_id 查询 CMDB system 的 system_name。
+func (c *Client) GetSystemNameBySystemID(systemID string) (string, error) {
+	target := strings.TrimSpace(systemID)
+	if target == "" {
+		return "", nil
+	}
+	row, err := c.GetCIFirst(map[string]any{
+		"q": fmt.Sprintf("_type:system,system_id:%s", target),
+	})
+	if err != nil {
+		return "", err
+	}
+	if row == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(fmt.Sprint(row["system_name"])), nil
+}
+
 // GetSystemLevelRelations GET /api/v0.1/ci_relations/s
 func (c *Client) GetSystemLevelRelations(q map[string]any) (map[string]any, error) {
 	u, err := url.Parse(c.BaseURL + "/api/v0.1/ci_relations/s")

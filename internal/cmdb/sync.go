@@ -89,6 +89,12 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		return nil
 	}
 	systemName := sysRow.Name
+	cmdbSystemName := systemName
+	if n, err := s.Client.GetSystemNameBySystemID(systemID); err != nil {
+		glog.Warningf("cmdb sync: get cmdb system_name by system_id=%s failed: %v (fallback local name)", systemID, err)
+	} else if strings.TrimSpace(n) != "" {
+		cmdbSystemName = strings.TrimSpace(n)
+	}
 
 	ecsResp, err := jsonapi.ListEcsBySystemName(ctx, systemName)
 	if err != nil {
@@ -125,7 +131,7 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 
 	clusterToECS := hostBelongsK8S(k8sList, hosts)
 
-	s.addCMDBSystemNodes(systemID, sysRow.Name, systemNodes)
+	s.addCMDBSystemNodes(systemID, cmdbSystemName, systemNodes)
 	s.addCMDBK8sClusters(systemID, k8sList, clusterToECS)
 	s.addCMDBHosts(systemID, hosts)
 	s.addCMDBMiddlewares(systemID, middlewares)
