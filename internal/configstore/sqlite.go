@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS cloud_configs (
 CREATE TABLE IF NOT EXISTS systems (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL,
+	english_name TEXT NOT NULL DEFAULT '',
+	short_name TEXT NOT NULL DEFAULT '',
 	intro TEXT NOT NULL,
 	system_id TEXT NOT NULL UNIQUE,
 	account_ids TEXT NOT NULL DEFAULT '[]',
@@ -51,6 +53,8 @@ func migrateSQLite(db *sql.DB) error {
 	for _, stmt := range []string{
 		`ALTER TABLE systems ADD COLUMN online_time TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE systems ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE systems ADD COLUMN english_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE systems ADD COLUMN short_name TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return errors.WithMessage(err, "migrate alter systems columns")

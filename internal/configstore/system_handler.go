@@ -11,21 +11,25 @@ import (
 )
 
 type createSystemBody struct {
-	Name       string  `json:"name"`
-	Intro      string  `json:"intro"`
-	SystemID   string  `json:"systemId"`
-	OnlineTime string  `json:"onlineTime"`
-	Status     string  `json:"status"`
-	AccountIDs []int64 `json:"accountIds"`
+	Name        string  `json:"name"`
+	EnglishName string  `json:"englishName"`
+	ShortName   string  `json:"shortName"`
+	Intro       string  `json:"intro"`
+	SystemID    string  `json:"systemId"`
+	OnlineTime  string  `json:"onlineTime"`
+	Status      string  `json:"status"`
+	AccountIDs  []int64 `json:"accountIds"`
 }
 
 type updateSystemBody struct {
-	ID         int64   `json:"id"`
-	SystemID   string  `json:"systemId"`
-	Intro      string  `json:"intro"`
-	OnlineTime string  `json:"onlineTime"`
-	Status     string  `json:"status"`
-	AccountIDs []int64 `json:"accountIds"`
+	ID          int64   `json:"id"`
+	SystemID    string  `json:"systemId"`
+	EnglishName string  `json:"englishName"`
+	ShortName   string  `json:"shortName"`
+	Intro       string  `json:"intro"`
+	OnlineTime  string  `json:"onlineTime"`
+	Status      string  `json:"status"`
+	AccountIDs  []int64 `json:"accountIds"`
 }
 
 // SystemHTTPHandler 处理 GET/POST/PUT/DELETE /apis/systems。
@@ -55,6 +59,8 @@ func SystemHTTPHandler(store *Store) http.Handler {
 				return
 			}
 			body.Name = strings.TrimSpace(body.Name)
+			body.EnglishName = strings.TrimSpace(body.EnglishName)
+			body.ShortName = strings.TrimSpace(body.ShortName)
 			body.Intro = strings.TrimSpace(body.Intro)
 			body.SystemID = strings.TrimSpace(body.SystemID)
 			body.OnlineTime = strings.TrimSpace(body.OnlineTime)
@@ -81,7 +87,7 @@ func SystemHTTPHandler(store *Store) http.Handler {
 				writeErr(w, http.StatusConflict, errors.New("ID信息重复"))
 				return
 			}
-			if err := store.CreateSystem(body.Name, body.Intro, body.SystemID, body.OnlineTime, body.Status, body.AccountIDs); err != nil {
+			if err := store.CreateSystem(body.Name, body.EnglishName, body.ShortName, body.Intro, body.SystemID, body.OnlineTime, body.Status, body.AccountIDs); err != nil {
 				if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 					glog.Warningf("systems api create conflict(unique) system_id=%s err=%v", body.SystemID, err)
 					writeErr(w, http.StatusConflict, errors.New("ID信息重复"))
@@ -107,6 +113,8 @@ func SystemHTTPHandler(store *Store) http.Handler {
 			}
 			body.Intro = strings.TrimSpace(body.Intro)
 			body.SystemID = strings.TrimSpace(body.SystemID)
+			body.EnglishName = strings.TrimSpace(body.EnglishName)
+			body.ShortName = strings.TrimSpace(body.ShortName)
 			body.OnlineTime = strings.TrimSpace(body.OnlineTime)
 			body.Status = strings.TrimSpace(body.Status)
 			if body.SystemID == "" || body.Intro == "" || body.OnlineTime == "" || body.Status == "" || len(body.AccountIDs) == 0 {
@@ -117,7 +125,7 @@ func SystemHTTPHandler(store *Store) http.Handler {
 				writeErr(w, http.StatusBadRequest, errors.New("状态仅支持：上线/建设中/下线"))
 				return
 			}
-			if err := store.UpdateSystemByID(body.ID, body.SystemID, body.Intro, body.OnlineTime, body.Status, body.AccountIDs); err != nil {
+			if err := store.UpdateSystemByID(body.ID, body.SystemID, body.EnglishName, body.ShortName, body.Intro, body.OnlineTime, body.Status, body.AccountIDs); err != nil {
 				if err.Error() == "系统不存在或 id 错误" {
 					writeErr(w, http.StatusNotFound, err)
 					return

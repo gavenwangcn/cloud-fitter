@@ -72,6 +72,8 @@ const SystemPage: React.FC = () => {
     void loadConfigsForModal();
     form.setFieldsValue({
       name: row.name,
+      englishName: row.englishName,
+      shortName: row.shortName,
       systemId: row.systemId,
       intro: row.intro,
       onlineTime: row.onlineTime,
@@ -93,6 +95,8 @@ const SystemPage: React.FC = () => {
       if (modalMode === 'create') {
         await createSystem({
           name: v.name,
+          englishName: v.englishName,
+          shortName: v.shortName,
           intro: v.intro,
           systemId: v.systemId,
           onlineTime: v.onlineTime,
@@ -107,6 +111,8 @@ const SystemPage: React.FC = () => {
         await updateSystem({
           id: editingId,
           systemId: v.systemId,
+          englishName: v.englishName,
+          shortName: v.shortName,
           intro: v.intro,
           onlineTime: v.onlineTime,
           status: v.status,
@@ -170,6 +176,8 @@ const SystemPage: React.FC = () => {
         }}
         columns={[
           { title: '系统名称', dataIndex: 'name', align: 'center' },
+          { title: '系统英文名', dataIndex: 'englishName', align: 'center', render: (v?: string) => v || '-' },
+          { title: '系统简称', dataIndex: 'shortName', align: 'center', render: (v?: string) => v || '-' },
           { title: '系统功能简介', dataIndex: 'intro', align: 'center' },
           { title: '系统ID', dataIndex: 'systemId', align: 'center' },
           { title: '上线时间', dataIndex: 'onlineTime', align: 'center' },
@@ -225,6 +233,12 @@ const SystemPage: React.FC = () => {
             rules={[{ required: true, message: '请输入系统功能简介' }]}
           >
             <Input.TextArea rows={4} placeholder="请输入系统功能简介" />
+          </Form.Item>
+          <Form.Item name="englishName" label="系统英文名">
+            <Input placeholder="请输入系统英文名（可选）" autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="shortName" label="系统简称">
+            <Input placeholder="请输入系统简称（可选）" autoComplete="off" />
           </Form.Item>
           <Form.Item
             name="systemId"

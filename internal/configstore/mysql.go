@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"strings"
 
-	"github.com/pkg/errors"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/pkg/errors"
 )
 
 // migrateSQLMySQL 与 migrateSQLSQLite 表结构一致：cloud_configs、systems。
@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS cloud_configs (
 CREATE TABLE IF NOT EXISTS systems (
 	id BIGINT NOT NULL AUTO_INCREMENT,
 	name VARCHAR(512) NOT NULL,
+	english_name VARCHAR(512) NOT NULL DEFAULT '',
+	short_name VARCHAR(256) NOT NULL DEFAULT '',
 	intro TEXT NOT NULL,
 	system_id VARCHAR(256) NOT NULL,
 	account_ids TEXT NOT NULL,
@@ -58,6 +60,14 @@ func migrateMySQL(db *sql.DB) error {
 	_, err := db.Exec(migrateSQLMySQL)
 	if err != nil {
 		return errors.WithMessage(err, "migrate mysql")
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE systems ADD COLUMN english_name VARCHAR(512) NOT NULL DEFAULT ''`,
+		`ALTER TABLE systems ADD COLUMN short_name VARCHAR(256) NOT NULL DEFAULT ''`,
+	} {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "Duplicate column name") {
+			return errors.WithMessage(err, "migrate alter systems columns")
+		}
 	}
 	return nil
 }

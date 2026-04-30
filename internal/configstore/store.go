@@ -26,14 +26,16 @@ func (s *Store) Close() error {
 
 // Row 对外展示（不含密钥）。
 type Row struct {
-	ID       int64 `json:"id"`
-	Provider int32 `json:"provider"`
+	ID       int64  `json:"id"`
+	Provider int32  `json:"provider"`
 	Name     string `json:"name"`
 }
 
 type SystemRow struct {
 	ID           int64    `json:"id"`
 	Name         string   `json:"name"`
+	EnglishName  string   `json:"englishName"`
+	ShortName    string   `json:"shortName"`
 	Intro        string   `json:"intro"`
 	SystemID     string   `json:"systemId"`
 	OnlineTime   string   `json:"onlineTime"`
@@ -131,7 +133,7 @@ func (s *Store) ListSystemsPaged(page, pageSize int) ([]SystemRow, int, error) {
 		cfgNameByID[c.ID] = c.Name
 	}
 	rows, err := s.db.Query(
-		`SELECT id, name, intro, system_id, online_time, status, account_ids FROM systems ORDER BY id LIMIT ? OFFSET ?`,
+		`SELECT id, name, english_name, short_name, intro, system_id, online_time, status, account_ids FROM systems ORDER BY id LIMIT ? OFFSET ?`,
 		pageSize, offset,
 	)
 	if err != nil {
@@ -142,7 +144,7 @@ func (s *Store) ListSystemsPaged(page, pageSize int) ([]SystemRow, int, error) {
 	for rows.Next() {
 		var r SystemRow
 		var accountIDsRaw string
-		if err := rows.Scan(&r.ID, &r.Name, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.EnglishName, &r.ShortName, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw); err != nil {
 			return nil, 0, errors.WithMessage(err, "scan systems")
 		}
 		if accountIDsRaw != "" {
@@ -219,7 +221,7 @@ func (s *Store) DeleteConfigByID(id int64) error {
 }
 
 // UpdateSystemByID 更新系统；不允许修改 name，仅 system_id、intro、上线时间、状态、关联账号可改。
-func (s *Store) UpdateSystemByID(id int64, systemID, intro, onlineTime, status string, accountIDs []int64) error {
+func (s *Store) UpdateSystemByID(id int64, systemID, englishName, shortName, intro, onlineTime, status string, accountIDs []int64) error {
 	if len(accountIDs) == 0 {
 		return errors.New("至少选择一个关联账号")
 	}
@@ -239,8 +241,8 @@ func (s *Store) UpdateSystemByID(id int64, systemID, intro, onlineTime, status s
 		return errors.WithMessage(err, "marshal account ids")
 	}
 	res, err := s.db.Exec(
-		`UPDATE systems SET system_id = ?, intro = ?, online_time = ?, status = ?, account_ids = ? WHERE id = ?`,
-		systemID, strings.TrimSpace(intro), strings.TrimSpace(onlineTime), strings.TrimSpace(status), string(idsJSON), id,
+		`UPDATE systems SET system_id = ?, english_name = ?, short_name = ?, intro = ?, online_time = ?, status = ?, account_ids = ? WHERE id = ?`,
+		systemID, strings.TrimSpace(englishName), strings.TrimSpace(shortName), strings.TrimSpace(intro), strings.TrimSpace(onlineTime), strings.TrimSpace(status), string(idsJSON), id,
 	)
 	if err != nil {
 		return errors.WithMessage(err, "update system")
@@ -302,7 +304,7 @@ func (s *Store) ListSystems() ([]SystemRow, error) {
 		glog.Warningf("configstore.ListSystems list configs failed err=%v", err)
 		return nil, errors.WithMessage(err, "list configs")
 	}
-	rows, err := s.db.Query(`SELECT id, name, intro, system_id, online_time, status, account_ids FROM systems ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, english_name, short_name, intro, system_id, online_time, status, account_ids FROM systems ORDER BY id`)
 	if err != nil {
 		glog.Warningf("configstore.ListSystems query systems failed err=%v", err)
 		return nil, errors.WithMessage(err, "query systems")
@@ -317,7 +319,7 @@ func (s *Store) ListSystems() ([]SystemRow, error) {
 	for rows.Next() {
 		var r SystemRow
 		var accountIDsRaw string
-		if err := rows.Scan(&r.ID, &r.Name, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.EnglishName, &r.ShortName, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw); err != nil {
 			return nil, errors.WithMessage(err, "scan systems")
 		}
 		if accountIDsRaw != "" {
@@ -340,14 +342,14 @@ func (s *Store) ListSystems() ([]SystemRow, error) {
 	return out, nil
 }
 
-func (s *Store) CreateSystem(name, intro, systemID, onlineTime, status string, accountIDs []int64) error {
+func (s *Store) CreateSystem(name, englishName, shortName, intro, systemID, onlineTime, status string, accountIDs []int64) error {
 	idsJSON, err := json.Marshal(accountIDs)
 	if err != nil {
 		return errors.WithMessage(err, "marshal account ids")
 	}
 	_, err = s.db.Exec(
-		`INSERT INTO systems (name, intro, system_id, online_time, status, account_ids) VALUES (?, ?, ?, ?, ?, ?)`,
-		name, intro, systemID, onlineTime, status, string(idsJSON),
+		`INSERT INTO systems (name, english_name, short_name, intro, system_id, online_time, status, account_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		name, strings.TrimSpace(englishName), strings.TrimSpace(shortName), intro, systemID, onlineTime, status, string(idsJSON),
 	)
 	return errors.WithMessage(err, "insert system")
 }
@@ -366,9 +368,9 @@ func (s *Store) SystemBySystemID(systemID string) (SystemRow, error) {
 	var r SystemRow
 	var accountIDsRaw string
 	err := s.db.QueryRow(
-		`SELECT id, name, intro, system_id, online_time, status, account_ids FROM systems WHERE system_id = ? LIMIT 1`,
+		`SELECT id, name, english_name, short_name, intro, system_id, online_time, status, account_ids FROM systems WHERE system_id = ? LIMIT 1`,
 		systemID,
-	).Scan(&r.ID, &r.Name, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw)
+	).Scan(&r.ID, &r.Name, &r.EnglishName, &r.ShortName, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return r, errors.New("system not found")
@@ -402,9 +404,9 @@ func (s *Store) SystemByName(name string) (SystemRow, error) {
 	var accountIDsRaw string
 	n := strings.TrimSpace(name)
 	err := s.db.QueryRow(
-		`SELECT id, name, intro, system_id, online_time, status, account_ids FROM systems WHERE name = ? LIMIT 1`,
+		`SELECT id, name, english_name, short_name, intro, system_id, online_time, status, account_ids FROM systems WHERE name = ? LIMIT 1`,
 		n,
-	).Scan(&r.ID, &r.Name, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw)
+	).Scan(&r.ID, &r.Name, &r.EnglishName, &r.ShortName, &r.Intro, &r.SystemID, &r.OnlineTime, &r.Status, &accountIDsRaw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return r, errors.New("未找到该系统")

@@ -3,6 +3,8 @@ import { request } from 'umi';
 export interface SystemRow {
   id: number;
   name: string;
+  englishName?: string;
+  shortName?: string;
   intro: string;
   systemId: string;
   onlineTime: string;
@@ -20,6 +22,8 @@ export async function listSystems(params?: {
 
 export async function createSystem(data: {
   name: string;
+  englishName?: string;
+  shortName?: string;
   intro: string;
   systemId: string;
   onlineTime: string;
@@ -32,6 +36,8 @@ export async function createSystem(data: {
 export async function updateSystem(data: {
   id: number;
   systemId: string;
+  englishName?: string;
+  shortName?: string;
   intro: string;
   onlineTime: string;
   status: string;
