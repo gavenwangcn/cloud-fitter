@@ -133,3 +133,19 @@ func middlewareResourceChanged(row map[string]any, m mwRec) bool {
 	}
 	return false
 }
+
+func k8sResourceChanged(row map[string]any, hostIPNew, version, cloudType, location string) bool {
+	if strings.TrimSpace(anyToCompareStr(row["host_ip_new"])) != strings.TrimSpace(hostIPNew) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["k8s_version"])) != strings.TrimSpace(version) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["cloud_type"])) != strings.TrimSpace(cloudType) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["location"])) != strings.TrimSpace(location) {
+		return true
+	}
+	return false
+}

@@ -209,6 +209,18 @@ func (c *Client) UpdateCI(_id string, fields map[string]any) (map[string]any, er
 	for k, v := range fields {
 		p[k] = v
 	}
+	// 与 CMDB 现网行为对齐：更新请求建议显式带模型类型，避免服务端解析为 Model None。
+	if _, ok := p["ci_type"]; !ok {
+		if _, ok2 := p["_type"]; !ok2 {
+			if row, err := c.GetCIFirst(map[string]any{"q": fmt.Sprintf("_id:%s", strings.TrimSpace(_id))}); err == nil && row != nil {
+				if t := strings.TrimSpace(fmt.Sprint(row["ci_type"])); t != "" {
+					p["ci_type"] = t
+				} else if t := strings.TrimSpace(fmt.Sprint(row["_type"])); t != "" {
+					p["ci_type"] = t
+				}
+			}
+		}
+	}
 	p["_id"] = _id
 	return c.postCIBody(p)
 }

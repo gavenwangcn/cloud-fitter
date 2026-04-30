@@ -30,11 +30,26 @@ type Syncer struct {
 	Store  *configstore.Store
 }
 
+type componentSyncStats struct {
+	Added   int
+	Updated int
+	Skipped int
+	Errors  int
+}
+
+type systemSyncStats struct {
+	SystemNode componentSyncStats
+	K8s        componentSyncStats
+	Host       componentSyncStats
+	Middleware componentSyncStats
+}
+
 // Run 与 Python main.cmdb 一致：分页拉取 CMDB 中全部 system，再对每个 system_id 同步；云资源来自本服务 List*BySystemName，不再请求 YJSCMDBAPI。
 func (s *Syncer) Run(ctx context.Context) error {
 	if s == nil || s.Client == nil || s.Store == nil {
 		return errors.New("cmdb syncer: nil client or store")
 	}
+	glog.Infof("cmdb sync run(start): full scheduled sync")
 	ids, err := s.listCMDBSystemIDs()
 	if err != nil {
 		return err
@@ -45,6 +60,7 @@ func (s *Syncer) Run(ctx context.Context) error {
 			glog.Warningf("cmdb sync system_id=%s: %v", systemID, err)
 		}
 	}
+	glog.Infof("cmdb sync run(done): full scheduled sync finished")
 	return nil
 }
 
@@ -132,10 +148,19 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 
 	clusterToECS := hostBelongsK8S(k8sList, hosts)
 
-	s.addCMDBSystemNodes(systemID, cmdbSystemName, systemNodes)
-	s.addCMDBK8sClusters(systemID, k8sList, clusterToECS)
-	s.addCMDBHosts(systemID, hosts)
-	s.addCMDBMiddlewares(systemID, middlewares)
+	stats := systemSyncStats{}
+	stats.SystemNode = s.addCMDBSystemNodes(systemID, cmdbSystemName, systemNodes)
+	stats.K8s = s.addCMDBK8sClusters(systemID, k8sList, clusterToECS)
+	stats.Host = s.addCMDBHosts(systemID, hosts)
+	stats.Middleware = s.addCMDBMiddlewares(systemID, middlewares)
+	glog.Infof(
+		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,err=%d) host(add=%d,upd=%d,skip=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,err=%d)",
+		systemID, systemName,
+		stats.SystemNode.Added, stats.SystemNode.Skipped, stats.SystemNode.Errors,
+		stats.K8s.Added, stats.K8s.Updated, stats.K8s.Skipped, stats.K8s.Errors,
+		stats.Host.Added, stats.Host.Updated, stats.Host.Skipped, stats.Host.Errors,
+		stats.Middleware.Added, stats.Middleware.Updated, stats.Middleware.Skipped, stats.Middleware.Errors,
+	)
 	return nil
 }
 
@@ -163,6 +188,7 @@ func (s *Syncer) SyncOneBySystemName(ctx context.Context, systemName string) err
 	if !ok {
 		return errors.New("CMDB中没有相同系统信息")
 	}
+	glog.Infof("cmdb sync run(start): manual single sync system_name=%q system_id=%s", sysRow.Name, sysRow.SystemID)
 	return s.syncSystem(ctx, sysRow.SystemID)
 }
 
@@ -422,33 +448,38 @@ func hostBelongsK8S(k8s []k8sCluster, hosts []hostRec) map[string][]string {
 	return out
 }
 
-func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[string]struct{}) {
+func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[string]struct{}) componentSyncStats {
+	st := componentSyncStats{}
 	for node := range nodes {
 		exists, err := s.Client.GetCIID(map[string]any{
 			"q": fmt.Sprintf("_type:system_node,sys_node_name:%s,system_id:%s", node, systemID),
 		})
 		if err != nil {
-			glog.Errorf("cmdb get system_node: %v", err)
+			glog.Errorf("cmdb sync system_node(get): system_id=%s node=%q err=%v", systemID, node, err)
+			st.Errors++
 			continue
 		}
 		if exists != "" {
-			glog.Infof("cmdb: system node %q exists id=%s", node, exists)
+			glog.Infof("cmdb sync system_node(skip): system_id=%s node=%q id=%s", systemID, node, exists)
+			st.Skipped++
 			continue
 		}
 		root, err := s.Client.GetCIID(map[string]any{
 			"q": fmt.Sprintf("_type:system,system_id:%s", systemID),
 		})
 		if err != nil || root == "" {
-			glog.Errorf("cmdb: system %s for node %s: root ci err=%v", systemID, node, err)
+			glog.Errorf("cmdb sync system_node(root): system_id=%s node=%q err=%v", systemID, node, err)
+			st.Errors++
 			continue
 		}
 		rel, err := s.Client.GetSystemLevelRelations(map[string]any{
-			"root_id":  root,
-			"level":    "1,2,3",
-			"reverse":  1,
+			"root_id": root,
+			"level":   "1,2,3",
+			"reverse": 1,
 		})
 		if err != nil {
-			glog.Errorf("cmdb relations: %v", err)
+			glog.Errorf("cmdb sync system_node(relations): system_id=%s node=%q err=%v", systemID, node, err)
+			st.Errors++
 			continue
 		}
 		var bizDomain, productLine, subProduct string
@@ -468,7 +499,8 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 			}
 		}
 		if len(res) == 0 {
-			glog.Errorf("cmdb: system %s node %s: no relations from root %s", systemID, node, root)
+			glog.Errorf("cmdb sync system_node(relations): system_id=%s node=%q no relations root=%s", systemID, node, root)
+			st.Errors++
 			continue
 		}
 		cloud, loc := splitSysNodeNameForCMDB(node)
@@ -486,14 +518,18 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
-			glog.Errorf("cmdb add system_node: %v", err)
+			glog.Errorf("cmdb sync system_node(add): system_id=%s node=%q err=%v", systemID, node, err)
+			st.Errors++
 			continue
 		}
-		glog.Infof("cmdb add system_node ok %q: %+v", node, d)
+		glog.Infof("cmdb sync system_node(add ok): system_id=%s node=%q resp=%+v", systemID, node, d)
+		st.Added++
 	}
+	return st
 }
 
-func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterToECS map[string][]string) {
+func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterToECS map[string][]string) componentSyncStats {
+	st := componentSyncStats{}
 	for _, c := range k8s {
 		if c.Name == "" {
 			continue
@@ -506,37 +542,68 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 			"q": fmt.Sprintf("_type:k8s_cluster,k8s_cluster_name:%s,system_id:%s,sys_node_name:%s", c.Name, systemID, sysNode),
 		})
 		if err != nil {
-			glog.Errorf("cmdb get k8s: %v", err)
-			continue
-		}
-		if exists != "" {
-			glog.Infof("cmdb: k8s %q exists id=%s", c.Name, exists)
+			glog.Errorf("cmdb sync k8s(get): system_id=%s cluster=%q err=%v", systemID, c.Name, err)
+			st.Errors++
 			continue
 		}
 		ips := strings.Join(clusterToECS[c.Name], ",")
 		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, c.CloudLabel, c.Region)
+		if exists != "" {
+			row, err := s.Client.GetCIFirst(map[string]any{
+				"q": fmt.Sprintf("_id:%s", exists),
+			})
+			if err != nil {
+				glog.Errorf("cmdb sync k8s(get row): system_id=%s cluster=%q id=%s err=%v", systemID, c.Name, exists, err)
+				st.Errors++
+				continue
+			}
+			if row != nil && !k8sResourceChanged(row, ips, c.Version, ct, locn) {
+				glog.Infof("cmdb sync k8s(skip): system_id=%s cluster=%q id=%s", systemID, c.Name, exists)
+				st.Skipped++
+				continue
+			}
+			_, err = s.Client.UpdateCI(exists, map[string]any{
+				"ci_type":     "k8s_cluster",
+				"host_ip_new": ips,
+				"k8s_version": c.Version,
+				"cloud_type":  ct,
+				"location":    locn,
+			})
+			if err != nil {
+				glog.Errorf("cmdb sync k8s(update): system_id=%s cluster=%q id=%s err=%v", systemID, c.Name, exists, err)
+				st.Errors++
+				continue
+			}
+			glog.Infof("cmdb sync k8s(update ok): system_id=%s cluster=%q id=%s", systemID, c.Name, exists)
+			st.Updated++
+			continue
+		}
 		payload := map[string]any{
-			"uuid":              uuid.NewString(),
-			"k8s_uuid":          uuid.NewString(),
-			"ci_type":           "k8s_cluster",
-			"system_id":         systemID,
-			"sys_node_name":     sysNode,
-			"k8s_cluster_name":  c.Name,
-			"host_ip_new":       ips,
-			"k8s_version":       c.Version,
-			"cloud_type":        ct,
-			"location":          locn,
+			"uuid":             uuid.NewString(),
+			"k8s_uuid":         uuid.NewString(),
+			"ci_type":          "k8s_cluster",
+			"system_id":        systemID,
+			"sys_node_name":    sysNode,
+			"k8s_cluster_name": c.Name,
+			"host_ip_new":      ips,
+			"k8s_version":      c.Version,
+			"cloud_type":       ct,
+			"location":         locn,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
-			glog.Errorf("cmdb add k8s: %v", err)
+			glog.Errorf("cmdb sync k8s(add): system_id=%s cluster=%q err=%v", systemID, c.Name, err)
+			st.Errors++
 			continue
 		}
-		glog.Infof("cmdb add k8s ok %q: %+v", c.Name, d)
+		glog.Infof("cmdb sync k8s(add ok): system_id=%s cluster=%q resp=%+v", systemID, c.Name, d)
+		st.Added++
 	}
+	return st
 }
 
-func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) {
+func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncStats {
+	st := componentSyncStats{}
 	for _, h := range hosts {
 		if h.IP == "" {
 			continue
@@ -550,20 +617,32 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) {
 		}
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
-			glog.Errorf("cmdb get server: %v", err)
+			glog.Errorf("cmdb sync host(get): system_id=%s host=%q ip=%s err=%v", systemID, h.Name, h.IP, err)
+			st.Errors++
 			continue
 		}
 		if exists != "" {
 			row, err := s.Client.GetCIFirst(q)
 			if err != nil {
-				glog.Errorf("cmdb get server row: %v", err)
+				glog.Errorf("cmdb sync host(get row): system_id=%s host=%q ip=%s id=%s err=%v", systemID, h.Name, h.IP, exists, err)
+				st.Errors++
 				continue
 			}
 			if row != nil && !serverResourceChanged(row, h) {
-				glog.Infof("cmdb: server %q %s cpu/mem/disk 未变 id=%s", h.Name, h.IP, exists)
+				glog.Infof("cmdb sync host(skip): system_id=%s host=%q ip=%s id=%s", systemID, h.Name, h.IP, exists)
+				st.Skipped++
 				continue
 			}
+			ciType := "server"
+			if row != nil {
+				if t := strings.TrimSpace(fmt.Sprint(row["ci_type"])); t != "" {
+					ciType = t
+				} else if t := strings.TrimSpace(fmt.Sprint(row["_type"])); t != "" {
+					ciType = t
+				}
+			}
 			_, err = s.Client.UpdateCI(exists, map[string]any{
+				"ci_type":        ciType,
 				"cpu_count":      int(h.CPU),
 				"ram_size":       h.MemGBStr,
 				"disk_size":      h.DiskStr,
@@ -579,10 +658,12 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) {
 				"disk_usage_180": h.DiskUsage180,
 			})
 			if err != nil {
-				glog.Errorf("cmdb update server: %v", err)
+				glog.Errorf("cmdb sync host(update): system_id=%s host=%q ip=%s id=%s err=%v", systemID, h.Name, h.IP, exists, err)
+				st.Errors++
 				continue
 			}
-			glog.Infof("cmdb update server ok %q %s (cpu/mem/disk)", h.Name, h.IP)
+			glog.Infof("cmdb sync host(update ok): system_id=%s host=%q ip=%s id=%s", systemID, h.Name, h.IP, exists)
+			st.Updated++
 			continue
 		}
 		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, h.CloudLabel, h.Region)
@@ -612,14 +693,18 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) {
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
-			glog.Errorf("cmdb add server: %v", err)
+			glog.Errorf("cmdb sync host(add): system_id=%s host=%q ip=%s err=%v", systemID, h.Name, h.IP, err)
+			st.Errors++
 			continue
 		}
-		glog.Infof("cmdb add server ok %q: %+v", h.Name, d)
+		glog.Infof("cmdb sync host(add ok): system_id=%s host=%q ip=%s resp=%+v", systemID, h.Name, h.IP, d)
+		st.Added++
 	}
+	return st
 }
 
-func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) {
+func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncStats {
+	st := componentSyncStats{}
 	for _, m := range mws {
 		if m.Name == "" {
 			continue
@@ -633,20 +718,32 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) {
 		}
 		exists, err := s.Client.GetCIID(mq)
 		if err != nil {
-			glog.Errorf("cmdb get middle_software: %v", err)
+			glog.Errorf("cmdb sync middleware(get): system_id=%s name=%q err=%v", systemID, m.Name, err)
+			st.Errors++
 			continue
 		}
 		if exists != "" {
 			row, err := s.Client.GetCIFirst(mq)
 			if err != nil {
-				glog.Errorf("cmdb get middle_software row: %v", err)
+				glog.Errorf("cmdb sync middleware(get row): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
+				st.Errors++
 				continue
 			}
 			if row != nil && !middlewareResourceChanged(row, m) {
-				glog.Infof("cmdb: middleware %q cpu/mem/disk 未变 id=%s", m.Name, exists)
+				glog.Infof("cmdb sync middleware(skip): system_id=%s name=%q id=%s", systemID, m.Name, exists)
+				st.Skipped++
 				continue
 			}
+			ciType := "middle_software"
+			if row != nil {
+				if t := strings.TrimSpace(fmt.Sprint(row["ci_type"])); t != "" {
+					ciType = t
+				} else if t := strings.TrimSpace(fmt.Sprint(row["_type"])); t != "" {
+					ciType = t
+				}
+			}
 			_, err = s.Client.UpdateCI(exists, map[string]any{
+				"ci_type":     ciType,
 				"cpu_count":   m.CPU,
 				"ram_size":    m.Mem,
 				"disk_size":   m.DiskStr,
@@ -656,10 +753,12 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) {
 				"men_avg_30":  m.MenAvg30,
 			})
 			if err != nil {
-				glog.Errorf("cmdb update middle_software: %v", err)
+				glog.Errorf("cmdb sync middleware(update): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
+				st.Errors++
 				continue
 			}
-			glog.Infof("cmdb update middleware ok %q (cpu/mem/disk)", m.Name)
+			glog.Infof("cmdb sync middleware(update ok): system_id=%s name=%q id=%s", systemID, m.Name, exists)
+			st.Updated++
 			continue
 		}
 		// 与 cmdb_api.py 中 add_cmdb_middlewares 字段一致（含 location / cloud_type 与 Python 相同赋值方式）
@@ -683,11 +782,14 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) {
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
-			glog.Errorf("cmdb add middle_software: %v", err)
+			glog.Errorf("cmdb sync middleware(add): system_id=%s name=%q err=%v", systemID, m.Name, err)
+			st.Errors++
 			continue
 		}
-		glog.Infof("cmdb add middleware ok %q: %+v", m.Name, d)
+		glog.Infof("cmdb sync middleware(add ok): system_id=%s name=%q resp=%+v", systemID, m.Name, d)
+		st.Added++
 	}
+	return st
 }
 
 func cloudTypeLabel(p pbtenant.CloudProvider) string {
