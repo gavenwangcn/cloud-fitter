@@ -9,11 +9,13 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
-	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	ccesvc "github.com/cloud-fitter/cloud-fitter/internal/server/cce"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/ecs"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/elb"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/kafka"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/rds"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/redis"
@@ -136,6 +138,40 @@ func CceByAccount(w http.ResponseWriter, r *http.Request) {
 	writeProtoJSON(w, resp, err)
 }
 
+// EipByAccount POST /apis/eip/by-account（当前：华为云 EIP）
+func EipByAccount(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeListByAccount(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.SystemName != "" {
+		resp, err := eipBySystemName(r.Context(), body.SystemName)
+		writeJSON(w, map[string]any{"eips": resp}, err)
+		return
+	}
+	ctx := scope.WithAccountName(r.Context(), body.AccountName)
+	resp, err := eip.List(ctx, pbtenant.CloudProvider(body.Provider))
+	writeJSON(w, map[string]any{"eips": resp}, err)
+}
+
+// ElbByAccount POST /apis/elb/by-account（当前：华为云 ELB）
+func ElbByAccount(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeListByAccount(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.SystemName != "" {
+		resp, err := elbBySystemName(r.Context(), body.SystemName)
+		writeJSON(w, map[string]any{"elbs": resp}, err)
+		return
+	}
+	ctx := scope.WithAccountName(r.Context(), body.AccountName)
+	resp, err := elb.List(ctx, pbtenant.CloudProvider(body.Provider))
+	writeJSON(w, map[string]any{"elbs": resp}, err)
+}
+
 func resolveSystemAccounts(systemName string) ([]AccountScope, error) {
 	if systemAccountResolver == nil {
 		return nil, nil
@@ -238,6 +274,40 @@ func cceBySystemName(ctx0 context.Context, systemName string) (*pbcce.ListResp, 
 	return out, nil
 }
 
+func eipBySystemName(ctx0 context.Context, systemName string) ([]*eip.Instance, error) {
+	var out []*eip.Instance
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accounts {
+		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+		resp, err := eip.List(ctx, pbtenant.CloudProvider(acc.Provider))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, resp...)
+	}
+	return out, nil
+}
+
+func elbBySystemName(ctx0 context.Context, systemName string) ([]*elb.Instance, error) {
+	var out []*elb.Instance
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accounts {
+		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+		resp, err := elb.List(ctx, pbtenant.CloudProvider(acc.Provider))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, resp...)
+	}
+	return out, nil
+}
+
 // ListEcsBySystemName 供 CMDB 同步等按「系统名称」拉取全量 ECS（与 POST /apis/ecs/by-account 且带 systemName 行为一致）。
 func ListEcsBySystemName(ctx context.Context, systemName string) (*pbecs.ListResp, error) {
 	return ecsBySystemName(ctx, systemName)
@@ -277,4 +347,14 @@ func writeProtoJSON(w http.ResponseWriter, msg proto.Message, err error) {
 		return
 	}
 	_, _ = w.Write(b)
+}
+
+func writeJSON(w http.ResponseWriter, data any, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(data)
 }

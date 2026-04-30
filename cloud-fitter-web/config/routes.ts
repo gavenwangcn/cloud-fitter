@@ -32,6 +32,14 @@ export default [
         component: './cce',
       },
       {
+        path: '/eip',
+        component: './eip',
+      },
+      {
+        path: '/elb',
+        component: './elb',
+      },
+      {
         path: '/config',
         component: './config',
       },

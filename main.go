@@ -35,9 +35,9 @@ var (
 	// gRPC server endpoint
 	grpcServerEndpoint = flag.String("grpc-server-endpoint", ":9091", "gRPC server endpoint")
 	// CMDB 同步（与 cmdb-sync 写入逻辑一致，云数据来自本进程 jsonapi 同源 List）。留空则不从命令行启用；环境变量见 cmdb.CMDBConfigFromEnv
-	cmdbBaseURL  = flag.String("cmdb-base-url", "", "CMDB API base URL, enables daily CMDB sync at 02:00 if key/secret set")
-	cmdbKey      = flag.String("cmdb-key", "", "CMDB API _key (overrides CLOUD_FITTER_CMDB_KEY if set)")
-	cmdbSecret   = flag.String("cmdb-secret", "", "CMDB API signing secret (overrides CLOUD_FITTER_CMDB_SECRET if set)")
+	cmdbBaseURL = flag.String("cmdb-base-url", "", "CMDB API base URL, enables daily CMDB sync at 02:00 if key/secret set")
+	cmdbKey     = flag.String("cmdb-key", "", "CMDB API _key (overrides CLOUD_FITTER_CMDB_KEY if set)")
+	cmdbSecret  = flag.String("cmdb-secret", "", "CMDB API signing secret (overrides CLOUD_FITTER_CMDB_SECRET if set)")
 )
 
 func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
@@ -116,6 +116,10 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
 			jsonapi.KafkaByAccount(w, r)
 		case r.URL.Path == "/apis/cce/by-account" && r.Method == http.MethodPost:
 			jsonapi.CceByAccount(w, r)
+		case r.URL.Path == "/apis/eip/by-account" && r.Method == http.MethodPost:
+			jsonapi.EipByAccount(w, r)
+		case r.URL.Path == "/apis/elb/by-account" && r.Method == http.MethodPost:
+			jsonapi.ElbByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-account" && r.Method == http.MethodPost:
 			jsonapi.BillingSummaryByAccount(w, r)
 		default:

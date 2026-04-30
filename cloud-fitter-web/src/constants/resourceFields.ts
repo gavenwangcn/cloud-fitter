@@ -138,3 +138,36 @@ export const CCE_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'cpuTotal', title: '节点 vCPU 合计' },
   { dataIndex: 'memoryTotalMb', title: '节点内存合计(MB)' },
 ];
+
+/** EIP 网络资源（/apis/eip/by-account） */
+export const EIP_FIELDS: ResourceFieldDef[] = [
+  { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'accountName', title: '云账号' },
+  { dataIndex: 'regionName', title: '地域' },
+  { dataIndex: 'eipId', title: '弹性公网IP实例ID' },
+  { dataIndex: 'eip', title: '弹性公网IP' },
+  { dataIndex: 'bandwidthType', title: '带宽类型' },
+  { dataIndex: 'bandwidthSizeMbit', title: '带宽大小(Mbit/s)' },
+  { dataIndex: 'bindInstanceType', title: '实例类型' },
+  { dataIndex: 'bindInstanceName', title: '实例名称' },
+  { dataIndex: 'bindInstanceId', title: '实例ID' },
+  { dataIndex: 'privateIpAddress', title: '私有IP地址' },
+  { dataIndex: 'onlineTime', title: '上线时间' },
+  { dataIndex: 'status', title: '状态' },
+];
+
+/** ELB 网络资源（/apis/elb/by-account） */
+export const ELB_FIELDS: ResourceFieldDef[] = [
+  { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'accountName', title: '云账号' },
+  { dataIndex: 'regionName', title: '地域' },
+  { dataIndex: 'id', title: 'ID' },
+  { dataIndex: 'name', title: '名称' },
+  { dataIndex: 'instanceType', title: '实例类型' },
+  { dataIndex: 'ipv4PrivateAddress', title: 'IPv4私有地址' },
+  { dataIndex: 'ipv4PublicAddress', title: 'IPv4公网地址' },
+  { dataIndex: 'listeners', title: '监听器(前端协议/端口)' },
+  { dataIndex: 'ipv4BandwidthMbit', title: 'IPv4带宽(Mbit/s)' },
+  { dataIndex: 'onlineTime', title: '上线时间' },
+  { dataIndex: 'status', title: '状态' },
+];

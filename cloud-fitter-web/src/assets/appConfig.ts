@@ -44,4 +44,14 @@ export const menuList = [
     key: 'cce',
     icon: 'icon-quanju1',
   },
+  {
+    title: 'EIP',
+    key: 'eip',
+    icon: 'icon-quanju1',
+  },
+  {
+    title: 'ELB',
+    key: 'elb',
+    icon: 'icon-quanju1',
+  },
 ];
