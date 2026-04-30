@@ -21,13 +21,14 @@ type createSystemBody struct {
 
 type updateSystemBody struct {
 	ID         int64   `json:"id"`
+	SystemID   string  `json:"systemId"`
 	Intro      string  `json:"intro"`
 	OnlineTime string  `json:"onlineTime"`
 	Status     string  `json:"status"`
 	AccountIDs []int64 `json:"accountIds"`
 }
 
-// SystemHTTPHandler 处理 GET/POST /apis/systems。
+// SystemHTTPHandler 处理 GET/POST/PUT/DELETE /apis/systems。
 func SystemHTTPHandler(store *Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -64,9 +65,9 @@ func SystemHTTPHandler(store *Store) http.Handler {
 				writeErr(w, http.StatusBadRequest, errors.New("系统名称、系统功能简介、系统ID、上线时间、状态、关联账号均不能为空"))
 				return
 			}
-			if body.Status != "运行中" && body.Status != "下线" {
+			if body.Status != "上线" && body.Status != "建设中" && body.Status != "下线" {
 				glog.Warningf("systems api validation failed invalid status=%q", body.Status)
-				writeErr(w, http.StatusBadRequest, errors.New("状态仅支持：运行中/下线"))
+				writeErr(w, http.StatusBadRequest, errors.New("状态仅支持：上线/建设中/下线"))
 				return
 			}
 			exist, err := store.HasSystemID(body.SystemID)
@@ -105,17 +106,38 @@ func SystemHTTPHandler(store *Store) http.Handler {
 				return
 			}
 			body.Intro = strings.TrimSpace(body.Intro)
+			body.SystemID = strings.TrimSpace(body.SystemID)
 			body.OnlineTime = strings.TrimSpace(body.OnlineTime)
 			body.Status = strings.TrimSpace(body.Status)
-			if body.Intro == "" || body.OnlineTime == "" || body.Status == "" || len(body.AccountIDs) == 0 {
-				writeErr(w, http.StatusBadRequest, errors.New("简介、上线时间、状态、关联账号均不能为空"))
+			if body.SystemID == "" || body.Intro == "" || body.OnlineTime == "" || body.Status == "" || len(body.AccountIDs) == 0 {
+				writeErr(w, http.StatusBadRequest, errors.New("系统ID、简介、上线时间、状态、关联账号均不能为空"))
 				return
 			}
-			if body.Status != "运行中" && body.Status != "下线" {
-				writeErr(w, http.StatusBadRequest, errors.New("状态仅支持：运行中/下线"))
+			if body.Status != "上线" && body.Status != "建设中" && body.Status != "下线" {
+				writeErr(w, http.StatusBadRequest, errors.New("状态仅支持：上线/建设中/下线"))
 				return
 			}
-			if err := store.UpdateSystemByID(body.ID, body.Intro, body.OnlineTime, body.Status, body.AccountIDs); err != nil {
+			if err := store.UpdateSystemByID(body.ID, body.SystemID, body.Intro, body.OnlineTime, body.Status, body.AccountIDs); err != nil {
+				if err.Error() == "系统不存在或 id 错误" {
+					writeErr(w, http.StatusNotFound, err)
+					return
+				}
+				if err.Error() == "ID信息重复" {
+					writeErr(w, http.StatusConflict, err)
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			glog.Infof("systems api update ok id=%d", body.ID)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		case http.MethodDelete:
+			id := int64(ParseIntDefault(r.URL.Query().Get("id"), 0))
+			if id < 1 {
+				writeErr(w, http.StatusBadRequest, errors.New("id 无效"))
+				return
+			}
+			if err := store.DeleteSystemByID(id); err != nil {
 				if err.Error() == "系统不存在或 id 错误" {
 					writeErr(w, http.StatusNotFound, err)
 					return
@@ -123,7 +145,7 @@ func SystemHTTPHandler(store *Store) http.Handler {
 				writeErr(w, http.StatusInternalServerError, err)
 				return
 			}
-			glog.Infof("systems api update ok id=%d", body.ID)
+			glog.Infof("systems api delete ok id=%d", id)
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)

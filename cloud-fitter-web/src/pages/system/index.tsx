@@ -2,7 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useModel } from '@@/plugin-model/useModel';
 import { Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
 import { listCloudConfigs, CloudConfigRow } from '@/services/cloudConfig';
-import { createSystem, listSystems, updateSystem, SystemRow } from '@/services/systemManage';
+import {
+  createSystem,
+  deleteSystem,
+  listSystems,
+  updateSystem,
+  SystemRow,
+} from '@/services/systemManage';
 
 const genSystemID = (): string => `sys-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
 const DEFAULT_PAGE_SIZE = 50;
@@ -100,6 +106,7 @@ const SystemPage: React.FC = () => {
         }
         await updateSystem({
           id: editingId,
+          systemId: v.systemId,
           intro: v.intro,
           onlineTime: v.onlineTime,
           status: v.status,
@@ -115,6 +122,25 @@ const SystemPage: React.FC = () => {
       }
       message.error(e?.message || e?.data?.error || (modalMode === 'create' ? '创建失败' : '保存失败'));
     }
+  };
+
+  const onDelete = (row: SystemRow) => {
+    Modal.confirm({
+      title: '确认删除系统',
+      content: `将删除系统「${row.name}」，是否继续？`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await deleteSystem(row.id);
+          message.success('系统已删除');
+          loadSystems();
+        } catch (e: any) {
+          message.error(e?.message || e?.data?.error || '删除失败');
+        }
+      },
+    });
   };
 
   return (
@@ -158,11 +184,16 @@ const SystemPage: React.FC = () => {
             title: '操作',
             key: 'action',
             align: 'center',
-            width: 100,
+            width: 160,
             render: (_: unknown, record) => (
-              <Button type="link" size="small" onClick={() => openEdit(record)}>
-                编辑
-              </Button>
+              <Space size={4}>
+                <Button type="link" size="small" onClick={() => openEdit(record)}>
+                  编辑
+                </Button>
+                <Button danger type="link" size="small" onClick={() => onDelete(record)}>
+                  删除
+                </Button>
+              </Space>
             ),
           },
         ]}
@@ -198,12 +229,10 @@ const SystemPage: React.FC = () => {
           <Form.Item
             name="systemId"
             label="系统ID"
-            rules={modalMode === 'create' ? [{ required: true, message: '请输入系统ID' }] : []}
+            rules={[{ required: true, message: '请输入系统ID' }]}
           >
             <Input
               placeholder="系统ID"
-              readOnly={modalMode === 'edit'}
-              disabled={modalMode === 'edit'}
               addonAfter={
                 modalMode === 'create' ? (
                   <Button
@@ -246,7 +275,8 @@ const SystemPage: React.FC = () => {
             <Select
               placeholder="请选择状态"
               options={[
-                { label: '运行中', value: '运行中' },
+                { label: '上线', value: '上线' },
+                { label: '建设中', value: '建设中' },
                 { label: '下线', value: '下线' },
               ]}
             />

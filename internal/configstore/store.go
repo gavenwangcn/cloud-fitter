@@ -218,21 +218,48 @@ func (s *Store) DeleteConfigByID(id int64) error {
 	return nil
 }
 
-// UpdateSystemByID 更新系统；不允许修改 name、system_id，仅 intro、上线时间、状态、关联账号。
-func (s *Store) UpdateSystemByID(id int64, intro, onlineTime, status string, accountIDs []int64) error {
+// UpdateSystemByID 更新系统；不允许修改 name，仅 system_id、intro、上线时间、状态、关联账号可改。
+func (s *Store) UpdateSystemByID(id int64, systemID, intro, onlineTime, status string, accountIDs []int64) error {
 	if len(accountIDs) == 0 {
 		return errors.New("至少选择一个关联账号")
+	}
+	systemID = strings.TrimSpace(systemID)
+	if systemID == "" {
+		return errors.New("系统ID不能为空")
+	}
+	var dup int
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM systems WHERE system_id = ? AND id <> ?`, systemID, id).Scan(&dup); err != nil {
+		return errors.WithMessage(err, "check duplicate system_id")
+	}
+	if dup > 0 {
+		return errors.New("ID信息重复")
 	}
 	idsJSON, err := json.Marshal(accountIDs)
 	if err != nil {
 		return errors.WithMessage(err, "marshal account ids")
 	}
 	res, err := s.db.Exec(
-		`UPDATE systems SET intro = ?, online_time = ?, status = ?, account_ids = ? WHERE id = ?`,
-		strings.TrimSpace(intro), strings.TrimSpace(onlineTime), strings.TrimSpace(status), string(idsJSON), id,
+		`UPDATE systems SET system_id = ?, intro = ?, online_time = ?, status = ?, account_ids = ? WHERE id = ?`,
+		systemID, strings.TrimSpace(intro), strings.TrimSpace(onlineTime), strings.TrimSpace(status), string(idsJSON), id,
 	)
 	if err != nil {
 		return errors.WithMessage(err, "update system")
+	}
+	aff, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if aff == 0 {
+		return errors.New("系统不存在或 id 错误")
+	}
+	return nil
+}
+
+// DeleteSystemByID 删除系统记录。
+func (s *Store) DeleteSystemByID(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM systems WHERE id = ?`, id)
+	if err != nil {
+		return errors.WithMessage(err, "delete system")
 	}
 	aff, err := res.RowsAffected()
 	if err != nil {

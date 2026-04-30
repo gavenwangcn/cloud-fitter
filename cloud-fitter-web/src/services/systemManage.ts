@@ -31,10 +31,15 @@ export async function createSystem(data: {
 
 export async function updateSystem(data: {
   id: number;
+  systemId: string;
   intro: string;
   onlineTime: string;
   status: string;
   accountIds: number[];
 }) {
   return request('/apis/systems', { method: 'PUT', data });
+}
+
+export async function deleteSystem(id: number) {
+  return request('/apis/systems', { method: 'DELETE', params: { id } });
 }
