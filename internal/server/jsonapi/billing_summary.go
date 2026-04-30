@@ -10,6 +10,8 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbbilling"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/billing"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 type billingSummaryBody struct {
@@ -36,7 +38,7 @@ func decodeBillingSummaryBody(r *http.Request) (billingSummaryBody, error) {
 func BillingSummaryByAccount(w http.ResponseWriter, r *http.Request) {
 	body, err := decodeBillingSummaryBody(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeBillingErr(w, http.StatusBadRequest, errors.Wrap(err, "decode billing request body"))
 		return
 	}
 	loc, lerr := time.LoadLocation("Asia/Shanghai")
@@ -52,7 +54,7 @@ func BillingSummaryByAccount(w http.ResponseWriter, r *http.Request) {
 	if body.SystemName != "" {
 		accounts, err := resolveSystemAccounts(body.SystemName)
 		if err != nil {
-			writeProtoJSON(w, nil, err)
+			writeBillingErr(w, http.StatusInternalServerError, errors.Wrapf(err, "resolve system accounts failed system=%q", body.SystemName))
 			return
 		}
 		if len(accounts) == 0 {
@@ -67,7 +69,11 @@ func BillingSummaryByAccount(w http.ResponseWriter, r *http.Request) {
 				AccountName:  acc.AccountName,
 			})
 			if err != nil {
-				writeProtoJSON(w, nil, err)
+				writeBillingErr(w, http.StatusInternalServerError, errors.Wrapf(
+					err,
+					"billing summary failed system=%q provider=%v account=%q cycle=%q",
+					body.SystemName, pbtenant.CloudProvider(acc.Provider), acc.AccountName, cycle,
+				))
 				return
 			}
 			parts = append(parts, resp)
@@ -82,5 +88,26 @@ func BillingSummaryByAccount(w http.ResponseWriter, r *http.Request) {
 		BillingCycle: cycle,
 		AccountName:  body.AccountName,
 	})
-	writeProtoJSON(w, resp, err)
+	if err != nil {
+		writeBillingErr(w, http.StatusInternalServerError, errors.Wrapf(
+			err,
+			"billing summary failed provider=%v account=%q cycle=%q",
+			pbtenant.CloudProvider(body.Provider), body.AccountName, cycle,
+		))
+		return
+	}
+	writeProtoJSON(w, resp, nil)
+}
+
+func writeBillingErr(w http.ResponseWriter, code int, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	msg := err.Error()
+	// 打印完整错误链，便于云上直接定位真实 OpenAPI 返回。
+	glog.Errorf("billing api error: %+v", err)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":  msg,
+		"errMsg": msg,
+		"resMsg": msg,
+	})
 }
