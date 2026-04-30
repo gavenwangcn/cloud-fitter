@@ -3,6 +3,7 @@ package cmdb
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -740,14 +741,14 @@ func utilWindowPeakText(w *pbutilization.UtilizationWindow) string {
 	if w == nil || !w.GetAvailable() {
 		return ""
 	}
-	return percentText(w.GetPeakPercent())
+	return percentIntText(w.GetPeakPercent())
 }
 
 func utilWindowAvgText(w *pbutilization.UtilizationWindow) string {
 	if w == nil || !w.GetAvailable() {
 		return ""
 	}
-	return percentText(w.GetAvgPercent())
+	return percentIntText(w.GetAvgPercent())
 }
 
 func periodUtilizationText(w *pbutilization.PeriodUtilizationRate) string {
@@ -759,6 +760,10 @@ func periodUtilizationText(w *pbutilization.PeriodUtilizationRate) string {
 
 func percentText(v float64) string {
 	return strconv.FormatFloat(v, 'f', 2, 64)
+}
+
+func percentIntText(v float64) string {
+	return strconv.FormatInt(int64(math.Round(v)), 10)
 }
 
 // StartDailyAt 在每天指定本地时刻执行一次 Run（默认 2:00，与需求「每天 2 点」一致）。
