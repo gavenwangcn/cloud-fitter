@@ -200,53 +200,31 @@ func (c *Client) AddCI(body map[string]any) (map[string]any, error) {
 	return c.postCIBody(body)
 }
 
-// UpdateCI 对已存在 CI 做属性更新：POST /api/v0.1/ci，body 含 _id 及待更新字段（与 add_ci 签名方式一致）。
+// UpdateCI 对已存在 CI 做属性更新：PUT /api/v0.1/ci/<ci_id>，与 CMDB api.views.cmdb.ci.CIView.put 一致。
+// 创建须用 AddCI（POST /api/v0.1/ci）；勿再用 POST 携带 _id 模拟更新，否则会走 CIManager.add 并触发「CI already exists!」。
 func (c *Client) UpdateCI(_id string, fields map[string]any) (map[string]any, error) {
-	if strings.TrimSpace(_id) == "" {
+	id := strings.TrimSpace(_id)
+	if id == "" {
 		return nil, fmt.Errorf("update ci: empty _id")
 	}
-	id := strings.TrimSpace(_id)
-	p := make(map[string]any, len(fields)+4)
+	path := "/api/v0.1/ci/" + id
+	u, err := url.Parse(c.BaseURL + path)
+	if err != nil {
+		return nil, err
+	}
+	p := make(map[string]any, len(fields)+2)
 	for k, v := range fields {
+		if k == "_id" {
+			continue
+		}
 		p[k] = v
 	}
-	var row map[string]any
-	if fetched, err := c.GetCIFirst(map[string]any{"q": fmt.Sprintf("_id:%s", id)}); err == nil && fetched != nil {
-		row = fetched
+	c.BuildAPIKey(u.Path, p)
+	b, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
 	}
-	if row == nil {
-		return nil, fmt.Errorf("update ci: _id=%s not found in cmdb", id)
-	}
-	// 与 CMDB 现网行为对齐：更新请求建议显式带模型类型，避免服务端解析为 Model None。
-	if _, ok := p["ci_type"]; !ok {
-		if _, ok2 := p["_type"]; !ok2 {
-			if t := strings.TrimSpace(fmt.Sprint(row["ci_type"])); t != "" {
-				p["ci_type"] = t
-			} else if t := strings.TrimSpace(fmt.Sprint(row["_type"])); t != "" {
-				p["ci_type"] = t
-			}
-		}
-	}
-	if strings.TrimSpace(fmt.Sprint(p["ci_type"])) == "" || strings.TrimSpace(fmt.Sprint(p["ci_type"])) == "<nil>" {
-		return nil, fmt.Errorf("update ci: _id=%s missing ci_type", id)
-	}
-	// 当前 CMDB 的 /api/v0.1/ci 更新要求携带模型主键（常见为 uuid）。
-	if _, ok := p["uuid"]; !ok {
-		if u := strings.TrimSpace(fmt.Sprint(row["uuid"])); u != "" && u != "<nil>" {
-			p["uuid"] = u
-		}
-	}
-	if strings.TrimSpace(fmt.Sprint(p["uuid"])) == "" || strings.TrimSpace(fmt.Sprint(p["uuid"])) == "<nil>" {
-		return nil, fmt.Errorf("update ci: _id=%s missing uuid(primary key)", id)
-	}
-	// 部分模型（如 k8s_cluster）存在额外主键字段，带上更稳妥。
-	if _, ok := p["k8s_uuid"]; !ok {
-		if u := strings.TrimSpace(fmt.Sprint(row["k8s_uuid"])); u != "" && u != "<nil>" {
-			p["k8s_uuid"] = u
-		}
-	}
-	p["_id"] = id
-	return c.postCIBody(p)
+	return c.doJSON("PUT", u.String(), "application/json", b)
 }
 
 func (c *Client) postCIBody(p map[string]any) (map[string]any, error) {
@@ -267,7 +245,7 @@ func (c *Client) doJSON(method, fullURL, contentType string, body []byte) (map[s
 	if err != nil {
 		return nil, err
 	}
-	if method == "POST" && len(body) > 0 {
+	if (method == "POST" || method == "PUT" || method == "PATCH") && len(body) > 0 {
 		req.Header.Set("Content-Type", contentType)
 	}
 	client := c.HTTP
