@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/global"
 	bssv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bss/v2"
 	bssmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bss/v2/model"
 	bssregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bss/v2/region"
@@ -21,7 +21,8 @@ func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, bil
 	if !ok {
 		return nil, errors.New("huawei billing: only AccessKeyTenant supported")
 	}
-	auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
+	// BSS 属于华为云 global 服务，需使用 global.Credentials（官方 SDK 文档）。
+	auth := global.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 	hc := bssv2.BssClientBuilder().WithRegion(bssregion.ValueOf("cn-north-1")).WithCredential(auth).Build()
 	cli := bssv2.NewBssClient(hc)
 
