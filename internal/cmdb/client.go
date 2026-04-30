@@ -205,23 +205,47 @@ func (c *Client) UpdateCI(_id string, fields map[string]any) (map[string]any, er
 	if strings.TrimSpace(_id) == "" {
 		return nil, fmt.Errorf("update ci: empty _id")
 	}
-	p := make(map[string]any, len(fields)+1)
+	id := strings.TrimSpace(_id)
+	p := make(map[string]any, len(fields)+4)
 	for k, v := range fields {
 		p[k] = v
+	}
+	var row map[string]any
+	if fetched, err := c.GetCIFirst(map[string]any{"q": fmt.Sprintf("_id:%s", id)}); err == nil && fetched != nil {
+		row = fetched
+	}
+	if row == nil {
+		return nil, fmt.Errorf("update ci: _id=%s not found in cmdb", id)
 	}
 	// 与 CMDB 现网行为对齐：更新请求建议显式带模型类型，避免服务端解析为 Model None。
 	if _, ok := p["ci_type"]; !ok {
 		if _, ok2 := p["_type"]; !ok2 {
-			if row, err := c.GetCIFirst(map[string]any{"q": fmt.Sprintf("_id:%s", strings.TrimSpace(_id))}); err == nil && row != nil {
-				if t := strings.TrimSpace(fmt.Sprint(row["ci_type"])); t != "" {
-					p["ci_type"] = t
-				} else if t := strings.TrimSpace(fmt.Sprint(row["_type"])); t != "" {
-					p["ci_type"] = t
-				}
+			if t := strings.TrimSpace(fmt.Sprint(row["ci_type"])); t != "" {
+				p["ci_type"] = t
+			} else if t := strings.TrimSpace(fmt.Sprint(row["_type"])); t != "" {
+				p["ci_type"] = t
 			}
 		}
 	}
-	p["_id"] = _id
+	if strings.TrimSpace(fmt.Sprint(p["ci_type"])) == "" || strings.TrimSpace(fmt.Sprint(p["ci_type"])) == "<nil>" {
+		return nil, fmt.Errorf("update ci: _id=%s missing ci_type", id)
+	}
+	// 当前 CMDB 的 /api/v0.1/ci 更新要求携带模型主键（常见为 uuid）。
+	if _, ok := p["uuid"]; !ok {
+		if u := strings.TrimSpace(fmt.Sprint(row["uuid"])); u != "" && u != "<nil>" {
+			p["uuid"] = u
+		}
+	}
+	if strings.TrimSpace(fmt.Sprint(p["uuid"])) == "" || strings.TrimSpace(fmt.Sprint(p["uuid"])) == "<nil>" {
+		return nil, fmt.Errorf("update ci: _id=%s missing uuid(primary key)", id)
+	}
+	// 部分模型（如 k8s_cluster）存在额外主键字段，带上更稳妥。
+	if _, ok := p["k8s_uuid"]; !ok {
+		if u := strings.TrimSpace(fmt.Sprint(row["k8s_uuid"])); u != "" && u != "<nil>" {
+			p["k8s_uuid"] = u
+		}
+	}
+	p["_id"] = id
 	return c.postCIBody(p)
 }
 
