@@ -70,6 +70,36 @@ func serverResourceChanged(row map[string]any, h hostRec) bool {
 	if !metricStrEqual(oDisk, nDisk) {
 		return true
 	}
+	if !metricStrEqual(anyToCompareStr(row["cpu_peak_30"]), strings.TrimSpace(h.CpuPeak30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["cpu_peak_180"]), strings.TrimSpace(h.CpuPeak180)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["cpu_avg_30"]), strings.TrimSpace(h.CpuAvg30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["cpu_avg_180"]), strings.TrimSpace(h.CpuAvg180)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["mem_peak_30"]), strings.TrimSpace(h.MemPeak30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["men_peak_180"]), strings.TrimSpace(h.MenPeak180)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["men_avg_30"]), strings.TrimSpace(h.MemAvg30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["men_avg_180"]), strings.TrimSpace(h.MenAvg180)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["disk_usage_30"]), strings.TrimSpace(h.DiskUsage30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["disk_usage_180"]), strings.TrimSpace(h.DiskUsage180)) {
+		return true
+	}
 	return false
 }
 
@@ -87,6 +117,18 @@ func middlewareResourceChanged(row map[string]any, m mwRec) bool {
 		return true
 	}
 	if !metricStrEqual(oDisk, nDisk) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["cpu_peak_30"]), strings.TrimSpace(m.CpuPeak30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["cpu_avg_30"]), strings.TrimSpace(m.CpuAvg30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["mem_peak_30"]), strings.TrimSpace(m.MemPeak30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["men_avg_30"]), strings.TrimSpace(m.MenAvg30)) {
 		return true
 	}
 	return false

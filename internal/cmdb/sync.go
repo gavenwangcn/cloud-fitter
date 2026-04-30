@@ -18,6 +18,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
 )
@@ -271,6 +272,11 @@ type hostRec struct {
 	DiskStr                                   string // 磁盘：优先 disk_summary，否则 系统盘GB+数据盘GB
 	OS                                        string
 	CceClusterID                              string
+	CpuPeak30, CpuPeak180                     string
+	CpuAvg30, CpuAvg180                       string
+	MemPeak30, MenPeak180                     string
+	MemAvg30, MenAvg180                       string
+	DiskUsage30, DiskUsage180                 string
 }
 
 func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []hostRec {
@@ -285,6 +291,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 		if e.GetProvider() == pbtenant.CloudProvider_huawei && huaweiEcsIDToCceUID != nil {
 			cceID = huaweiEcsIDToCceUID[e.GetInstanceId()]
 		}
+		util := e.GetUtilizationAudit()
 		diskStr := strings.TrimSpace(e.GetDiskSummary())
 		if diskStr == "" {
 			diskStr = fmt.Sprintf("%d+%d", e.GetSystemDiskSizeGb(), e.GetDataDiskTotalGb())
@@ -300,6 +307,16 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			DiskStr:      diskStr,
 			OS:           firstNonEmpty(e.GetImageName(), e.GetOsType()),
 			CceClusterID: cceID, // 华为：由 CCE ListNodes 的 status.serverId 与集群 metadata.uid 映射得到，与 CceCluster.cluster_uid 一致
+			CpuPeak30:    utilWindowPeakText(util.GetCpuLast_30D()),
+			CpuPeak180:   utilWindowPeakText(util.GetCpuLast_180D()),
+			CpuAvg30:     utilWindowAvgText(util.GetCpuLast_30D()),
+			CpuAvg180:    utilWindowAvgText(util.GetCpuLast_180D()),
+			MemPeak30:    utilWindowPeakText(util.GetMemLast_30D()),
+			MenPeak180:   utilWindowPeakText(util.GetMemLast_180D()),
+			MemAvg30:     utilWindowAvgText(util.GetMemLast_30D()),
+			MenAvg180:    utilWindowAvgText(util.GetMemLast_180D()),
+			DiskUsage30:  periodUtilizationText(util.GetDiskLast_30D()),
+			DiskUsage180: periodUtilizationText(util.GetDiskLast_180D()),
 		})
 	}
 	return out
@@ -307,6 +324,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 
 type mwRec struct {
 	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName, DiskStr string
+	CpuPeak30, CpuAvg30, MemPeak30, MenAvg30                             string
 }
 
 func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafkaResp *pbkafka.ListResp) []mwRec {
@@ -314,6 +332,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 	if rdsResp != nil {
 		for _, r := range rdsResp.Rdses {
 			ip := firstIP(r.GetPrivateIps(), r.GetPublicIps())
+			util := r.GetUtilizationAudit()
 			out = append(out, mwRec{
 				Name:        r.GetInstanceName(),
 				MwType:      "RDS_INS",
@@ -324,12 +343,17 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				Region:      r.GetRegionName(),
 				SysNodeName: effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
 				DiskStr:     "", // 列表 API 无独立磁盘字段
+				CpuPeak30:   utilWindowPeakText(util.GetCpuLast_30D()),
+				CpuAvg30:    utilWindowAvgText(util.GetCpuLast_30D()),
+				MemPeak30:   utilWindowPeakText(util.GetMemLast_30D()),
+				MenAvg30:    utilWindowAvgText(util.GetMemLast_30D()),
 			})
 		}
 	}
 	if redisResp != nil {
 		for _, r := range redisResp.Redises {
 			ip := firstIP(r.GetPrivateIps(), r.GetPublicIps())
+			memUtil := r.GetMemoryUtilizationAudit()
 			out = append(out, mwRec{
 				Name:        r.GetInstanceName(),
 				MwType:      "DCS_REDIS",
@@ -340,6 +364,10 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				Region:      r.GetRegionName(),
 				SysNodeName: effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
 				DiskStr:     itoa32(r.GetSize()) + "MB", // 容量规格（与内存 GB 独立对比）
+				CpuPeak30:   "",
+				CpuAvg30:    "",
+				MemPeak30:   utilWindowPeakText(memUtil.GetMemLast_30D()),
+				MenAvg30:    utilWindowAvgText(memUtil.GetMemLast_30D()),
 			})
 		}
 	}
@@ -355,6 +383,10 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				Region:      k.GetRegionName(),
 				SysNodeName: effectiveSysNodeName(k.GetProvider(), k.GetRegionName(), k.GetNodeTagValue()),
 				DiskStr:     itoa32(k.GetDistSize()) + "GB",
+				CpuPeak30:   "",
+				CpuAvg30:    "",
+				MemPeak30:   "",
+				MenAvg30:    "",
 			})
 		}
 	}
@@ -525,9 +557,19 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) {
 				continue
 			}
 			_, err = s.Client.UpdateCI(exists, map[string]any{
-				"cpu_count": int(h.CPU),
-				"ram_size":  h.MemGBStr,
-				"disk_size": h.DiskStr,
+				"cpu_count":      int(h.CPU),
+				"ram_size":       h.MemGBStr,
+				"disk_size":      h.DiskStr,
+				"cpu_peak_30":    h.CpuPeak30,
+				"cpu_peak_180":   h.CpuPeak180,
+				"cpu_avg_30":     h.CpuAvg30,
+				"cpu_avg_180":    h.CpuAvg180,
+				"mem_peak_30":    h.MemPeak30,
+				"men_peak_180":   h.MenPeak180,
+				"men_avg_30":     h.MemAvg30,
+				"men_avg_180":    h.MenAvg180,
+				"disk_usage_30":  h.DiskUsage30,
+				"disk_usage_180": h.DiskUsage180,
 			})
 			if err != nil {
 				glog.Errorf("cmdb update server: %v", err)
@@ -538,18 +580,28 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) {
 		}
 		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, h.CloudLabel, h.Region)
 		payload := map[string]any{
-			"uuid":          uuid.NewString(),
-			"ci_type":       "server",
-			"system_id":     systemID,
-			"sys_node_name": sysNode,
-			"server_name":   h.Name,
-			"private_ip":    h.IP,
-			"cpu_count":     int(h.CPU),
-			"ram_size":      h.MemGBStr,
-			"disk_size":     h.DiskStr,
-			"os_version":    h.OS,
-			"location":      locn,
-			"cloud_type":    ct,
+			"uuid":           uuid.NewString(),
+			"ci_type":        "server",
+			"system_id":      systemID,
+			"sys_node_name":  sysNode,
+			"server_name":    h.Name,
+			"private_ip":     h.IP,
+			"cpu_count":      int(h.CPU),
+			"ram_size":       h.MemGBStr,
+			"disk_size":      h.DiskStr,
+			"os_version":     h.OS,
+			"location":       locn,
+			"cloud_type":     ct,
+			"cpu_peak_30":    h.CpuPeak30,
+			"cpu_peak_180":   h.CpuPeak180,
+			"cpu_avg_30":     h.CpuAvg30,
+			"cpu_avg_180":    h.CpuAvg180,
+			"mem_peak_30":    h.MemPeak30,
+			"men_peak_180":   h.MenPeak180,
+			"men_avg_30":     h.MemAvg30,
+			"men_avg_180":    h.MenAvg180,
+			"disk_usage_30":  h.DiskUsage30,
+			"disk_usage_180": h.DiskUsage180,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
@@ -588,9 +640,13 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) {
 				continue
 			}
 			_, err = s.Client.UpdateCI(exists, map[string]any{
-				"cpu_count": m.CPU,
-				"ram_size":  m.Mem,
-				"disk_size": m.DiskStr,
+				"cpu_count":   m.CPU,
+				"ram_size":    m.Mem,
+				"disk_size":   m.DiskStr,
+				"cpu_peak_30": m.CpuPeak30,
+				"cpu_avg_30":  m.CpuAvg30,
+				"mem_peak_30": m.MemPeak30,
+				"men_avg_30":  m.MenAvg30,
 			})
 			if err != nil {
 				glog.Errorf("cmdb update middle_software: %v", err)
@@ -613,6 +669,10 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) {
 			"cpu_count":     m.CPU,
 			"ram_size":      m.Mem,
 			"disk_size":     m.DiskStr,
+			"cpu_peak_30":   m.CpuPeak30,
+			"cpu_avg_30":    m.CpuAvg30,
+			"mem_peak_30":   m.MemPeak30,
+			"men_avg_30":    m.MenAvg30,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
@@ -668,6 +728,31 @@ func itoa32(n int32) string {
 		return "0"
 	}
 	return strconv.FormatInt(int64(n), 10)
+}
+
+func utilWindowPeakText(w *pbutilization.UtilizationWindow) string {
+	if w == nil || !w.GetAvailable() {
+		return ""
+	}
+	return percentText(w.GetPeakPercent())
+}
+
+func utilWindowAvgText(w *pbutilization.UtilizationWindow) string {
+	if w == nil || !w.GetAvailable() {
+		return ""
+	}
+	return percentText(w.GetAvgPercent())
+}
+
+func periodUtilizationText(w *pbutilization.PeriodUtilizationRate) string {
+	if w == nil || !w.GetAvailable() {
+		return ""
+	}
+	return percentText(w.GetUtilizationPercent())
+}
+
+func percentText(v float64) string {
+	return strconv.FormatFloat(v, 'f', 2, 64)
 }
 
 // StartDailyAt 在每天指定本地时刻执行一次 Run（默认 2:00，与需求「每天 2 点」一致）。
