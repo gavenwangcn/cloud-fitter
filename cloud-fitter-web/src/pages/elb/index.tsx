@@ -8,7 +8,6 @@ import { ElbPageState } from './model';
 
 interface ElbPageProps {
   elbPage: ElbPageState;
-  loading?: boolean;
   fetchByAccount: (p: { provider: number; accountName: string }) => void;
   fetchBySystem: (p: { systemName: string }) => void;
   clearTable: () => void;
@@ -16,7 +15,6 @@ interface ElbPageProps {
 
 const ElbPage: React.FC<ElbPageProps> = ({
   elbPage,
-  loading,
   fetchByAccount,
   fetchBySystem,
   clearTable,
@@ -41,17 +39,15 @@ const ElbPage: React.FC<ElbPageProps> = ({
         resourceLabel="ELB"
         fields={ELB_FIELDS}
         dataSource={elbPage.tableData}
-        loading={!!loading}
+        loading={elbPage.tableLoading}
       />
     </div>
   );
 };
 
 export default connect(
-  ({ elbPage, loading }: any) => ({
+  ({ elbPage }: any) => ({
     elbPage,
-    loading:
-      loading.effects['elbPage/fetchByAccount'] || loading.effects['elbPage/fetchBySystem'],
   }),
   {
     fetchByAccount: (payload: { provider: number; accountName: string }) => ({

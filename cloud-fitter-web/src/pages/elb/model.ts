@@ -3,6 +3,7 @@ import { queryElbByAccount, queryElbBySystem } from './service';
 
 export interface ElbPageState {
   tableData: any[];
+  tableLoading: boolean;
 }
 
 export interface ElbPageModel {
@@ -22,28 +23,55 @@ const model: ElbPageModel = {
   namespace: 'elbPage',
   state: {
     tableData: [],
+    tableLoading: false,
   },
   effects: {
     *fetchByAccount(
       action: { payload: { provider: number; accountName: string } },
       { call, put },
     ) {
-      const { provider, accountName } = action.payload;
-      const { elbs = [] } = yield call(queryElbByAccount, provider, accountName);
-      const tableData = elbs.map((item: any, index: number) => Object.assign({}, item, { key: index }));
-      yield put({
-        type: 'updateStore',
-        params: { tableData },
-      });
+      yield put({ type: 'updateStore', params: { tableLoading: true } });
+      try {
+        const { provider, accountName } = action.payload;
+        const resp = yield call(queryElbByAccount, provider, accountName);
+        const elbs = Array.isArray(resp?.elbs) ? resp.elbs : [];
+        const tableData = elbs.map((item: any, index: number) =>
+          Object.assign({}, item, { key: index }),
+        );
+        yield put({
+          type: 'updateStore',
+          params: { tableData },
+        });
+      } catch (_e) {
+        yield put({
+          type: 'updateStore',
+          params: { tableData: [] },
+        });
+      } finally {
+        yield put({ type: 'updateStore', params: { tableLoading: false } });
+      }
     },
     *fetchBySystem(action: { payload: { systemName: string } }, { call, put }) {
-      const { systemName } = action.payload;
-      const { elbs = [] } = yield call(queryElbBySystem, systemName);
-      const tableData = elbs.map((item: any, index: number) => Object.assign({}, item, { key: index }));
-      yield put({
-        type: 'updateStore',
-        params: { tableData },
-      });
+      yield put({ type: 'updateStore', params: { tableLoading: true } });
+      try {
+        const { systemName } = action.payload;
+        const resp = yield call(queryElbBySystem, systemName);
+        const elbs = Array.isArray(resp?.elbs) ? resp.elbs : [];
+        const tableData = elbs.map((item: any, index: number) =>
+          Object.assign({}, item, { key: index }),
+        );
+        yield put({
+          type: 'updateStore',
+          params: { tableData },
+        });
+      } catch (_e) {
+        yield put({
+          type: 'updateStore',
+          params: { tableData: [] },
+        });
+      } finally {
+        yield put({ type: 'updateStore', params: { tableLoading: false } });
+      }
     },
   },
   reducers: {
@@ -54,7 +82,7 @@ const model: ElbPageModel = {
       };
     },
     resetTable(state) {
-      return { ...state, tableData: [] };
+      return { ...state, tableData: [], tableLoading: false };
     },
   },
 };

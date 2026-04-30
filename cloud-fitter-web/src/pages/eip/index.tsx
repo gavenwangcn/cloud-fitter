@@ -8,7 +8,6 @@ import { EipPageState } from './model';
 
 interface EipPageProps {
   eipPage: EipPageState;
-  loading?: boolean;
   fetchByAccount: (p: { provider: number; accountName: string }) => void;
   fetchBySystem: (p: { systemName: string }) => void;
   clearTable: () => void;
@@ -16,7 +15,6 @@ interface EipPageProps {
 
 const EipPage: React.FC<EipPageProps> = ({
   eipPage,
-  loading,
   fetchByAccount,
   fetchBySystem,
   clearTable,
@@ -41,17 +39,15 @@ const EipPage: React.FC<EipPageProps> = ({
         resourceLabel="EIP"
         fields={EIP_FIELDS}
         dataSource={eipPage.tableData}
-        loading={!!loading}
+        loading={eipPage.tableLoading}
       />
     </div>
   );
 };
 
 export default connect(
-  ({ eipPage, loading }: any) => ({
+  ({ eipPage }: any) => ({
     eipPage,
-    loading:
-      loading.effects['eipPage/fetchByAccount'] || loading.effects['eipPage/fetchBySystem'],
   }),
   {
     fetchByAccount: (payload: { provider: number; accountName: string }) => ({
