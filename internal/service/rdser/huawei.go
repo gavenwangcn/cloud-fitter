@@ -9,10 +9,10 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
-	hwrds "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3"
-	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3/model"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
+	hwrds "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3/model"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
@@ -118,14 +118,14 @@ func huaweiRDSCESDimName(engine string) string {
 	}
 }
 
-func rdsUtilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
+func rdsUtilizationWindowProto(peak, avg float64, ok bool) *pbutilization.UtilizationWindow {
 	if !ok {
 		return &pbutilization.UtilizationWindow{Available: false}
 	}
 	return &pbutilization.UtilizationWindow{
 		PeakPercent: huaweices.RoundPercent2(peak),
 		AvgPercent:  huaweices.RoundPercent2(avg),
-		MinPercent:  huaweices.RoundPercent2(min),
+		MinPercent:  0,
 		Available:   true,
 	}
 }
@@ -165,12 +165,12 @@ func fillHuaweiRDSUtilization(ctx context.Context, rdsList []*pbrds.RdsInstance,
 	}
 
 	type agg struct {
-		cpuPeak, cpuAvg, cpuMin float64
-		cpuOK                   bool
-		memPeak, memAvg, memMin float64
-		memOK                   bool
-		diskUtil                float64
-		diskOK                  bool
+		cpuPeak, cpuAvg float64
+		cpuOK           bool
+		memPeak, memAvg float64
+		memOK           bool
+		diskUtil        float64
+		diskOK          bool
 	}
 	m30 := make(map[string]agg, len(filtered))
 	m180 := make(map[string]agg, len(filtered))
@@ -209,12 +209,12 @@ func fillHuaweiRDSUtilization(ctx context.Context, rdsList []*pbrds.RdsInstance,
 		} else {
 			for _, e := range batch {
 				id := e.InstanceId
-				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSCPU])
-				pm, am, mm, mok := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSMem])
+				pc, ac, okc := huaweices.PeakAvgFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSCPU])
+				pm, am, mok := huaweices.PeakAvgFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSMem])
 				du, dok := huaweices.AvgFromAveragePoints(s30[id+"\x00"+huaweiCESMetricRDSDisk])
 				m30[id] = agg{
-					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
-					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
+					cpuPeak: pc, cpuAvg: ac, cpuOK: okc,
+					memPeak: pm, memAvg: am, memOK: mok,
 					diskUtil: du, diskOK: dok,
 				}
 			}
@@ -224,12 +224,12 @@ func fillHuaweiRDSUtilization(ctx context.Context, rdsList []*pbrds.RdsInstance,
 		} else {
 			for _, e := range batch {
 				id := e.InstanceId
-				pc, ac, mc, okc := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSCPU])
-				pm, am, mm, mok := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSMem])
+				pc, ac, okc := huaweices.PeakAvgFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSCPU])
+				pm, am, mok := huaweices.PeakAvgFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSMem])
 				du, dok := huaweices.AvgFromAveragePoints(s180[id+"\x00"+huaweiCESMetricRDSDisk])
 				m180[id] = agg{
-					cpuPeak: pc, cpuAvg: ac, cpuMin: mc, cpuOK: okc,
-					memPeak: pm, memAvg: am, memMin: mm, memOK: mok,
+					cpuPeak: pc, cpuAvg: ac, cpuOK: okc,
+					memPeak: pm, memAvg: am, memOK: mok,
 					diskUtil: du, diskOK: dok,
 				}
 			}
@@ -243,10 +243,10 @@ func fillHuaweiRDSUtilization(ctx context.Context, rdsList []*pbrds.RdsInstance,
 		a30 := m30[e.InstanceId]
 		a180 := m180[e.InstanceId]
 		e.UtilizationAudit = &pbutilization.ComputeUtilizationAudit{
-			CpuLast_30D:   rdsUtilizationWindowProto(a30.cpuPeak, a30.cpuAvg, a30.cpuMin, a30.cpuOK),
-			CpuLast_180D:  rdsUtilizationWindowProto(a180.cpuPeak, a180.cpuAvg, a180.cpuMin, a180.cpuOK),
-			MemLast_30D:   rdsUtilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
-			MemLast_180D:  rdsUtilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
+			CpuLast_30D:   rdsUtilizationWindowProto(a30.cpuPeak, a30.cpuAvg, a30.cpuOK),
+			CpuLast_180D:  rdsUtilizationWindowProto(a180.cpuPeak, a180.cpuAvg, a180.cpuOK),
+			MemLast_30D:   rdsUtilizationWindowProto(a30.memPeak, a30.memAvg, a30.memOK),
+			MemLast_180D:  rdsUtilizationWindowProto(a180.memPeak, a180.memAvg, a180.memOK),
 			DiskLast_30D:  rdsPeriodUtilizationRateProto(a30.diskUtil, a30.diskOK),
 			DiskLast_180D: rdsPeriodUtilizationRateProto(a180.diskUtil, a180.diskOK),
 		}

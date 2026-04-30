@@ -193,18 +193,18 @@ func resolveDcsCPU(spec string, bySpec map[string]int32) int32 {
 const (
 	huaweiCESNamespaceDCS   = "SYS.DCS"
 	huaweiCESDimDCSInstance = "dcs_instance_id"
-	huaweiCESMetricDCSMem = "memory_usage"
-	metricsPerDcsInstance = 1
+	huaweiCESMetricDCSMem   = "memory_usage"
+	metricsPerDcsInstance   = 1
 )
 
-func dcsUtilizationWindowProto(peak, avg, min float64, ok bool) *pbutilization.UtilizationWindow {
+func dcsUtilizationWindowProto(peak, avg float64, ok bool) *pbutilization.UtilizationWindow {
 	if !ok {
 		return &pbutilization.UtilizationWindow{Available: false}
 	}
 	return &pbutilization.UtilizationWindow{
 		PeakPercent: huaweices.RoundPercent2(peak),
 		AvgPercent:  huaweices.RoundPercent2(avg),
-		MinPercent:  huaweices.RoundPercent2(min),
+		MinPercent:  0,
 		Available:   true,
 	}
 }
@@ -235,8 +235,8 @@ func fillHuaweiDCSMemoryUtilization(ctx context.Context, list []*pbredis.RedisIn
 	}
 
 	type dcsAgg struct {
-		memPeak, memAvg, memMin float64
-		memOK                   bool
+		memPeak, memAvg float64
+		memOK           bool
 	}
 	m30 := make(map[string]dcsAgg, len(ids))
 	m180 := make(map[string]dcsAgg, len(ids))
@@ -253,16 +253,16 @@ func fillHuaweiDCSMemoryUtilization(ctx context.Context, list []*pbredis.RedisIn
 			huaweices.LogBatchError("DCS", accountName, regionName, e30)
 		} else {
 			for _, id := range batch {
-				pm, am, mm, mok := huaweices.PeakAvgMinFromAveragePoints(s30[id+"\x00"+huaweiCESMetricDCSMem])
-				m30[id] = dcsAgg{memPeak: pm, memAvg: am, memMin: mm, memOK: mok}
+				pm, am, mok := huaweices.PeakAvgFromAveragePoints(s30[id+"\x00"+huaweiCESMetricDCSMem])
+				m30[id] = dcsAgg{memPeak: pm, memAvg: am, memOK: mok}
 			}
 		}
 		if s180, e180 := huaweices.BatchQueryAverageSeries(ctx, cli, q, from180, toMs); e180 != nil {
 			huaweices.LogBatchError("DCS", accountName, regionName, e180)
 		} else {
 			for _, id := range batch {
-				pm, am, mm, mok := huaweices.PeakAvgMinFromAveragePoints(s180[id+"\x00"+huaweiCESMetricDCSMem])
-				m180[id] = dcsAgg{memPeak: pm, memAvg: am, memMin: mm, memOK: mok}
+				pm, am, mok := huaweices.PeakAvgFromAveragePoints(s180[id+"\x00"+huaweiCESMetricDCSMem])
+				m180[id] = dcsAgg{memPeak: pm, memAvg: am, memOK: mok}
 			}
 		}
 	}
@@ -274,8 +274,8 @@ func fillHuaweiDCSMemoryUtilization(ctx context.Context, list []*pbredis.RedisIn
 		a30 := m30[e.InstanceId]
 		a180 := m180[e.InstanceId]
 		e.MemoryUtilizationAudit = &pbutilization.MemoryUtilizationAudit{
-			MemLast_30D:  dcsUtilizationWindowProto(a30.memPeak, a30.memAvg, a30.memMin, a30.memOK),
-			MemLast_180D: dcsUtilizationWindowProto(a180.memPeak, a180.memAvg, a180.memMin, a180.memOK),
+			MemLast_30D:  dcsUtilizationWindowProto(a30.memPeak, a30.memAvg, a30.memOK),
+			MemLast_180D: dcsUtilizationWindowProto(a180.memPeak, a180.memAvg, a180.memOK),
 		}
 	}
 }
@@ -324,24 +324,24 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 		}
 
 		redises[k] = &pbredis.RedisInstance{
-			Provider:       pbtenant.CloudProvider_huawei,
-			AccoutName:     redis.tenanter.AccountName(),
-			InstanceId:     derefString(v.InstanceId),
-			InstanceName:   derefString(v.Name),
-			RegionName:     redis.region.GetName(),
-			Size:           size,
-			Status:         derefString(v.Status),
-			CreationTime:   derefString(v.CreatedAt),
-			ExpireTime:     "",
-			SpecCode:       spec,
-			VpcId:          derefString(v.VpcId),
-			PublicIps:      pub,
-			PrivateIps:     priv,
-			UsedMemoryMb:   used,
-			ChargeType:     dcsChargingMode(v.ChargingMode),
-			Cpu:            resolveDcsCPU(spec, cpuBySpec),
-			EnvTagValue:    envtags.FromPairs(envtags.RedisKey(), tagPairs),
-			NodeTagValue:   envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			Provider:     pbtenant.CloudProvider_huawei,
+			AccoutName:   redis.tenanter.AccountName(),
+			InstanceId:   derefString(v.InstanceId),
+			InstanceName: derefString(v.Name),
+			RegionName:   redis.region.GetName(),
+			Size:         size,
+			Status:       derefString(v.Status),
+			CreationTime: derefString(v.CreatedAt),
+			ExpireTime:   "",
+			SpecCode:     spec,
+			VpcId:        derefString(v.VpcId),
+			PublicIps:    pub,
+			PrivateIps:   priv,
+			UsedMemoryMb: used,
+			ChargeType:   dcsChargingMode(v.ChargingMode),
+			Cpu:          resolveDcsCPU(spec, cpuBySpec),
+			EnvTagValue:  envtags.FromPairs(envtags.RedisKey(), tagPairs),
+			NodeTagValue: envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 	}
 

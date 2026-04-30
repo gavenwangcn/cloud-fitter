@@ -93,7 +93,7 @@ func BatchQueryAverageSeries(ctx context.Context, cli *hwces.CesClient, queries 
 				dims = append(dims, cesmodel.MetricsDimension{Name: en, Value: &ev})
 			}
 			metrics = append(metrics, cesmodel.MetricInfo{
-				Namespace:  q.Namespace, MetricName: q.MetricName, Dimensions: dims,
+				Namespace: q.Namespace, MetricName: q.MetricName, Dimensions: dims,
 			})
 		}
 		body := &cesmodel.BatchListMetricDataRequestBody{
@@ -169,6 +169,12 @@ func PeakAvgMinFromAveragePoints(dps []cesmodel.DatapointForBatchMetric) (peak, 
 		return 0, 0, 0, false
 	}
 	return peak, sum / float64(n), min, true
+}
+
+// PeakAvgFromAveragePoints 仅返回峰值与算术均值（不计算最小值）。
+func PeakAvgFromAveragePoints(dps []cesmodel.DatapointForBatchMetric) (peak, avg float64, ok bool) {
+	peak, avg, _, ok = PeakAvgMinFromAveragePoints(dps)
+	return peak, avg, ok
 }
 
 // AvgFromAveragePoints 仅返回期间算术平均利用率（与 UtilizationWindow 中 avg 口径一致）。
