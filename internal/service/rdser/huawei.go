@@ -125,7 +125,6 @@ func rdsUtilizationWindowProto(peak, avg float64, ok bool) *pbutilization.Utiliz
 	return &pbutilization.UtilizationWindow{
 		PeakPercent: huaweices.RoundPercent2(peak),
 		AvgPercent:  huaweices.RoundPercent2(avg),
-		MinPercent:  0,
 		Available:   true,
 	}
 }

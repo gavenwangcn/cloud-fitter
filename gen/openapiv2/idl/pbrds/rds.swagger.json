@@ -341,7 +341,7 @@
           "$ref": "#/definitions/pbutilizationPeriodUtilizationRate"
         }
       },
-      "title": "ECS / RDS：CPU、内存为峰/均/谷；磁盘为期间平均利用率。"
+      "title": "ECS / RDS：CPU、内存为峰/均；磁盘为期间平均利用率。"
     },
     "pbutilizationPeriodUtilizationRate": {
       "type": "object",
@@ -367,15 +367,11 @@
           "type": "number",
           "format": "double"
         },
-        "minPercent": {
-          "type": "number",
-          "format": "double"
-        },
         "available": {
           "type": "boolean"
         }
       },
-      "title": "某一时间窗口内资源使用率统计（百分比 0–100）：峰 / 均 / 谷。\r\n数据来自华为云监控 CES BatchListMetricData（OpenAPI：POST .../batch-query-metric-data），\r\n对 filter=average、period=3600 返回的序列在本地再算 max/mean/min。"
+      "title": "某一时间窗口内资源使用率统计（百分比 0–100）：峰 / 均。\n数据来自华为云监控 CES BatchListMetricData（OpenAPI：POST .../batch-query-metric-data），\n对 filter=average、period=3600 返回的序列在本地再算 max/mean。"
     },
     "protobufAny": {
       "type": "object",
