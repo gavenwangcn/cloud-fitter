@@ -861,25 +861,46 @@ func eipCIChanged(row map[string]any, want map[string]any) bool {
 	return false
 }
 
-// cmdbSyncEIPBandwidthType 同步至 CMDB：PER（枚举常为 &{PER}）→「独享」，其余 →「共享」。
+// cmdbSyncEIPBandwidthType 同步至 CMDB 的 bandwidth_type。
+// 默认写入华为枚举名 PER / WHOLE，避免 CMDB 属性「预定义值」校验失败（若模型允许中文，可通过环境变量覆盖）。
+// CLOUD_FITTER_CMDB_EIP_BW_PER、CLOUD_FITTER_CMDB_EIP_BW_OTHER（可选）。
 func cmdbSyncEIPBandwidthType(raw string) string {
+	per := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_BW_PER"))
+	if per == "" {
+		per = "PER"
+	}
+	other := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_BW_OTHER"))
+	if other == "" {
+		other = "WHOLE"
+	}
 	r := strings.TrimSpace(raw)
 	switch {
 	case r == "&{PER}", strings.EqualFold(r, "PER"):
-		return "独享"
+		return per
 	default:
-		return "共享"
+		return other
 	}
 }
 
-// cmdbSyncEIPStatus 同步至 CMDB：ACTIVE（常为 &{ACTIVE}）→「激活」，其余 →「未绑定」。
+// cmdbSyncEIPStatus 同步至 CMDB 的 eip_status（不再使用属性名 status）。
+// CMDB 常为下拉枚举：写入「激活」等中文若未在模型白名单会返回 400。
+// 默认写入 ACTIVE / DOWN（与华为 API 枚举一致）；若要同步中文，请在 CMDB 模型中增加可选值后设置：
+// CLOUD_FITTER_CMDB_EIP_STATUS_ACTIVE、CLOUD_FITTER_CMDB_EIP_STATUS_OTHER。
 func cmdbSyncEIPStatus(raw string) string {
+	active := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_STATUS_ACTIVE"))
+	if active == "" {
+		active = "ACTIVE"
+	}
+	other := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_STATUS_OTHER"))
+	if other == "" {
+		other = "DOWN"
+	}
 	r := strings.TrimSpace(raw)
 	switch {
 	case r == "&{ACTIVE}", strings.EqualFold(r, "ACTIVE"):
-		return "激活"
+		return active
 	default:
-		return "未绑定"
+		return other
 	}
 }
 
@@ -909,7 +930,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			"bandwidth_type":      cmdbSyncEIPBandwidthType(e.BandwidthType),
 			"bandwidth":           strconv.FormatInt(int64(e.BandwidthSizeMbit), 10),
 			"private_ip":          strings.TrimSpace(e.PrivateIpAddress),
-			"status":              cmdbSyncEIPStatus(e.Status),
+			"eip_status":          cmdbSyncEIPStatus(e.Status),
 			"bound_resource_type": strings.TrimSpace(e.BindInstanceType),
 			"sys_node_name":       sysNode,
 		}
