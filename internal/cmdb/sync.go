@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbbilling"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
@@ -21,6 +22,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
 )
 
@@ -42,6 +44,8 @@ type systemSyncStats struct {
 	K8s        componentSyncStats
 	Host       componentSyncStats
 	Middleware componentSyncStats
+	EIP        componentSyncStats
+	Billing    componentSyncStats
 }
 
 // Run 与 Python main.cmdb 一致：分页拉取 CMDB 中全部 system，再对每个 system_id 同步；云资源来自本服务 List*BySystemName，不再请求 YJSCMDBAPI。
@@ -133,6 +137,19 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	if err != nil {
 		return errors.Wrap(err, "ListCceBySystemName")
 	}
+	eipList, err := jsonapi.ListEipBySystemName(ctx, systemName)
+	if err != nil {
+		return errors.Wrap(err, "ListEipBySystemName")
+	}
+	billLoc, lerr := time.LoadLocation("Asia/Shanghai")
+	if lerr != nil {
+		billLoc = time.Local
+	}
+	billingMonth := time.Now().In(billLoc).Format("2006-01")
+	billResp, err := jsonapi.ListBillingSummaryBySystemName(ctx, systemName, billingMonth)
+	if err != nil {
+		return errors.Wrap(err, "ListBillingSummaryBySystemName")
+	}
 
 	// 华为 CCE：ListClusters + ListNodes 得到 ECS 实例 ID -> 集群 UID，供 host_ip_new
 	ecsIDToCceUID, err := huaweiEcsIDToClusterUIDMap(ctx, s.Store, systemName)
@@ -142,6 +159,7 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	}
 
 	systemNodes := collectSystemNodeKeys(ecsResp, rdsResp, redisResp, kafkaResp, cceResp)
+	mergeEIPSystemNodeKeys(systemNodes, eipList)
 	k8sList := buildK8sClusters(cceResp)
 	hosts := buildHosts(ecsResp, ecsIDToCceUID)
 	middlewares := buildMiddlewares(rdsResp, redisResp, kafkaResp)
@@ -153,13 +171,17 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	stats.K8s = s.addCMDBK8sClusters(systemID, k8sList, clusterToECS)
 	stats.Host = s.addCMDBHosts(systemID, hosts)
 	stats.Middleware = s.addCMDBMiddlewares(systemID, middlewares)
+	stats.EIP = s.addCMDBEIPs(systemID, eipList)
+	stats.Billing = s.addCMDBBillings(systemID, billingMonth, billResp)
 	glog.Infof(
-		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,err=%d) host(add=%d,upd=%d,skip=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,err=%d)",
+		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,err=%d) host(add=%d,upd=%d,skip=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,err=%d) eip(add=%d,upd=%d,skip=%d,err=%d) billing(add=%d,upd=%d,skip=%d,err=%d)",
 		systemID, systemName,
 		stats.SystemNode.Added, stats.SystemNode.Skipped, stats.SystemNode.Errors,
 		stats.K8s.Added, stats.K8s.Updated, stats.K8s.Skipped, stats.K8s.Errors,
 		stats.Host.Added, stats.Host.Updated, stats.Host.Skipped, stats.Host.Errors,
 		stats.Middleware.Added, stats.Middleware.Updated, stats.Middleware.Skipped, stats.Middleware.Errors,
+		stats.EIP.Added, stats.EIP.Updated, stats.EIP.Skipped, stats.EIP.Errors,
+		stats.Billing.Added, stats.Billing.Updated, stats.Billing.Skipped, stats.Billing.Errors,
 	)
 	return nil
 }
@@ -787,6 +809,245 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 			continue
 		}
 		glog.Infof("cmdb sync middleware(add ok): system_id=%s name=%q resp=%+v", systemID, m.Name, d)
+		st.Added++
+	}
+	return st
+}
+
+func mergeEIPSystemNodeKeys(nodes map[string]struct{}, eips []*eip.Instance) {
+	for _, e := range eips {
+		if e == nil {
+			continue
+		}
+		k := effectiveSysNodeName(eipTenantProvider(e), strings.TrimSpace(e.RegionName), "")
+		if k != "" {
+			nodes[k] = struct{}{}
+		}
+	}
+}
+
+func eipTenantProvider(inst *eip.Instance) pbtenant.CloudProvider {
+	switch strings.ToLower(strings.TrimSpace(inst.Provider)) {
+	case "huawei":
+		return pbtenant.CloudProvider_huawei
+	case "ali", "aliyun":
+		return pbtenant.CloudProvider_ali
+	case "tencent":
+		return pbtenant.CloudProvider_tencent
+	case "aws":
+		return pbtenant.CloudProvider_aws
+	default:
+		return pbtenant.CloudProvider_huawei
+	}
+}
+
+func mergeAttrMaps(base map[string]any, extra map[string]any) map[string]any {
+	out := make(map[string]any, len(base)+len(extra))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out
+}
+
+func eipCIChanged(row map[string]any, want map[string]any) bool {
+	for k, v := range want {
+		if strings.TrimSpace(anyToCompareStr(row[k])) != strings.TrimSpace(anyToCompareStr(v)) {
+			return true
+		}
+	}
+	return false
+}
+
+// cmdbSyncEIPBandwidthType 同步至 CMDB：PER（枚举常为 &{PER}）→「独享」，其余 →「共享」。
+func cmdbSyncEIPBandwidthType(raw string) string {
+	r := strings.TrimSpace(raw)
+	switch {
+	case r == "&{PER}", strings.EqualFold(r, "PER"):
+		return "独享"
+	default:
+		return "共享"
+	}
+}
+
+// cmdbSyncEIPStatus 同步至 CMDB：ACTIVE（常为 &{ACTIVE}）→「激活」，其余 →「未绑定」。
+func cmdbSyncEIPStatus(raw string) string {
+	r := strings.TrimSpace(raw)
+	switch {
+	case r == "&{ACTIVE}", strings.EqualFold(r, "ACTIVE"):
+		return "激活"
+	default:
+		return "未绑定"
+	}
+}
+
+func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyncStats {
+	st := componentSyncStats{}
+	for _, e := range eips {
+		if e == nil || strings.TrimSpace(e.EipId) == "" {
+			continue
+		}
+		sysNode := effectiveSysNodeName(eipTenantProvider(e), strings.TrimSpace(e.RegionName), "")
+		if sysNode == "" {
+			glog.Warningf("cmdb sync eip(skip no sys_node): system_id=%s eip_id=%s", systemID, e.EipId)
+			st.Errors++
+			continue
+		}
+		q := map[string]any{
+			"q": fmt.Sprintf("_type:EIP,uuid:%s,system_id:%s", e.EipId, systemID),
+		}
+		exists, err := s.Client.GetCIID(q)
+		if err != nil {
+			glog.Errorf("cmdb sync eip(get): system_id=%s eip_id=%s err=%v", systemID, e.EipId, err)
+			st.Errors++
+			continue
+		}
+		fields := map[string]any{
+			"eip_ip":              strings.TrimSpace(e.Eip),
+			"bandwidth_type":      cmdbSyncEIPBandwidthType(e.BandwidthType),
+			"bandwidth":           strconv.FormatInt(int64(e.BandwidthSizeMbit), 10),
+			"private_ip":          strings.TrimSpace(e.PrivateIpAddress),
+			"status":              cmdbSyncEIPStatus(e.Status),
+			"bound_resource_type": strings.TrimSpace(e.BindInstanceType),
+			"sys_node_name":       sysNode,
+		}
+		if exists != "" {
+			row, err := s.Client.GetCIFirst(q)
+			if err != nil {
+				glog.Errorf("cmdb sync eip(get row): system_id=%s eip_id=%s err=%v", systemID, e.EipId, err)
+				st.Errors++
+				continue
+			}
+			if row != nil && !eipCIChanged(row, fields) {
+				glog.Infof("cmdb sync eip(skip): system_id=%s eip_id=%s id=%s", systemID, e.EipId, exists)
+				st.Skipped++
+				continue
+			}
+			_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{"ci_type": "EIP"}, fields))
+			if err != nil {
+				glog.Errorf("cmdb sync eip(update): system_id=%s eip_id=%s id=%s err=%v", systemID, e.EipId, exists, err)
+				st.Errors++
+				continue
+			}
+			glog.Infof("cmdb sync eip(update ok): system_id=%s eip_id=%s id=%s", systemID, e.EipId, exists)
+			st.Updated++
+			continue
+		}
+		payload := mergeAttrMaps(map[string]any{
+			"uuid":      strings.TrimSpace(e.EipId),
+			"ci_type":   "EIP",
+			"system_id": systemID,
+		}, fields)
+		d, err := s.Client.AddCI(payload)
+		if err != nil {
+			glog.Errorf("cmdb sync eip(add): system_id=%s eip_id=%s err=%v", systemID, e.EipId, err)
+			st.Errors++
+			continue
+		}
+		glog.Infof("cmdb sync eip(add ok): system_id=%s eip_id=%s resp=%+v", systemID, e.EipId, d)
+		st.Added++
+	}
+	return st
+}
+
+func billingCostFieldsChanged(row map[string]any, rowCount, totalCost string) bool {
+	if strings.TrimSpace(anyToCompareStr(row["row_count"])) != strings.TrimSpace(rowCount) {
+		return true
+	}
+	if !metricStrEqual(strings.TrimSpace(anyToCompareStr(row["total_cost"])), strings.TrimSpace(totalCost)) {
+		return true
+	}
+	return false
+}
+
+func (s *Syncer) addCMDBBillings(systemID, billingMonth string, resp *pbbilling.ListBillingSummaryResp) componentSyncStats {
+	st := componentSyncStats{}
+	if resp == nil {
+		return st
+	}
+	billingMonth = strings.TrimSpace(billingMonth)
+	if billingMonth == "" {
+		glog.Errorf("cmdb sync billing: empty billing_month")
+		st.Errors++
+		return st
+	}
+	if _, err := time.Parse("2006-01", billingMonth); err != nil {
+		glog.Errorf("cmdb sync billing: invalid billing_month=%q: %v", billingMonth, err)
+		st.Errors++
+		return st
+	}
+	const billingSysNode = "系统汇总"
+	curDefault := strings.TrimSpace(resp.Currency)
+	if curDefault == "" {
+		curDefault = "CNY"
+	}
+	for _, row := range resp.Rows {
+		if row == nil {
+			continue
+		}
+		cat := strings.TrimSpace(row.Category)
+		if cat == "" {
+			continue
+		}
+		cur := strings.TrimSpace(row.Currency)
+		if cur == "" {
+			cur = curDefault
+		}
+		q := map[string]any{
+			"q": fmt.Sprintf("_type:billing,system_id:%s,billing_month:%s,resource_category:%s", systemID, billingMonth, cat),
+		}
+		exists, err := s.Client.GetCIID(q)
+		if err != nil {
+			glog.Errorf("cmdb sync billing(get): system_id=%s category=%q err=%v", systemID, cat, err)
+			st.Errors++
+			continue
+		}
+		rowCountStr := itoa32(row.SourceRowCount)
+		totalStr := strconv.FormatFloat(row.TotalConsumeAmount, 'f', 2, 64)
+		fields := map[string]any{
+			"currency":      cur,
+			"row_count":     rowCountStr,
+			"total_cost":    totalStr,
+			"sys_node_name": billingSysNode,
+		}
+		if exists != "" {
+			frow, err := s.Client.GetCIFirst(q)
+			if err != nil {
+				glog.Errorf("cmdb sync billing(get row): system_id=%s category=%q err=%v", systemID, cat, err)
+				st.Errors++
+				continue
+			}
+			if frow != nil && !billingCostFieldsChanged(frow, rowCountStr, totalStr) {
+				glog.Infof("cmdb sync billing(skip): system_id=%s category=%s id=%s", systemID, cat, exists)
+				st.Skipped++
+				continue
+			}
+			_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{"ci_type": "billing"}, fields))
+			if err != nil {
+				glog.Errorf("cmdb sync billing(update): system_id=%s category=%q id=%s err=%v", systemID, cat, exists, err)
+				st.Errors++
+				continue
+			}
+			glog.Infof("cmdb sync billing(update ok): system_id=%s category=%s id=%s", systemID, cat, exists)
+			st.Updated++
+			continue
+		}
+		payload := mergeAttrMaps(map[string]any{
+			"uuid":              uuid.NewString(),
+			"ci_type":           "billing",
+			"system_id":         systemID,
+			"billing_month":     billingMonth,
+			"resource_category": cat,
+		}, fields)
+		d, err := s.Client.AddCI(payload)
+		if err != nil {
+			glog.Errorf("cmdb sync billing(add): system_id=%s category=%q err=%v", systemID, cat, err)
+			st.Errors++
+			continue
+		}
+		glog.Infof("cmdb sync billing(add ok): system_id=%s category=%s resp=%+v", systemID, cat, d)
 		st.Added++
 	}
 	return st

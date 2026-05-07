@@ -14,7 +14,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
-// ListSummary 按账号与账期返回 ECS/RDS/DCS 等大类的消费汇总。
+// ListSummary 按账号与账单月份（YYYY-MM）返回 ECS/RDS/DCS 等大类的消费汇总。
 func ListSummary(ctx context.Context, req *pbbilling.ListBillingSummaryReq) (*pbbilling.ListBillingSummaryResp, error) {
 	if req == nil {
 		return nil, errors.New("nil request")

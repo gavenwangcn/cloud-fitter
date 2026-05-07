@@ -1,6 +1,7 @@
 package jsonapi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -18,7 +19,16 @@ type billingSummaryBody struct {
 	Provider     int32  `json:"provider"`
 	AccountName  string `json:"accountName"`
 	SystemName   string `json:"systemName"`
+	BillingMonth string `json:"billingMonth"`
+	// BillingCycle 兼容旧请求体，优先使用 BillingMonth
 	BillingCycle string `json:"billingCycle"`
+}
+
+func effectiveBillingMonthBody(body billingSummaryBody) string {
+	if m := strings.TrimSpace(body.BillingMonth); m != "" {
+		return m
+	}
+	return strings.TrimSpace(body.BillingCycle)
 }
 
 func decodeBillingSummaryBody(r *http.Request) (billingSummaryBody, error) {
@@ -34,7 +44,7 @@ func decodeBillingSummaryBody(r *http.Request) (billingSummaryBody, error) {
 }
 
 // BillingSummaryByAccount POST /apis/billing/by-account
-// 与 ECS 等一致：可选 systemName 合并系统内多账号；billingCycle 默认当月（东八区）。
+// 与 ECS 等一致：可选 systemName 合并系统内多账号；billingMonth 默认当月（东八区），格式 YYYY-MM。
 func BillingSummaryByAccount(w http.ResponseWriter, r *http.Request) {
 	body, err := decodeBillingSummaryBody(r)
 	if err != nil {
@@ -45,7 +55,7 @@ func BillingSummaryByAccount(w http.ResponseWriter, r *http.Request) {
 	if lerr != nil {
 		loc = time.UTC
 	}
-	cycle := strings.TrimSpace(body.BillingCycle)
+	cycle := effectiveBillingMonthBody(body)
 	if cycle == "" {
 		cycle = time.Now().In(loc).Format("2006-01")
 	}
@@ -97,6 +107,39 @@ func BillingSummaryByAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeProtoJSON(w, resp, nil)
+}
+
+// ListBillingSummaryBySystemName 与 POST /apis/billing/by-account 且带 systemName 行为一致（合并系统内多账号大类汇总）。
+// billingMonth 为空时默认当月（东八区），格式 YYYY-MM。
+func ListBillingSummaryBySystemName(ctx context.Context, systemName, billingMonth string) (*pbbilling.ListBillingSummaryResp, error) {
+	cycle := strings.TrimSpace(billingMonth)
+	if cycle == "" {
+		loc, lerr := time.LoadLocation("Asia/Shanghai")
+		if lerr != nil {
+			loc = time.UTC
+		}
+		cycle = time.Now().In(loc).Format("2006-01")
+	}
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 {
+		return &pbbilling.ListBillingSummaryResp{Currency: "CNY"}, nil
+	}
+	parts := make([]*pbbilling.ListBillingSummaryResp, 0, len(accounts))
+	for _, acc := range accounts {
+		resp, err := billing.ListSummary(ctx, &pbbilling.ListBillingSummaryReq{
+			Provider:     pbtenant.CloudProvider(acc.Provider),
+			BillingCycle: cycle,
+			AccountName:  acc.AccountName,
+		})
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, resp)
+	}
+	return billing.MergeCategorySummaries(cycle, "（系统内多账号）", parts), nil
 }
 
 func writeBillingErr(w http.ResponseWriter, code int, err error) {

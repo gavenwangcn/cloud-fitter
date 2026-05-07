@@ -30,12 +30,12 @@ const model: BillingPageModel = {
   effects: {
     *fetchByAccount(
       action: {
-        payload: { provider: number; accountName: string; billingCycle?: string };
+        payload: { provider: number; accountName: string; billingMonth?: string };
       },
       { call, put },
     ) {
-      const { provider, accountName, billingCycle } = action.payload;
-      const res = yield call(queryBillingByAccount, provider, accountName, billingCycle);
+      const { provider, accountName, billingMonth } = action.payload;
+      const res = yield call(queryBillingByAccount, provider, accountName, billingMonth);
       const rows = res?.rows ?? [];
       const tableData = rows.map((item: any, index: number) =>
         Object.assign({}, item, { key: index }),
@@ -50,11 +50,11 @@ const model: BillingPageModel = {
       });
     },
     *fetchBySystem(
-      action: { payload: { systemName: string; billingCycle?: string } },
+      action: { payload: { systemName: string; billingMonth?: string } },
       { call, put },
     ) {
-      const { systemName, billingCycle } = action.payload;
-      const res = yield call(queryBillingBySystem, systemName, billingCycle);
+      const { systemName, billingMonth } = action.payload;
+      const res = yield call(queryBillingBySystem, systemName, billingMonth);
       const rows = res?.rows ?? [];
       const tableData = rows.map((item: any, index: number) =>
         Object.assign({}, item, { key: index }),

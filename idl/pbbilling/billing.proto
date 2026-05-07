@@ -72,6 +72,7 @@ message ListResp {
 message BillingCategoryRow {
   pbtenant.CloudProvider provider = 1;
   string account_name = 2;
+  // 账单月份 YYYY-MM（与请求汇总月份一致）
   string billing_cycle = 3;
   // 大类展示名：ECS、RDS、DCS、DMS、CCE、其他
   string category = 4;
@@ -84,7 +85,7 @@ message BillingCategoryRow {
 
 message ListBillingSummaryReq {
   pbtenant.CloudProvider provider = 1;
-  // 账期 YYYY-MM（东八区自然月）
+  // 账单月份 YYYY-MM（东八区自然月）
   string billing_cycle = 2;
   string account_name = 3;
 }

@@ -23,8 +23,8 @@ const PROVIDER_ENUM_CN: Record<number, string> = {
 interface BillingPageProps {
   billingPage: BillingPageState;
   loading?: boolean;
-  fetchByAccount: (p: { provider: number; accountName: string; billingCycle?: string }) => void;
-  fetchBySystem: (p: { systemName: string; billingCycle?: string }) => void;
+  fetchByAccount: (p: { provider: number; accountName: string; billingMonth?: string }) => void;
+  fetchBySystem: (p: { systemName: string; billingMonth?: string }) => void;
   clearTable: () => void;
 }
 
@@ -40,7 +40,7 @@ const BillingPage: React.FC<BillingPageProps> = ({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(RESOURCE_TABLE_DEFAULT_PAGE_SIZE);
 
-  const billingCycleStr = useMemo(
+  const billingMonthStr = useMemo(
     () => (month ? month.format('YYYY-MM') : ''),
     [month],
   );
@@ -73,7 +73,12 @@ const BillingPage: React.FC<BillingPageProps> = ({
       render: (p: number) => PROVIDER_ENUM_CN[p] ?? providerLabel(p) ?? String(p),
     },
     { title: '账号/范围', dataIndex: 'accountName', key: 'accountName', align: 'center' },
-    { title: '账期', dataIndex: 'billingCycle', key: 'billingCycle', align: 'center' },
+    {
+      title: '账单月份',
+      dataIndex: 'billingCycle',
+      key: 'billingMonth',
+      align: 'center',
+    },
     { title: '资源大类', dataIndex: 'category', key: 'category', align: 'center' },
     {
       title: '消费合计',
@@ -90,15 +95,15 @@ const BillingPage: React.FC<BillingPageProps> = ({
     <div className="pageContent">
       <CloudAccountBar
         onQuery={(provider, accountName) =>
-          fetchByAccount({ provider, accountName, billingCycle: billingCycleStr })
+          fetchByAccount({ provider, accountName, billingMonth: billingMonthStr })
         }
         onQueryBySystem={(systemName) =>
-          fetchBySystem({ systemName, billingCycle: billingCycleStr })
+          fetchBySystem({ systemName, billingMonth: billingMonthStr })
         }
         onClear={clearTable}
       />
       <Space style={{ marginBottom: 16 }} align="center">
-        <span>账期：</span>
+        <span>账单月份：</span>
         <DatePicker
           picker="month"
           value={month}
@@ -151,12 +156,12 @@ export default connect(
     fetchByAccount: (payload: {
       provider: number;
       accountName: string;
-      billingCycle?: string;
+      billingMonth?: string;
     }) => ({
       type: 'billingPage/fetchByAccount',
       payload,
     }),
-    fetchBySystem: (payload: { systemName: string; billingCycle?: string }) => ({
+    fetchBySystem: (payload: { systemName: string; billingMonth?: string }) => ({
       type: 'billingPage/fetchBySystem',
       payload,
     }),

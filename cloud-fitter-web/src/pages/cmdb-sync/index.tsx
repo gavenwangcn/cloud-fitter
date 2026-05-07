@@ -67,7 +67,7 @@ const CmdbSyncPage: React.FC = () => {
             <div>
               <Paragraph style={{ marginBottom: 8 }}>
                 选择本平台的<strong>系统名称</strong>后，将先校验 <Text code>CMDB</Text>{' '}
-                中是否存在与本地系统<strong>相同 system_id</strong> 的系统记录。若不存在，将提示「CMDB中没有相同系统信息」；若存在，则按日常全量任务相同规则，对<strong>该单一系统</strong>写入系统节点、K8S、主机、中间件等数据。
+                中是否存在与本地系统<strong>相同 system_id</strong> 的系统记录。若不存在，将提示「CMDB中没有相同系统信息」；若存在，则按与定时任务相同的规则，对<strong>该单一系统</strong>写入系统节点、K8S、主机、中间件、弹性公网 EIP、按账单月份（billing_month）的消费大类汇总（billing）等数据。
               </Paragraph>
             </div>
           }

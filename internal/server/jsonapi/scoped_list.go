@@ -348,6 +348,11 @@ func ListCceBySystemName(ctx context.Context, systemName string) (*pbcce.ListRes
 	return cceBySystemName(ctx, systemName)
 }
 
+// ListEipBySystemName 供 CMDB 同步等按系统名称拉取 EIP（与 POST /apis/eip/by-account 且带 systemName 一致）。
+func ListEipBySystemName(ctx context.Context, systemName string) ([]*eip.Instance, error) {
+	return eipBySystemName(ctx, systemName)
+}
+
 func writeProtoJSON(w http.ResponseWriter, msg proto.Message, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
