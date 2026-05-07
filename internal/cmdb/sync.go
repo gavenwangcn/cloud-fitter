@@ -22,6 +22,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/billing"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
 )
@@ -146,9 +147,9 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		billLoc = time.Local
 	}
 	billingMonth := time.Now().In(billLoc).Format("2006-01")
-	billResp, err := jsonapi.ListBillingSummaryBySystemName(ctx, systemName, billingMonth)
+	acco, err := s.Store.AccountsBySystemName(systemName)
 	if err != nil {
-		return errors.Wrap(err, "ListBillingSummaryBySystemName")
+		return errors.Wrap(err, "AccountsBySystemName")
 	}
 
 	// 华为 CCE：ListClusters + ListNodes 得到 ECS 实例 ID -> 集群 UID，供 host_ip_new
@@ -172,11 +173,26 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	stats.Host = s.addCMDBHosts(systemID, hosts)
 	stats.Middleware = s.addCMDBMiddlewares(systemID, middlewares)
 	stats.EIP = s.addCMDBEIPs(systemID, eipList)
-	stats.Billing = s.addCMDBBillings(systemID, billingMonth, billResp)
+	stats.Billing = componentSyncStats{}
+	for _, acc := range acco {
+		billResp, err := billing.ListSummary(ctx, &pbbilling.ListBillingSummaryReq{
+			Provider:     pbtenant.CloudProvider(acc.Provider),
+			BillingCycle: billingMonth,
+			AccountName:  acc.Name,
+		})
+		if err != nil {
+			return errors.Wrapf(err, "billing ListSummary account=%s", acc.Name)
+		}
+		st := s.addCMDBBillings(systemID, billingMonth, acc.Name, billResp)
+		stats.Billing.Added += st.Added
+		stats.Billing.Updated += st.Updated
+		stats.Billing.Skipped += st.Skipped
+		stats.Billing.Errors += st.Errors
+	}
 	glog.Infof(
-		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,err=%d) host(add=%d,upd=%d,skip=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,err=%d) eip(add=%d,upd=%d,skip=%d,err=%d) billing(add=%d,upd=%d,skip=%d,err=%d)",
+		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,err=%d) host(add=%d,upd=%d,skip=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,err=%d) eip(add=%d,upd=%d,skip=%d,err=%d) billing(add=%d,upd=%d,skip=%d,err=%d)",
 		systemID, systemName,
-		stats.SystemNode.Added, stats.SystemNode.Skipped, stats.SystemNode.Errors,
+		stats.SystemNode.Added, stats.SystemNode.Updated, stats.SystemNode.Skipped, stats.SystemNode.Errors,
 		stats.K8s.Added, stats.K8s.Updated, stats.K8s.Skipped, stats.K8s.Errors,
 		stats.Host.Added, stats.Host.Updated, stats.Host.Skipped, stats.Host.Errors,
 		stats.Middleware.Added, stats.Middleware.Updated, stats.Middleware.Skipped, stats.Middleware.Errors,
@@ -470,20 +486,59 @@ func hostBelongsK8S(k8s []k8sCluster, hosts []hostRec) map[string][]string {
 	return out
 }
 
+// cmdbCIAdminName CMDB「CI管理员」对应属性 admin_name；默认 admin，可通过 CLOUD_FITTER_CMDB_ADMIN_NAME 覆盖。
+func cmdbCIAdminName() string {
+	v := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_ADMIN_NAME"))
+	if v == "" {
+		return "admin"
+	}
+	return v
+}
+
 func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[string]struct{}) componentSyncStats {
 	st := componentSyncStats{}
+	adminName := cmdbCIAdminName()
 	for node := range nodes {
-		exists, err := s.Client.GetCIID(map[string]any{
+		q := map[string]any{
 			"q": fmt.Sprintf("_type:system_node,sys_node_name:%s,system_id:%s", node, systemID),
-		})
+		}
+		exists, err := s.Client.GetCIID(q)
 		if err != nil {
 			glog.Errorf("cmdb sync system_node(get): system_id=%s node=%q err=%v", systemID, node, err)
 			st.Errors++
 			continue
 		}
 		if exists != "" {
-			glog.Infof("cmdb sync system_node(skip): system_id=%s node=%q id=%s", systemID, node, exists)
-			st.Skipped++
+			row, err := s.Client.GetCIFirst(q)
+			if err != nil {
+				glog.Errorf("cmdb sync system_node(get row): system_id=%s node=%q err=%v", systemID, node, err)
+				st.Errors++
+				continue
+			}
+			if row != nil && strings.TrimSpace(anyToCompareStr(row["admin_name"])) == adminName {
+				glog.Infof("cmdb sync system_node(skip): system_id=%s node=%q id=%s", systemID, node, exists)
+				st.Skipped++
+				continue
+			}
+			ciType := "system_node"
+			if row != nil {
+				if t := strings.TrimSpace(fmt.Sprint(row["ci_type"])); t != "" {
+					ciType = t
+				} else if t := strings.TrimSpace(fmt.Sprint(row["_type"])); t != "" {
+					ciType = t
+				}
+			}
+			_, err = s.Client.UpdateCI(exists, map[string]any{
+				"ci_type":    ciType,
+				"admin_name": adminName,
+			})
+			if err != nil {
+				glog.Errorf("cmdb sync system_node(update admin_name): system_id=%s node=%q id=%s err=%v", systemID, node, exists, err)
+				st.Errors++
+				continue
+			}
+			glog.Infof("cmdb sync system_node(update ok admin_name): system_id=%s node=%q id=%s", systemID, node, exists)
+			st.Updated++
 			continue
 		}
 		root, err := s.Client.GetCIID(map[string]any{
@@ -537,6 +592,7 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 			"biz_domain_name":   bizDomain,
 			"cloud_type":        cloud,
 			"location":          loc,
+			"admin_name":        adminName,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
@@ -983,14 +1039,15 @@ func billingCostFieldsChanged(row map[string]any, rowCount, totalCost string) bo
 	return false
 }
 
-func (s *Syncer) addCMDBBillings(systemID, billingMonth string, resp *pbbilling.ListBillingSummaryResp) componentSyncStats {
+func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, resp *pbbilling.ListBillingSummaryResp) componentSyncStats {
 	st := componentSyncStats{}
 	if resp == nil {
 		return st
 	}
 	billingMonth = strings.TrimSpace(billingMonth)
-	if billingMonth == "" {
-		glog.Errorf("cmdb sync billing: empty billing_month")
+	accountName = strings.TrimSpace(accountName)
+	if billingMonth == "" || accountName == "" {
+		glog.Errorf("cmdb sync billing: empty billing_month or account_name")
 		st.Errors++
 		return st
 	}
@@ -999,7 +1056,6 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth string, resp *pbbilling.
 		st.Errors++
 		return st
 	}
-	const billingSysNode = "系统汇总"
 	curDefault := strings.TrimSpace(resp.Currency)
 	if curDefault == "" {
 		curDefault = "CNY"
@@ -1017,41 +1073,41 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth string, resp *pbbilling.
 			cur = curDefault
 		}
 		q := map[string]any{
-			"q": fmt.Sprintf("_type:billing,system_id:%s,billing_month:%s,resource_category:%s", systemID, billingMonth, cat),
+			"q": fmt.Sprintf("_type:billing,system_id:%s,billing_month:%s,resource_category:%s,account_name:%s", systemID, billingMonth, cat, accountName),
 		}
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
-			glog.Errorf("cmdb sync billing(get): system_id=%s category=%q err=%v", systemID, cat, err)
+			glog.Errorf("cmdb sync billing(get): system_id=%s account=%s category=%q err=%v", systemID, accountName, cat, err)
 			st.Errors++
 			continue
 		}
 		rowCountStr := itoa32(row.SourceRowCount)
 		totalStr := strconv.FormatFloat(row.TotalConsumeAmount, 'f', 2, 64)
 		fields := map[string]any{
-			"currency":      cur,
-			"row_count":     rowCountStr,
-			"total_cost":    totalStr,
-			"sys_node_name": billingSysNode,
+			"currency":     cur,
+			"row_count":    rowCountStr,
+			"total_cost":   totalStr,
+			"account_name": accountName,
 		}
 		if exists != "" {
 			frow, err := s.Client.GetCIFirst(q)
 			if err != nil {
-				glog.Errorf("cmdb sync billing(get row): system_id=%s category=%q err=%v", systemID, cat, err)
+				glog.Errorf("cmdb sync billing(get row): system_id=%s account=%s category=%q err=%v", systemID, accountName, cat, err)
 				st.Errors++
 				continue
 			}
 			if frow != nil && !billingCostFieldsChanged(frow, rowCountStr, totalStr) {
-				glog.Infof("cmdb sync billing(skip): system_id=%s category=%s id=%s", systemID, cat, exists)
+				glog.Infof("cmdb sync billing(skip): system_id=%s account=%s category=%s id=%s", systemID, accountName, cat, exists)
 				st.Skipped++
 				continue
 			}
 			_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{"ci_type": "billing"}, fields))
 			if err != nil {
-				glog.Errorf("cmdb sync billing(update): system_id=%s category=%q id=%s err=%v", systemID, cat, exists, err)
+				glog.Errorf("cmdb sync billing(update): system_id=%s account=%s category=%q id=%s err=%v", systemID, accountName, cat, exists, err)
 				st.Errors++
 				continue
 			}
-			glog.Infof("cmdb sync billing(update ok): system_id=%s category=%s id=%s", systemID, cat, exists)
+			glog.Infof("cmdb sync billing(update ok): system_id=%s account=%s category=%s id=%s", systemID, accountName, cat, exists)
 			st.Updated++
 			continue
 		}
@@ -1064,11 +1120,11 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth string, resp *pbbilling.
 		}, fields)
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
-			glog.Errorf("cmdb sync billing(add): system_id=%s category=%q err=%v", systemID, cat, err)
+			glog.Errorf("cmdb sync billing(add): system_id=%s account=%s category=%q err=%v", systemID, accountName, cat, err)
 			st.Errors++
 			continue
 		}
-		glog.Infof("cmdb sync billing(add ok): system_id=%s category=%s resp=%+v", systemID, cat, d)
+		glog.Infof("cmdb sync billing(add ok): system_id=%s account=%s category=%s resp=%+v", systemID, accountName, cat, d)
 		st.Added++
 	}
 	return st

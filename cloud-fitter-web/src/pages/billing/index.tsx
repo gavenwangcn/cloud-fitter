@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { connect, useModel } from 'umi';
-import { Card, DatePicker, Space, Table, Typography } from 'antd';
+import { Button, Card, DatePicker, Modal, Select, Space, Table, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
 import CloudAccountBar from '@/components/CloudAccountBar';
+import { queryBillingBySystemId } from '@/services/billingBySystemId';
 import { providerLabel } from '@/services/cloudConfig';
+import { listSystems, SystemRow } from '@/services/systemManage';
 import { BillingPageState } from './model';
 import {
   RESOURCE_TABLE_DEFAULT_PAGE_SIZE,
@@ -39,6 +41,13 @@ const BillingPage: React.FC<BillingPageProps> = ({
   const [month, setMonth] = useState<Dayjs | null>(() => dayjs());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(RESOURCE_TABLE_DEFAULT_PAGE_SIZE);
+  const [systems, setSystems] = useState<SystemRow[]>([]);
+  const [systemIdQuery, setSystemIdQuery] = useState<string | undefined>();
+  const [bySystemModalOpen, setBySystemModalOpen] = useState(false);
+  const [bySystemLoading, setBySystemLoading] = useState(false);
+  const [bySystemPayload, setBySystemPayload] = useState<Awaited<
+    ReturnType<typeof queryBillingBySystemId>
+  > | null>(null);
 
   const billingMonthStr = useMemo(
     () => (month ? month.format('YYYY-MM') : ''),
@@ -55,6 +64,74 @@ const BillingPage: React.FC<BillingPageProps> = ({
   useEffect(() => {
     setPage(1);
   }, [billingPage.tableData]);
+
+  const loadSystems = useCallback(async () => {
+    try {
+      const res = await listSystems({ page: 1, pageSize: 500 });
+      setSystems(res.systems ?? []);
+    } catch (e: any) {
+      message.error(e?.message || '加载系统列表失败');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSystems();
+  }, [loadSystems]);
+
+  const onQueryBySystemId = async () => {
+    const sid = (systemIdQuery ?? '').trim();
+    if (!sid) {
+      message.warning('请选择系统（按系统 ID 关联本地系统记录）');
+      return;
+    }
+    setBySystemLoading(true);
+    try {
+      const data = await queryBillingBySystemId(sid, billingMonthStr);
+      setBySystemPayload(data);
+      setBySystemModalOpen(true);
+    } catch (e: any) {
+      const errText =
+        e?.data?.error || e?.response?.data?.error || e?.message || '按系统查询账单失败';
+      message.error(errText);
+    } finally {
+      setBySystemLoading(false);
+    }
+  };
+
+  const accountModalColumns: ColumnsType<{
+    accountName: string;
+    provider: number;
+    summary?: Record<string, unknown>;
+  }> = [
+    {
+      title: '账号（account_name）',
+      dataIndex: 'accountName',
+      key: 'accountName',
+      align: 'center',
+    },
+    {
+      title: '云类型',
+      dataIndex: 'provider',
+      key: 'provider',
+      align: 'center',
+      render: (p: number) => PROVIDER_ENUM_CN[p] ?? providerLabel(p) ?? String(p),
+    },
+    {
+      title: '消费总账',
+      key: 'grand',
+      align: 'right',
+      render: (_: unknown, r) => {
+        const g = r.summary?.grandTotalConsume;
+        return g != null ? Number(g).toFixed(2) : '—';
+      },
+    },
+    {
+      title: '币种',
+      key: 'cur',
+      align: 'center',
+      render: (_: unknown, r) => (r.summary?.currency as string) ?? '—',
+    },
+  ];
 
   const columns: ColumnsType<any> = [
     {
@@ -115,6 +192,30 @@ const BillingPage: React.FC<BillingPageProps> = ({
           汇总账单，阿里云/腾讯云由账单明细聚合。需具备账单只读权限。
         </Text>
       </Space>
+      <Card size="small" title="按系统 ID 查询（与 CMDB 分账号账单维度一致）" style={{ marginBottom: 16 }}>
+        <Space wrap align="center">
+          <span>系统：</span>
+          <Select
+            showSearch
+            placeholder="选择系统（写入值为 systemId）"
+            style={{ minWidth: 320 }}
+            optionFilterProp="label"
+            allowClear
+            value={systemIdQuery}
+            onChange={(v) => setSystemIdQuery(v)}
+            options={systems.map((s) => ({
+              label: `${s.name}（${s.systemId}）`,
+              value: s.systemId,
+            }))}
+          />
+          <Button type="primary" loading={bySystemLoading} onClick={() => void onQueryBySystemId()}>
+            查询各账号账单
+          </Button>
+          <Text type="secondary">
+            弹框中展示每个关联云账号（account_name）的账单汇总，对应 CMDB billing 同步字段。
+          </Text>
+        </Space>
+      </Card>
       <Table
         rowKey={(r) => `${r.key}-${r.category}-${r.accountName}`}
         loading={!!loading}
@@ -142,6 +243,57 @@ const BillingPage: React.FC<BillingPageProps> = ({
           {billingPage.currency || 'CNY'}
         </Text>
       </Card>
+
+      <Modal
+        title={
+          bySystemPayload
+            ? `系统账单 — ${bySystemPayload.systemName}（${bySystemPayload.systemId}） ${bySystemPayload.billingMonth}`
+            : '系统分账号账单'
+        }
+        open={bySystemModalOpen}
+        onCancel={() => setBySystemModalOpen(false)}
+        footer={null}
+        width={960}
+        destroyOnClose
+      >
+        <Table
+          rowKey={(r) => r.accountName}
+          dataSource={bySystemPayload?.accounts ?? []}
+          columns={accountModalColumns}
+          pagination={false}
+          expandable={{
+            expandedRowRender: (r) => {
+              const rows = (r.summary?.rows as Record<string, unknown>[] | undefined) ?? [];
+              return (
+                <Table
+                  size="small"
+                  rowKey={(_, i) => String(i)}
+                  dataSource={rows}
+                  pagination={false}
+                  columns={[
+                    { title: '资源大类', dataIndex: 'category', key: 'category', align: 'center' },
+                    {
+                      title: '消费合计',
+                      dataIndex: 'totalConsumeAmount',
+                      key: 'totalConsumeAmount',
+                      align: 'right',
+                      render: (v: unknown) =>
+                        v != null ? Number(v).toFixed(2) : '—',
+                    },
+                    { title: '币种', dataIndex: 'currency', key: 'currency', align: 'center' },
+                    {
+                      title: '汇总行数',
+                      dataIndex: 'sourceRowCount',
+                      key: 'sourceRowCount',
+                      align: 'center',
+                    },
+                  ]}
+                />
+              );
+            },
+          }}
+        />
+      </Modal>
     </div>
   );
 };

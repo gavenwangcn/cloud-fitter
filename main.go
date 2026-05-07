@@ -122,6 +122,8 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
 			jsonapi.ElbByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-account" && r.Method == http.MethodPost:
 			jsonapi.BillingSummaryByAccount(w, r)
+		case r.URL.Path == "/apis/billing/by-system-id" && r.Method == http.MethodPost:
+			jsonapi.BillingSummaryBySystemID(w, r, store)
 		default:
 			mux.ServeHTTP(w, r)
 		}
