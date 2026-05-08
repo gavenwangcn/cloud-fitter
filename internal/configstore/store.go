@@ -26,9 +26,10 @@ func (s *Store) Close() error {
 
 // Row 对外展示（不含密钥）。
 type Row struct {
-	ID       int64  `json:"id"`
-	Provider int32  `json:"provider"`
-	Name     string `json:"name"`
+	ID                 int64  `json:"id"`
+	Provider           int32  `json:"provider"`
+	Name               string `json:"name"`
+	HuaweiAccountScope int32  `json:"huaweiAccountScope"` // 0=国内 1=国际，非华为云固定为 0
 }
 
 type SystemRow struct {
@@ -48,7 +49,7 @@ type SystemRow struct {
 func (s *Store) List() ([]Row, error) {
 	start := time.Now()
 	glog.Infof("configstore.List begin")
-	rows, err := s.db.Query(`SELECT id, provider, name FROM cloud_configs ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, provider, name, IFNULL(huawei_account_scope, 0) FROM cloud_configs ORDER BY id`)
 	if err != nil {
 		glog.Warningf("configstore.List query failed err=%v", err)
 		return nil, errors.WithMessage(err, "query")
@@ -57,7 +58,7 @@ func (s *Store) List() ([]Row, error) {
 	var out []Row
 	for rows.Next() {
 		var r Row
-		if err := rows.Scan(&r.ID, &r.Provider, &r.Name); err != nil {
+		if err := rows.Scan(&r.ID, &r.Provider, &r.Name, &r.HuaweiAccountScope); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -87,7 +88,7 @@ func (s *Store) ListConfigsPaged(page, pageSize int) ([]Row, int, error) {
 	}
 	offset := (page - 1) * pageSize
 	rows, err := s.db.Query(
-		`SELECT id, provider, name FROM cloud_configs ORDER BY id LIMIT ? OFFSET ?`,
+		`SELECT id, provider, name, IFNULL(huawei_account_scope, 0) FROM cloud_configs ORDER BY id LIMIT ? OFFSET ?`,
 		pageSize, offset,
 	)
 	if err != nil {
@@ -97,7 +98,7 @@ func (s *Store) ListConfigsPaged(page, pageSize int) ([]Row, int, error) {
 	var out []Row
 	for rows.Next() {
 		var r Row
-		if err := rows.Scan(&r.ID, &r.Provider, &r.Name); err != nil {
+		if err := rows.Scan(&r.ID, &r.Provider, &r.Name, &r.HuaweiAccountScope); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, r)
@@ -286,11 +287,16 @@ func ParseIntDefault(s string, def int) int {
 	return n
 }
 
-// Create 插入一条配置。
-func (s *Store) Create(provider int32, name, accessID, accessSecret string) error {
+// Create 插入一条配置；huaweiAccountScope 仅 provider 为华为云时有效（0=国内，1=国际）。
+func (s *Store) Create(provider int32, name, accessID, accessSecret string, huaweiAccountScope int32) error {
+	if provider != int32(pbtenant.CloudProvider_huawei) {
+		huaweiAccountScope = 0
+	} else if huaweiAccountScope != 1 {
+		huaweiAccountScope = 0
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO cloud_configs (provider, name, access_id, access_secret) VALUES (?, ?, ?, ?)`,
-		provider, name, accessID, accessSecret,
+		`INSERT INTO cloud_configs (provider, name, access_id, access_secret, huawei_account_scope) VALUES (?, ?, ?, ?, ?)`,
+		provider, name, accessID, accessSecret, huaweiAccountScope,
 	)
 	return errors.WithMessage(err, "insert")
 }
@@ -458,8 +464,8 @@ func (s *Store) AccountsBySystemName(systemName string) ([]Row, error) {
 	var out []Row
 	for _, id := range ids {
 		var r Row
-		qerr := s.db.QueryRow(`SELECT id, provider, name FROM cloud_configs WHERE id = ?`, id).
-			Scan(&r.ID, &r.Provider, &r.Name)
+		qerr := s.db.QueryRow(`SELECT id, provider, name, IFNULL(huawei_account_scope, 0) FROM cloud_configs WHERE id = ?`, id).
+			Scan(&r.ID, &r.Provider, &r.Name, &r.HuaweiAccountScope)
 		if qerr != nil {
 			if errors.Is(qerr, sql.ErrNoRows) {
 				continue
@@ -471,19 +477,21 @@ func (s *Store) AccountsBySystemName(systemName string) ([]Row, error) {
 	return out, nil
 }
 
-// ToCloudConfigs 读取全部行并转为租户加载结构。
-func (s *Store) ToCloudConfigs() (*pbtenant.CloudConfigs, error) {
-	rows, err := s.db.Query(`SELECT provider, name, access_id, access_secret FROM cloud_configs ORDER BY id`)
+// ToCloudConfigs 读取全部行并转为租户加载结构；第二个返回值为华为账号名 -> 国际(1)，缺省表示国内。
+func (s *Store) ToCloudConfigs() (*pbtenant.CloudConfigs, map[string]int32, error) {
+	rows, err := s.db.Query(`SELECT provider, name, access_id, access_secret, IFNULL(huawei_account_scope, 0) FROM cloud_configs ORDER BY id`)
 	if err != nil {
-		return nil, errors.WithMessage(err, "query")
+		return nil, nil, errors.WithMessage(err, "query")
 	}
 	defer rows.Close()
 	cfg := &pbtenant.CloudConfigs{}
+	huaweiScopeByName := make(map[string]int32)
 	for rows.Next() {
 		var provider int32
 		var name, ak, sk string
-		if err := rows.Scan(&provider, &name, &ak, &sk); err != nil {
-			return nil, err
+		var scope int32
+		if err := rows.Scan(&provider, &name, &ak, &sk, &scope); err != nil {
+			return nil, nil, err
 		}
 		cfg.Configs = append(cfg.Configs, &pbtenant.CloudConfig{
 			Provider:     pbtenant.CloudProvider(provider),
@@ -491,8 +499,11 @@ func (s *Store) ToCloudConfigs() (*pbtenant.CloudConfigs, error) {
 			AccessId:     ak,
 			AccessSecret: sk,
 		})
+		if pbtenant.CloudProvider(provider) == pbtenant.CloudProvider_huawei && scope == 1 {
+			huaweiScopeByName[name] = 1
+		}
 	}
-	return cfg, rows.Err()
+	return cfg, huaweiScopeByName, rows.Err()
 }
 
 // Count 返回表中行数。

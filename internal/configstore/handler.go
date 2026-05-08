@@ -14,10 +14,11 @@ import (
 type reloadFn func() error
 
 type createBody struct {
-	Provider     int32  `json:"provider"`
-	Name         string `json:"name"`
-	AccessID     string `json:"accessId"`
-	AccessSecret string `json:"accessSecret"`
+	Provider           int32 `json:"provider"`
+	Name               string `json:"name"`
+	AccessID           string `json:"accessId"`
+	AccessSecret       string `json:"accessSecret"`
+	HuaweiAccountScope int32 `json:"huaweiAccountScope"`
 }
 
 // HTTPHandler 处理 GET/POST /apis/configs；创建成功后调用 reload 刷新内存租户。
@@ -55,7 +56,7 @@ func HTTPHandler(store *Store, reload reloadFn) http.Handler {
 				writeErr(w, http.StatusBadRequest, errors.New("name, accessId, accessSecret required"))
 				return
 			}
-			if err := store.Create(body.Provider, body.Name, body.AccessID, body.AccessSecret); err != nil {
+			if err := store.Create(body.Provider, body.Name, body.AccessID, body.AccessSecret, body.HuaweiAccountScope); err != nil {
 				if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 					glog.Warningf("configs api create conflict provider=%d name=%s err=%v", body.Provider, body.Name, err)
 					writeErr(w, http.StatusConflict, errors.New("name already exists"))

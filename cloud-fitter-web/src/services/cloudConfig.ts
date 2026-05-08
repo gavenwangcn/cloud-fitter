@@ -4,6 +4,8 @@ export interface CloudConfigRow {
   id: number;
   provider: number;
   name: string;
+  /** 0=国内 1=国际，非华为云为 0 */
+  huaweiAccountScope: number;
 }
 
 export async function listCloudConfigs(params?: {
@@ -22,6 +24,7 @@ export async function createCloudConfig(data: {
   name: string;
   accessId: string;
   accessSecret: string;
+  huaweiAccountScope?: number;
 }) {
   return request('/apis/configs', { method: 'POST', data });
 }

@@ -72,11 +72,11 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
 	}
 
 	reloadTenants := func() error {
-		cfg, err := store.ToCloudConfigs()
+		cfg, scopes, err := store.ToCloudConfigs()
 		if err != nil {
 			return err
 		}
-		return tenanter.ReloadFromConfigs(cfg)
+		return tenanter.ReloadFromConfigs(cfg, scopes)
 	}
 	configHandler := configstore.HTTPHandler(store, reloadTenants)
 	systemHandler := configstore.SystemHTTPHandler(store)
@@ -166,11 +166,11 @@ func main() {
 		glog.Fatalf("config store count: %v", err)
 	}
 	if n > 0 {
-		cfg, err := store.ToCloudConfigs()
+		cfg, scopes, err := store.ToCloudConfigs()
 		if err != nil {
 			glog.Fatalf("ToCloudConfigs: %v", err)
 		}
-		if err := tenanter.ReloadFromConfigs(cfg); err != nil {
+		if err := tenanter.ReloadFromConfigs(cfg, scopes); err != nil {
 			glog.Fatalf("ReloadFromConfigs: %v", err)
 		}
 		if configstore.UseMySQLFromEnv() {

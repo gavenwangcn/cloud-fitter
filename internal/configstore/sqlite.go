@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS cloud_configs (
 	provider INTEGER NOT NULL,
 	name TEXT NOT NULL UNIQUE,
 	access_id TEXT NOT NULL,
-	access_secret TEXT NOT NULL
+	access_secret TEXT NOT NULL,
+	huawei_account_scope INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS systems (
@@ -55,6 +56,7 @@ func migrateSQLite(db *sql.DB) error {
 		`ALTER TABLE systems ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE systems ADD COLUMN english_name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE systems ADD COLUMN short_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cloud_configs ADD COLUMN huawei_account_scope INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return errors.WithMessage(err, "migrate alter systems columns")

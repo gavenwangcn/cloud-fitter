@@ -16,9 +16,8 @@ func Statistic(ctx context.Context, provider pbtenant.CloudProvider, tenanters [
 		mutex   sync.Mutex
 	)
 
-	regions := tenanter.GetAllRegionIds(provider)
-
 	for i := range tenanters {
+		regions := tenanter.RegionsForProviderAndTenant(provider, tenanters[i])
 		var wg sync.WaitGroup
 		wg.Add(len(regions))
 		for _, region := range regions {

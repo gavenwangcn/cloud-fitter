@@ -60,17 +60,21 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 	if len(tenanters) == 0 {
 		return nil, errors.Errorf("no tenants for provider %v account %q", provider, scope.AccountName(ctx))
 	}
-	regions := tenanter.GetAllRegionIds(provider)
-	glog.Infof("elb list start provider=%s account_filter=%q tenant_count=%d region_count=%d",
-		provider.String(), scope.AccountName(ctx), len(tenanters), len(regions))
+	nJobs := 0
+	for _, t := range tenanters {
+		nJobs += len(tenanter.RegionsForProviderAndTenant(provider, t))
+	}
+	glog.Infof("elb list start provider=%s account_filter=%q tenant_count=%d list_jobs=%d",
+		provider.String(), scope.AccountName(ctx), len(tenanters), nJobs)
 
 	var (
 		wg  sync.WaitGroup
 		mu  sync.Mutex
 		all []*Instance
 	)
-	wg.Add(len(tenanters) * len(regions))
+	wg.Add(nJobs)
 	for _, t := range tenanters {
+		regions := tenanter.RegionsForProviderAndTenant(provider, t)
 		for _, r := range regions {
 			go func(tenant tenanter.Tenanter, region tenanter.Region) {
 				defer wg.Done()

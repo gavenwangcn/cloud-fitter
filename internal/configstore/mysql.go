@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS cloud_configs (
 	name VARCHAR(255) NOT NULL,
 	access_id VARCHAR(512) NOT NULL,
 	access_secret VARCHAR(2048) NOT NULL,
+	huawei_account_scope INT NOT NULL DEFAULT 0,
 	PRIMARY KEY (id),
 	UNIQUE KEY uk_cloud_configs_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -64,6 +65,7 @@ func migrateMySQL(db *sql.DB) error {
 	for _, stmt := range []string{
 		`ALTER TABLE systems ADD COLUMN english_name VARCHAR(512) NOT NULL DEFAULT ''`,
 		`ALTER TABLE systems ADD COLUMN short_name VARCHAR(256) NOT NULL DEFAULT ''`,
+		`ALTER TABLE cloud_configs ADD COLUMN huawei_account_scope INT NOT NULL DEFAULT 0`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "Duplicate column name") {
 			return errors.WithMessage(err, "migrate alter systems columns")

@@ -56,6 +56,7 @@ const ConfigPage: React.FC = () => {
         name: v.name,
         accessId: v.accessId,
         accessSecret: v.accessSecret,
+        huaweiAccountScope: v.provider === 2 ? (v.huaweiAccountScope ?? 0) : 0,
       });
       message.success('已保存');
       setModalOpen(false);
@@ -117,6 +118,17 @@ const ConfigPage: React.FC = () => {
           },
           { title: '名称', dataIndex: 'name', align: 'center' },
           {
+            title: '区域',
+            dataIndex: 'huaweiAccountScope',
+            align: 'center',
+            render: (s: number, record: CloudConfigRow) => {
+              if (record.provider !== 2) {
+                return '—';
+              }
+              return s === 1 ? '国际' : '国内';
+            },
+          },
+          {
             title: '操作',
             key: 'actions',
             align: 'center',
@@ -147,13 +159,32 @@ const ConfigPage: React.FC = () => {
         }}
         destroyOnClose
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" initialValues={{ huaweiAccountScope: 0 }}>
           <Form.Item
             name="provider"
             label="提供商"
             rules={[{ required: true, message: '请选择提供商' }]}
           >
             <Select options={PROVIDER_OPTIONS} placeholder="请选择" />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.provider !== cur.provider}>
+            {({ getFieldValue }) =>
+              getFieldValue('provider') === 2 ? (
+                <Form.Item
+                  name="huaweiAccountScope"
+                  label="区域"
+                  rules={[{ required: true, message: '请选择区域' }]}
+                >
+                  <Select
+                    placeholder="请选择"
+                    options={[
+                      { label: '国内', value: 0 },
+                      { label: '国际', value: 1 },
+                    ]}
+                  />
+                </Form.Item>
+              ) : null
+            }
           </Form.Item>
           <Form.Item
             name="name"

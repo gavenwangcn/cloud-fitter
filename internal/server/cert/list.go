@@ -67,18 +67,21 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 		return nil, errors.Errorf("no tenants for provider %v account %q", provider, scope.AccountName(ctx))
 	}
 
-	scmRegions := huaweiSCMEndpointRegions()
-	glog.Infof("cert list start provider=%s account_filter=%q tenant_count=%d scm_endpoint_regions=%v",
-		provider.String(), scope.AccountName(ctx), len(tenanters), scmRegions)
+	nJobs := 0
+	for _, t := range tenanters {
+		nJobs += len(huaweiSCMRegionsForTenant(t))
+	}
+	glog.Infof("cert list start provider=%s account_filter=%q tenant_count=%d scm_jobs=%d env_scm_override=%v",
+		provider.String(), scope.AccountName(ctx), len(tenanters), nJobs, scmRegionsFromEnvOverride() != nil)
 
 	var (
 		wg  sync.WaitGroup
 		mu  sync.Mutex
 		all []*Instance
 	)
-	wg.Add(len(tenanters) * len(scmRegions))
+	wg.Add(nJobs)
 	for _, t := range tenanters {
-		for _, scmReg := range scmRegions {
+		for _, scmReg := range huaweiSCMRegionsForTenant(t) {
 			go func(tenant tenanter.Tenanter, scmRegion string) {
 				defer wg.Done()
 				items, err := listHuaweiCertificatesForTenant(tenant, scmRegion)
@@ -112,14 +115,8 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 	return uniq, nil
 }
 
-// huaweiSCMEndpointRegions 返回要轮询的 SCM（CCM）接入 Region 列表（每个对应 scm.<region>.myhuaweicloud.com）。
-// 并非所有业务 Region 都有 SCM 域名；与 ECS 枚举地域无关，需单独配置接入区。
-//
-// 优先级：
-//  1. CLOUD_FITTER_HUAWEI_SCM_REGIONS — 逗号分隔，例如 "cn-north-4,ap-southeast-1,ru-moscow-1"
-//  2. CLOUD_FITTER_HUAWEI_SCM_REGION — 兼容旧版，仅单个接入区
-//  3. 默认 cn-north-4、ap-southeast-1、ru-moscow-1（华北 SCM + 香港/国际站 + 俄罗斯莫斯科接入）
-func huaweiSCMEndpointRegions() []string {
+// scmRegionsFromEnvOverride 若设置了环境变量则全局覆盖所有账号的 SCM 接入区；未设置返回 nil。
+func scmRegionsFromEnvOverride() []string {
 	if raw := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_SCM_REGIONS")); raw != "" {
 		var out []string
 		seen := make(map[string]struct{})
@@ -141,7 +138,22 @@ func huaweiSCMEndpointRegions() []string {
 	if single := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_SCM_REGION")); single != "" {
 		return []string{single}
 	}
-	return []string{"cn-north-4", "ap-southeast-1", "ru-moscow-1"}
+	return nil
+}
+
+// huaweiSCMRegionsForTenant 国内账号：cn-north-4 + ap-southeast-1；国际账号：ru-moscow-1。环境变量覆盖优先。
+func huaweiSCMRegionsForTenant(tenant tenanter.Tenanter) []string {
+	if o := scmRegionsFromEnvOverride(); o != nil {
+		return o
+	}
+	ak, ok := tenant.(*tenanter.AccessKeyTenant)
+	if !ok {
+		return []string{"cn-north-4", "ap-southeast-1"}
+	}
+	if ak.HuaweiAccountScope() == tenanter.HuaweiAccountScopeInternational {
+		return []string{"ru-moscow-1"}
+	}
+	return []string{"cn-north-4", "ap-southeast-1"}
 }
 
 func listHuaweiCertificatesForTenant(tenant tenanter.Tenanter, endpointRegion string) ([]*Instance, error) {

@@ -24,7 +24,6 @@ func huaweiEcsIDToClusterUIDMap(ctx context.Context, store *configstore.Store, s
 	if err != nil {
 		return nil, errors.WithMessage(err, "GetTenanters huawei")
 	}
-	regions := tenanter.GetAllRegionIds(pbtenant.CloudProvider_huawei)
 	merged := make(map[string]string)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -44,6 +43,7 @@ func huaweiEcsIDToClusterUIDMap(ctx context.Context, store *configstore.Store, s
 			glog.Warningf("cmdb: huawei account %q not in loaded tenanters, skip cce map", acc.Name)
 			continue
 		}
+		regions := tenanter.RegionsForProviderAndTenant(pbtenant.CloudProvider_huawei, tenant)
 		for _, region := range regions {
 			wg.Add(1)
 			go func(reg tenanter.Region, tn tenanter.Tenanter) {

@@ -72,11 +72,15 @@ func List(ctx context.Context, req *pbecs.ListReq) (*pbecs.ListResp, error) {
 		return nil, errors.Errorf("no tenants for provider %s account %q", pname, scope.AccountName(ctx))
 	}
 
-	regions := tenanter.GetAllRegionIds(req.Provider)
-	glog.Infof("ecs List provider=%s accounts=%d regions=%d (goroutines=%d)", pname, len(tenanters), len(regions), len(tenanters)*len(regions))
-
-	wg.Add(len(tenanters) * len(regions))
+	nJobs := 0
 	for _, t := range tenanters {
+		nJobs += len(tenanter.RegionsForProviderAndTenant(req.Provider, t))
+	}
+	glog.Infof("ecs List provider=%s accounts=%d list_jobs=%d", pname, len(tenanters), nJobs)
+
+	wg.Add(nJobs)
+	for _, t := range tenanters {
+		regions := tenanter.RegionsForProviderAndTenant(req.Provider, t)
 		for _, region := range regions {
 			go func(tenant tenanter.Tenanter, region tenanter.Region) {
 				defer wg.Done()

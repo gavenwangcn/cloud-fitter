@@ -55,6 +55,47 @@ func (r *region) GetId() int32 {
 	return r.regionId
 }
 
+// RegionsForProviderAndTenant 返回该云账号下需扫描的地域：华为云按账号国内/国际分流，其它云与 GetAllRegionIds 一致。
+func RegionsForProviderAndTenant(provider pbtenant.CloudProvider, tenant Tenanter) []Region {
+	if provider != pbtenant.CloudProvider_huawei {
+		return GetAllRegionIds(provider)
+	}
+	return huaweiRegionsForTenant(tenant)
+}
+
+func huaweiRegionsForTenant(tenant Tenanter) []Region {
+	ak, ok := tenant.(*AccessKeyTenant)
+	if !ok {
+		return huaweiDomesticRegionSlice()
+	}
+	if ak.HuaweiAccountScope() == HuaweiAccountScopeInternational {
+		r, err := NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_ru_moscow_1))
+		if err != nil {
+			return nil
+		}
+		return []Region{r}
+	}
+	return huaweiDomesticRegionSlice()
+}
+
+// 国内：华东3（cn-east-3）、华东4/上海二（cn-east-4）、香港（ap-southeast-1）。
+func huaweiDomesticRegionSlice() []Region {
+	ids := []int32{
+		int32(pbtenant.HuaweiRegionId_hw_cn_east_3),
+		int32(pbtenant.HuaweiRegionId_hw_cn_east_4),
+		int32(pbtenant.HuaweiRegionId_hw_ap_southeast_1),
+	}
+	var out []Region
+	for _, id := range ids {
+		r, err := NewRegion(pbtenant.CloudProvider_huawei, id)
+		if err != nil {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 func GetAllRegionIds(provider pbtenant.CloudProvider) (regions []Region) {
 	switch provider {
 	case pbtenant.CloudProvider_ali:

@@ -65,10 +65,14 @@ func List(ctx context.Context, req *pbrds.ListReq) (*pbrds.ListResp, error) {
 		return nil, errors.Errorf("no tenants for provider %v account %q", req.Provider, scope.AccountName(ctx))
 	}
 
-	regions := tenanter.GetAllRegionIds(req.Provider)
-
-	wg.Add(len(tenanters) * len(regions))
+	nJobs := 0
 	for _, t := range tenanters {
+		nJobs += len(tenanter.RegionsForProviderAndTenant(req.Provider, t))
+	}
+
+	wg.Add(nJobs)
+	for _, t := range tenanters {
+		regions := tenanter.RegionsForProviderAndTenant(req.Provider, t)
 		for _, region := range regions {
 			go func(tenant tenanter.Tenanter, region tenanter.Region) {
 				defer wg.Done()
