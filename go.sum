@@ -61,6 +61,8 @@ github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.2 h1:dygLcbEBA+t/P7ck6a8AkXv6juQ
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.2/go.mod h1:Ap9RLCIJVtgQg1/BBgVEfypOAySvvlcpcVQkSzJCH4Y=
 github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.0.40-rc h1:odUhAefVIWOEe6OfFk9DAoKe12PPLRwiyskVBbJynOQ=
 github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.0.40-rc/go.mod h1:Pp3sd2tx3j9qC7Ij6jGh5phZwTrI+/HUBK90f3Cn2CI=
+github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.180 h1:uia+R3K1izQRGpxTV+bS4q3/ueMW7ProAMWqM6OlqOU=
+github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.180/go.mod h1:M+yna96Fx9o5GbIUnF3OvVvQGjgfVSyeJbV9Yb1z/wI=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1 h1:shLQSRRSCCPj3f2gpwzGwWFoC7ycTf1rcQZHOlsJ6N8=

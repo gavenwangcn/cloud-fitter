@@ -1039,6 +1039,10 @@ func billingCostFieldsChanged(row map[string]any, rowCount, totalCost string) bo
 	return false
 }
 
+// addCMDBBillings 将消费大类汇总写入 CMDB 模型 billing。
+//
+// 关联关系按「系统」维护：必需字段 system_id（与 CMDB system、本地系统 system_id 对齐），不再使用节点名称；
+// 同一系统下按 billing_month、resource_category、account_name（云账号）唯一标识一行；写入字段含 currency、row_count、total_cost、account_name，不含 sys_node_name。
 func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, resp *pbbilling.ListBillingSummaryResp) componentSyncStats {
 	st := componentSyncStats{}
 	if resp == nil {

@@ -18,7 +18,7 @@ require (
 	github.com/golang/glog v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.2
-	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.0.40-rc
+	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.180
 	github.com/joho/godotenv v1.5.1
 	github.com/pkg/errors v0.9.1
 	github.com/tencentcloud/tencentcloud-sdk-go v1.0.158
