@@ -38,6 +38,7 @@ type componentSyncStats struct {
 	Added   int
 	Updated int
 	Skipped int
+	Deleted int
 	Errors  int
 }
 
@@ -177,10 +178,35 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	stats := systemSyncStats{}
 	stats.SystemNode = s.addCMDBSystemNodes(systemID, cmdbSystemName, systemNodes)
 	stats.K8s = s.addCMDBK8sClusters(systemID, k8sList, clusterToECS)
+	if len(k8sList) > 0 {
+		r := s.reconcileCMDBCIsNotInAPI("k8s_cluster", systemID, uuidSetFromK8s(k8sList), nil)
+		stats.K8s.Deleted += r.Deleted
+		stats.K8s.Errors += r.Errors
+	}
 	stats.Host = s.addCMDBHosts(systemID, hosts)
+	if len(hosts) > 0 {
+		r := s.reconcileCMDBCIsNotInAPI("server", systemID, uuidSetFromHosts(hosts), nil)
+		stats.Host.Deleted += r.Deleted
+		stats.Host.Errors += r.Errors
+	}
 	stats.Middleware = s.addCMDBMiddlewares(systemID, middlewares)
+	if len(middlewares) > 0 {
+		r := s.reconcileCMDBCIsNotInAPI("middle_software", systemID, uuidSetFromMiddlewares(middlewares), []string{"RDS_INS", "DCS_REDIS", "DMS_ROCKETMQ"})
+		stats.Middleware.Deleted += r.Deleted
+		stats.Middleware.Errors += r.Errors
+	}
 	stats.EIP = s.addCMDBEIPs(systemID, eipList)
+	if len(eipList) > 0 {
+		r := s.reconcileCMDBCIsNotInAPI("EIP", systemID, uuidSetFromEIPs(eipList), nil)
+		stats.EIP.Deleted += r.Deleted
+		stats.EIP.Errors += r.Errors
+	}
 	stats.ELB = s.addCMDBELBs(systemID, elbList)
+	if len(elbList) > 0 {
+		r := s.reconcileCMDBCIsNotInAPI("ELB", systemID, uuidSetFromELBs(elbList), nil)
+		stats.ELB.Deleted += r.Deleted
+		stats.ELB.Errors += r.Errors
+	}
 	stats.Billing = componentSyncStats{}
 	for _, acc := range acco {
 		billResp, err := billing.ListSummary(ctx, &pbbilling.ListBillingSummaryReq{
@@ -198,14 +224,14 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		stats.Billing.Errors += st.Errors
 	}
 	glog.Infof(
-		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,err=%d) host(add=%d,upd=%d,skip=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,err=%d) eip(add=%d,upd=%d,skip=%d,err=%d) elb(add=%d,upd=%d,skip=%d,err=%d) billing(add=%d,upd=%d,skip=%d,err=%d)",
+		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,del=%d,err=%d) host(add=%d,upd=%d,skip=%d,del=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,del=%d,err=%d) eip(add=%d,upd=%d,skip=%d,del=%d,err=%d) elb(add=%d,upd=%d,skip=%d,del=%d,err=%d) billing(add=%d,upd=%d,skip=%d,err=%d)",
 		systemID, systemName,
 		stats.SystemNode.Added, stats.SystemNode.Updated, stats.SystemNode.Skipped, stats.SystemNode.Errors,
-		stats.K8s.Added, stats.K8s.Updated, stats.K8s.Skipped, stats.K8s.Errors,
-		stats.Host.Added, stats.Host.Updated, stats.Host.Skipped, stats.Host.Errors,
-		stats.Middleware.Added, stats.Middleware.Updated, stats.Middleware.Skipped, stats.Middleware.Errors,
-		stats.EIP.Added, stats.EIP.Updated, stats.EIP.Skipped, stats.EIP.Errors,
-		stats.ELB.Added, stats.ELB.Updated, stats.ELB.Skipped, stats.ELB.Errors,
+		stats.K8s.Added, stats.K8s.Updated, stats.K8s.Skipped, stats.K8s.Deleted, stats.K8s.Errors,
+		stats.Host.Added, stats.Host.Updated, stats.Host.Skipped, stats.Host.Deleted, stats.Host.Errors,
+		stats.Middleware.Added, stats.Middleware.Updated, stats.Middleware.Skipped, stats.Middleware.Deleted, stats.Middleware.Errors,
+		stats.EIP.Added, stats.EIP.Updated, stats.EIP.Skipped, stats.EIP.Deleted, stats.EIP.Errors,
+		stats.ELB.Added, stats.ELB.Updated, stats.ELB.Skipped, stats.ELB.Deleted, stats.ELB.Errors,
 		stats.Billing.Added, stats.Billing.Updated, stats.Billing.Skipped, stats.Billing.Errors,
 	)
 	return nil
@@ -282,6 +308,143 @@ func collectSystemNodeKeys(
 	return out
 }
 
+// parseCloudInstanceUUID 校验云 API 返回的实例 ID 是否为 RFC4122 UUID，并规范化为标准字符串，用于 CMDB uuid 字段与 GetCI 查询。
+func parseCloudInstanceUUID(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	u, err := uuid.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	return u.String(), true
+}
+
+func uuidSetFromHosts(hosts []hostRec) map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, h := range hosts {
+		if u, ok := parseCloudInstanceUUID(h.InstanceID); ok {
+			m[u] = struct{}{}
+		}
+	}
+	return m
+}
+
+func uuidSetFromMiddlewares(mws []mwRec) map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, x := range mws {
+		if u, ok := parseCloudInstanceUUID(x.InstanceID); ok {
+			m[u] = struct{}{}
+		}
+	}
+	return m
+}
+
+func uuidSetFromK8s(k8s []k8sCluster) map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, c := range k8s {
+		if u, ok := parseCloudInstanceUUID(c.ClusterUID); ok {
+			m[u] = struct{}{}
+		}
+	}
+	return m
+}
+
+func uuidSetFromEIPs(eips []*eip.Instance) map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, e := range eips {
+		if e == nil {
+			continue
+		}
+		if u, ok := parseCloudInstanceUUID(e.EipId); ok {
+			m[u] = struct{}{}
+		}
+	}
+	return m
+}
+
+func uuidSetFromELBs(elbs []*elb.Instance) map[string]struct{} {
+	m := make(map[string]struct{})
+	for _, e := range elbs {
+		if e == nil {
+			continue
+		}
+		if u, ok := parseCloudInstanceUUID(e.ID); ok {
+			m[u] = struct{}{}
+		}
+	}
+	return m
+}
+
+// reconcileCMDBCIsNotInAPI 在接口已成功返回且本次列表可构造出非空 keep（合法 UUID）时，删除 CMDB 中同 _type、同 system_id 但 uuid 不在接口集合中的 CI。
+// 接口列表为空或无任何合法 UUID 时不删除（避免误清空）。middle_software 仅处理 resource_type 在 mwTypes 内的行。
+func (s *Syncer) reconcileCMDBCIsNotInAPI(ciType, systemID string, keep map[string]struct{}, mwTypes []string) componentSyncStats {
+	st := componentSyncStats{}
+	if s == nil || s.Client == nil || len(keep) == 0 {
+		return st
+	}
+	systemID = strings.TrimSpace(systemID)
+	if systemID == "" {
+		return st
+	}
+	page := 1
+	for {
+		data, err := s.Client.GetCI(map[string]any{
+			"q":    fmt.Sprintf("_type:%s,system_id:%s", ciType, systemID),
+			"page": page,
+		})
+		if err != nil {
+			glog.Errorf("cmdb reconcile list(%s): system_id=%s page=%d err=%v", ciType, systemID, page, err)
+			st.Errors++
+			return st
+		}
+		res, _ := data["result"].([]any)
+		if len(res) == 0 {
+			break
+		}
+		for _, it := range res {
+			row, _ := it.(map[string]any)
+			if row == nil {
+				continue
+			}
+			if len(mwTypes) > 0 {
+				rt := strings.TrimSpace(fmt.Sprint(row["resource_type"]))
+				match := false
+				for _, t := range mwTypes {
+					if rt == t {
+						match = true
+						break
+					}
+				}
+				if !match {
+					continue
+				}
+			}
+			canon, ok := parseCloudInstanceUUID(fmt.Sprint(row["uuid"]))
+			if !ok {
+				continue
+			}
+			if _, in := keep[canon]; in {
+				continue
+			}
+			ciID := fmt.Sprint(row["_id"])
+			if strings.TrimSpace(ciID) == "" {
+				continue
+			}
+			if _, err := s.Client.DeleteCI(ciID); err != nil {
+				glog.Errorf("cmdb reconcile delete: system_id=%s _type=%s ci_id=%s uuid=%s err=%v", systemID, ciType, ciID, canon, err)
+				st.Errors++
+				continue
+			}
+			glog.Infof("cmdb reconcile delete ok: system_id=%s _type=%s ci_id=%s uuid=%s", systemID, ciType, ciID, canon)
+			st.Deleted++
+		}
+		page++
+	}
+	return st
+}
+
 // effectiveSysNodeName 有「节点」标签时用车载标签值作为 CMDB 系统节点名；否则为「云中文名-地域」。
 func effectiveSysNodeName(p pbtenant.CloudProvider, region, nodeTagValue string) string {
 	if s := strings.TrimSpace(nodeTagValue); s != "" {
@@ -346,6 +509,7 @@ func buildK8sClusters(resp *pbcce.ListResp) []k8sCluster {
 }
 
 type hostRec struct {
+	InstanceID                                string // 云 ECS 实例 ID（华为等为 UUID）
 	Name, IP, CloudLabel, Region, SysNodeName string
 	CPU                                       int32
 	MemGBStr                                  string
@@ -377,6 +541,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			diskStr = fmt.Sprintf("%d+%d", e.GetSystemDiskSizeGb(), e.GetDataDiskTotalGb())
 		}
 		out = append(out, hostRec{
+			InstanceID:   strings.TrimSpace(e.GetInstanceId()),
 			Name:         e.GetInstanceName(),
 			IP:           ip,
 			CloudLabel:   cloudTypeLabel(e.GetProvider()),
@@ -403,6 +568,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 }
 
 type mwRec struct {
+	InstanceID                                                         string // 云实例 ID（华为 RDS/DCS/DMS 等为 UUID）
 	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName, DiskStr string
 	CpuPeak30, CpuAvg30, MemPeak30, MenAvg30                             string
 }
@@ -414,6 +580,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 			ip := firstIP(r.GetPrivateIps(), r.GetPublicIps())
 			util := r.GetUtilizationAudit()
 			out = append(out, mwRec{
+				InstanceID:  strings.TrimSpace(r.GetInstanceId()),
 				Name:        r.GetInstanceName(),
 				MwType:      "RDS_INS",
 				IP:          ip,
@@ -435,6 +602,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 			ip := firstIP(r.GetPrivateIps(), r.GetPublicIps())
 			memUtil := r.GetMemoryUtilizationAudit()
 			out = append(out, mwRec{
+				InstanceID:  strings.TrimSpace(r.GetInstanceId()),
 				Name:        r.GetInstanceName(),
 				MwType:      "DCS_REDIS",
 				IP:          ip,
@@ -454,6 +622,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 	if kafkaResp != nil {
 		for _, k := range kafkaResp.Kafkas {
 			out = append(out, mwRec{
+				InstanceID:  strings.TrimSpace(k.GetInstanceId()),
 				Name:        k.GetInstanceName(),
 				MwType:      "DMS_ROCKETMQ",
 				IP:          strings.TrimSpace(k.GetEndPoint()),
@@ -625,9 +794,17 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 		if sysNode == "" {
 			continue
 		}
-		exists, err := s.Client.GetCIID(map[string]any{
-			"q": fmt.Sprintf("_type:k8s_cluster,k8s_cluster_name:%s,system_id:%s,sys_node_name:%s", c.Name, systemID, sysNode),
-		})
+		clusterUUID, ok := parseCloudInstanceUUID(c.ClusterUID)
+		if !ok {
+			glog.Warningf("cmdb sync k8s(skip invalid cluster uuid): system_id=%s cluster=%q cluster_uid=%q",
+				systemID, c.Name, c.ClusterUID)
+			st.Errors++
+			continue
+		}
+		kq := map[string]any{
+			"q": fmt.Sprintf("_type:k8s_cluster,uuid:%s,system_id:%s", clusterUUID, systemID),
+		}
+		exists, err := s.Client.GetCIID(kq)
 		if err != nil {
 			glog.Errorf("cmdb sync k8s(get): system_id=%s cluster=%q err=%v", systemID, c.Name, err)
 			st.Errors++
@@ -636,9 +813,7 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 		ips := strings.Join(clusterToECS[c.Name], ",")
 		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, c.CloudLabel, c.Region)
 		if exists != "" {
-			row, err := s.Client.GetCIFirst(map[string]any{
-				"q": fmt.Sprintf("_id:%s", exists),
-			})
+			row, err := s.Client.GetCIFirst(kq)
 			if err != nil {
 				glog.Errorf("cmdb sync k8s(get row): system_id=%s cluster=%q id=%s err=%v", systemID, c.Name, exists, err)
 				st.Errors++
@@ -666,8 +841,8 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 			continue
 		}
 		payload := map[string]any{
-			"uuid":             uuid.NewString(),
-			"k8s_uuid":         uuid.NewString(),
+			"uuid":             clusterUUID,
+			"k8s_uuid":         clusterUUID,
 			"ci_type":          "k8s_cluster",
 			"system_id":        systemID,
 			"sys_node_name":    sysNode,
@@ -699,8 +874,15 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 		if sysNode == "" {
 			continue
 		}
+		instUUID, ok := parseCloudInstanceUUID(h.InstanceID)
+		if !ok {
+			glog.Warningf("cmdb sync host(skip invalid instance uuid): system_id=%s server_name=%q instance_id=%q",
+				systemID, h.Name, h.InstanceID)
+			st.Errors++
+			continue
+		}
 		q := map[string]any{
-			"q": fmt.Sprintf("_type:server,sys_node_name:%s,system_id:%s,private_ip:%s", sysNode, systemID, h.IP),
+			"q": fmt.Sprintf("_type:server,uuid:%s,system_id:%s", instUUID, systemID),
 		}
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
@@ -755,7 +937,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 		}
 		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, h.CloudLabel, h.Region)
 		payload := map[string]any{
-			"uuid":           uuid.NewString(),
+			"uuid":           instUUID,
 			"ci_type":        "server",
 			"system_id":      systemID,
 			"sys_node_name":  sysNode,
@@ -800,8 +982,15 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 		if sysNode == "" {
 			continue
 		}
+		instUUID, ok := parseCloudInstanceUUID(m.InstanceID)
+		if !ok {
+			glog.Warningf("cmdb sync middleware(skip invalid instance uuid): system_id=%s name=%q instance_id=%q",
+				systemID, m.Name, m.InstanceID)
+			st.Errors++
+			continue
+		}
 		mq := map[string]any{
-			"q": fmt.Sprintf("_type:middle_software,sys_node_name:%s,system_id:%s,resource_name:%s", sysNode, systemID, m.Name),
+			"q": fmt.Sprintf("_type:middle_software,uuid:%s,system_id:%s", instUUID, systemID),
 		}
 		exists, err := s.Client.GetCIID(mq)
 		if err != nil {
@@ -850,7 +1039,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 		}
 		// 与 cmdb_api.py 中 add_cmdb_middlewares 字段一致（含 location / cloud_type 与 Python 相同赋值方式）
 		payload := map[string]any{
-			"uuid":          uuid.NewString(),
+			"uuid":          instUUID,
 			"ci_type":       "middle_software",
 			"system_id":     systemID,
 			"sys_node_name": sysNode,
@@ -1003,6 +1192,12 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 		if e == nil || strings.TrimSpace(e.EipId) == "" {
 			continue
 		}
+		eipUUID, ok := parseCloudInstanceUUID(e.EipId)
+		if !ok {
+			glog.Warningf("cmdb sync eip(skip invalid instance uuid): system_id=%s eip_id=%q", systemID, e.EipId)
+			st.Errors++
+			continue
+		}
 		sysNode := effectiveSysNodeName(eipTenantProvider(e), strings.TrimSpace(e.RegionName), "")
 		if sysNode == "" {
 			glog.Warningf("cmdb sync eip(skip no sys_node): system_id=%s eip_id=%s", systemID, e.EipId)
@@ -1010,7 +1205,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			continue
 		}
 		q := map[string]any{
-			"q": fmt.Sprintf("_type:EIP,uuid:%s,system_id:%s", e.EipId, systemID),
+			"q": fmt.Sprintf("_type:EIP,uuid:%s,system_id:%s", eipUUID, systemID),
 		}
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
@@ -1050,7 +1245,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			continue
 		}
 		payload := mergeAttrMaps(map[string]any{
-			"uuid":      strings.TrimSpace(e.EipId),
+			"uuid":      eipUUID,
 			"ci_type":   "EIP",
 			"system_id": systemID,
 		}, fields)
@@ -1066,13 +1261,20 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 	return st
 }
 
-// addCMDBELBs 写入 CI 类型 ELB；与节点关联字段 sys_node_name + system_id（与 ECS/EIP 同源 effectiveSysNodeName）。
+// addCMDBELBs 写入 CI 类型 ELB；唯一查找条件为 uuid（云负载均衡实例 ID，RFC4122）+ system_id。
 func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyncStats {
 	st := componentSyncStats{}
 	for _, e := range elbs {
 		if e == nil || strings.TrimSpace(e.ID) == "" {
 			continue
 		}
+		elbUUID, ok := parseCloudInstanceUUID(e.ID)
+		if !ok {
+			glog.Warningf("cmdb sync elb(skip invalid instance uuid): system_id=%s elb_id=%q", systemID, e.ID)
+			st.Errors++
+			continue
+		}
+		elbName := strings.TrimSpace(e.Name)
 		sysNode := effectiveSysNodeName(elbTenantProvider(e), strings.TrimSpace(e.RegionName), "")
 		if sysNode == "" {
 			glog.Warningf("cmdb sync elb(skip no sys_node): system_id=%s elb_id=%s", systemID, e.ID)
@@ -1080,7 +1282,7 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 			continue
 		}
 		q := map[string]any{
-			"q": fmt.Sprintf("_type:ELB,uuid:%s,system_id:%s", strings.TrimSpace(e.ID), systemID),
+			"q": fmt.Sprintf("_type:ELB,uuid:%s,system_id:%s", elbUUID, systemID),
 		}
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
@@ -1089,7 +1291,8 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 			continue
 		}
 		fields := map[string]any{
-			"elb_name":               strings.TrimSpace(e.Name),
+			"uuid":                   elbUUID,
+			"elb_name":               elbName,
 			"listener_protocol_port": strings.TrimSpace(e.Listeners),
 			"ipv4_private_address":   strings.TrimSpace(e.IPv4Private),
 			"ipv4_public_address":    strings.TrimSpace(e.IPv4Public),
@@ -1119,7 +1322,6 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 			continue
 		}
 		payload := mergeAttrMaps(map[string]any{
-			"uuid":      strings.TrimSpace(e.ID),
 			"ci_type":   "ELB",
 			"system_id": systemID,
 		}, fields)

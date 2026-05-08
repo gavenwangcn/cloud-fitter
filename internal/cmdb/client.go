@@ -227,6 +227,26 @@ func (c *Client) UpdateCI(_id string, fields map[string]any) (map[string]any, er
 	return c.doJSON("PUT", u.String(), "application/json", b)
 }
 
+// DeleteCI 硬删除 CI，DELETE /api/v0.1/ci/<ci_id>，签名方式与 cmdb_api.delete_ci 一致。
+func (c *Client) DeleteCI(ciID string) (map[string]any, error) {
+	id := strings.TrimSpace(ciID)
+	if id == "" {
+		return nil, fmt.Errorf("delete ci: empty ci id")
+	}
+	path := "/api/v0.1/ci/" + id
+	u, err := url.Parse(c.BaseURL + path)
+	if err != nil {
+		return nil, err
+	}
+	p := map[string]any{}
+	c.BuildAPIKey(u.Path, p)
+	b, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	return c.doJSON("DELETE", u.String(), "application/json", b)
+}
+
 func (c *Client) postCIBody(p map[string]any) (map[string]any, error) {
 	u, err := url.Parse(c.BaseURL + "/api/v0.1/ci")
 	if err != nil {
