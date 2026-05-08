@@ -14,6 +14,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	ccesvc "github.com/cloud-fitter/cloud-fitter/internal/server/cce"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/cert"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/ecs"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/elb"
@@ -187,6 +188,30 @@ func ElbByAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"elbs": resp}, err)
 }
 
+// CertByAccount POST /apis/certificates/by-account（华为云 CCM / SCM 证书列表）
+func CertByAccount(w http.ResponseWriter, r *http.Request) {
+	begin := time.Now()
+	body, err := decodeListByAccount(r)
+	if err != nil {
+		glog.Errorf("certificates api decode body failed: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	glog.Infof("certificates api request provider=%d account=%q system=%q", body.Provider, body.AccountName, body.SystemName)
+	if body.SystemName != "" {
+		resp, err := certificatesBySystemName(r.Context(), body.SystemName)
+		glog.Infof("certificates api response(by-system) system=%q rows=%d err=%v elapsed=%v",
+			body.SystemName, len(resp), err, time.Since(begin))
+		writeJSON(w, map[string]any{"certificates": resp}, err)
+		return
+	}
+	ctx := scope.WithAccountName(r.Context(), body.AccountName)
+	resp, err := cert.List(ctx, pbtenant.CloudProvider(body.Provider))
+	glog.Infof("certificates api response(by-account) provider=%d account=%q rows=%d err=%v elapsed=%v",
+		body.Provider, body.AccountName, len(resp), err, time.Since(begin))
+	writeJSON(w, map[string]any{"certificates": resp}, err)
+}
+
 func resolveSystemAccounts(systemName string) ([]AccountScope, error) {
 	if systemAccountResolver == nil {
 		return nil, nil
@@ -315,6 +340,23 @@ func elbBySystemName(ctx0 context.Context, systemName string) ([]*elb.Instance, 
 	for _, acc := range accounts {
 		ctx := scope.WithAccountName(ctx0, acc.AccountName)
 		resp, err := elb.List(ctx, pbtenant.CloudProvider(acc.Provider))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, resp...)
+	}
+	return out, nil
+}
+
+func certificatesBySystemName(ctx0 context.Context, systemName string) ([]*cert.Instance, error) {
+	var out []*cert.Instance
+	accounts, err := resolveSystemAccounts(systemName)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accounts {
+		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+		resp, err := cert.List(ctx, pbtenant.CloudProvider(acc.Provider))
 		if err != nil {
 			return nil, err
 		}

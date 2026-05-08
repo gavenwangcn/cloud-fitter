@@ -171,3 +171,26 @@ export const ELB_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'onlineTime', title: '上线时间' },
   { dataIndex: 'status', title: '状态' },
 ];
+
+/** 华为云 SSL 证书（CCM / SCM，POST /apis/certificates/by-account） */
+export const CERTIFICATE_FIELDS: ResourceFieldDef[] = [
+  { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'accountName', title: '云账号' },
+  { dataIndex: 'regionName', title: '地域' },
+  { dataIndex: 'id', title: '证书 ID' },
+  { dataIndex: 'name', title: '证书名称' },
+  { dataIndex: 'domain', title: '绑定域名' },
+  { dataIndex: 'sans', title: '附加域名(SANs)' },
+  { dataIndex: 'certificateType', title: '证书类型' },
+  { dataIndex: 'brand', title: '证书品牌' },
+  { dataIndex: 'status', title: '签发状态' },
+  { dataIndex: 'expireTime', title: '过期时间' },
+  { dataIndex: 'validityPeriodMonths', title: '有效期(月)' },
+  { dataIndex: 'domainType', title: '域名类型' },
+  { dataIndex: 'domainCount', title: '可绑定域名数' },
+  { dataIndex: 'wildcardCount', title: '可绑定泛域名数' },
+  { dataIndex: 'signatureAlgorithm', title: '签名算法' },
+  { dataIndex: 'deploySupport', title: '支持部署' },
+  { dataIndex: 'enterpriseProjectId', title: '企业项目 ID' },
+  { dataIndex: 'description', title: '描述' },
+];

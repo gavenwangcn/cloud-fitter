@@ -120,6 +120,8 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
 			jsonapi.EipByAccount(w, r)
 		case r.URL.Path == "/apis/elb/by-account" && r.Method == http.MethodPost:
 			jsonapi.ElbByAccount(w, r)
+		case r.URL.Path == "/apis/certificates/by-account" && r.Method == http.MethodPost:
+			jsonapi.CertByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-account" && r.Method == http.MethodPost:
 			jsonapi.BillingSummaryByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-system-id" && r.Method == http.MethodPost:

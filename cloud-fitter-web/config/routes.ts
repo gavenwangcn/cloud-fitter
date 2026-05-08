@@ -40,6 +40,10 @@ export default [
         component: './elb',
       },
       {
+        path: '/certificates',
+        component: './certificates',
+      },
+      {
         path: '/config',
         component: './config',
       },

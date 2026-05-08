@@ -54,4 +54,9 @@ export const menuList = [
     key: 'elb',
     icon: 'icon-quanju1',
   },
+  {
+    title: '证书',
+    key: 'certificates',
+    icon: 'icon-quanju1',
+  },
 ];
