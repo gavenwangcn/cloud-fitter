@@ -1143,7 +1143,7 @@ func eipCIChanged(row map[string]any, want map[string]any) bool {
 	return false
 }
 
-// cmdbSyncEIPBandwidthType 同步至 CMDB 的 bandwidth_type：华为侧 PER（独享带宽）写「独享」，其余写「共享」；不同步英文 PER/WHOLE，避免多 EIP 同写 PER 触发 CMDB 错误唯一约束。
+// cmdbSyncEIPBandwidthType 同步至 CMDB 的 bandwidth_type（模型侧多为短文本）：华为侧 PER（独享带宽）写「独享」，其余写「共享」；不同步英文 PER/WHOLE，避免多 EIP 同写 PER 触发 CMDB 错误唯一约束。
 // 可选环境变量覆盖展示文案：CLOUD_FITTER_CMDB_EIP_BW_EXCLUSIVE、CLOUD_FITTER_CMDB_EIP_BW_SHARED。
 func cmdbSyncEIPBandwidthType(raw string) string {
 	exclusive := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_BW_EXCLUSIVE"))
