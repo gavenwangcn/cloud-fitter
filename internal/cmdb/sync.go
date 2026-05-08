@@ -24,6 +24,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/billing"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/elb"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
 )
 
@@ -46,6 +47,7 @@ type systemSyncStats struct {
 	Host       componentSyncStats
 	Middleware componentSyncStats
 	EIP        componentSyncStats
+	ELB        componentSyncStats
 	Billing    componentSyncStats
 }
 
@@ -142,6 +144,10 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	if err != nil {
 		return errors.Wrap(err, "ListEipBySystemName")
 	}
+	elbList, err := jsonapi.ListElbBySystemName(ctx, systemName)
+	if err != nil {
+		return errors.Wrap(err, "ListElbBySystemName")
+	}
 	billLoc, lerr := time.LoadLocation("Asia/Shanghai")
 	if lerr != nil {
 		billLoc = time.Local
@@ -161,6 +167,7 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 
 	systemNodes := collectSystemNodeKeys(ecsResp, rdsResp, redisResp, kafkaResp, cceResp)
 	mergeEIPSystemNodeKeys(systemNodes, eipList)
+	mergeELBSystemNodeKeys(systemNodes, elbList)
 	k8sList := buildK8sClusters(cceResp)
 	hosts := buildHosts(ecsResp, ecsIDToCceUID)
 	middlewares := buildMiddlewares(rdsResp, redisResp, kafkaResp)
@@ -173,6 +180,7 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	stats.Host = s.addCMDBHosts(systemID, hosts)
 	stats.Middleware = s.addCMDBMiddlewares(systemID, middlewares)
 	stats.EIP = s.addCMDBEIPs(systemID, eipList)
+	stats.ELB = s.addCMDBELBs(systemID, elbList)
 	stats.Billing = componentSyncStats{}
 	for _, acc := range acco {
 		billResp, err := billing.ListSummary(ctx, &pbbilling.ListBillingSummaryReq{
@@ -190,13 +198,14 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		stats.Billing.Errors += st.Errors
 	}
 	glog.Infof(
-		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,err=%d) host(add=%d,upd=%d,skip=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,err=%d) eip(add=%d,upd=%d,skip=%d,err=%d) billing(add=%d,upd=%d,skip=%d,err=%d)",
+		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,err=%d) host(add=%d,upd=%d,skip=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,err=%d) eip(add=%d,upd=%d,skip=%d,err=%d) elb(add=%d,upd=%d,skip=%d,err=%d) billing(add=%d,upd=%d,skip=%d,err=%d)",
 		systemID, systemName,
 		stats.SystemNode.Added, stats.SystemNode.Updated, stats.SystemNode.Skipped, stats.SystemNode.Errors,
 		stats.K8s.Added, stats.K8s.Updated, stats.K8s.Skipped, stats.K8s.Errors,
 		stats.Host.Added, stats.Host.Updated, stats.Host.Skipped, stats.Host.Errors,
 		stats.Middleware.Added, stats.Middleware.Updated, stats.Middleware.Skipped, stats.Middleware.Errors,
 		stats.EIP.Added, stats.EIP.Updated, stats.EIP.Skipped, stats.EIP.Errors,
+		stats.ELB.Added, stats.ELB.Updated, stats.ELB.Skipped, stats.ELB.Errors,
 		stats.Billing.Added, stats.Billing.Updated, stats.Billing.Skipped, stats.Billing.Errors,
 	)
 	return nil
@@ -882,6 +891,34 @@ func mergeEIPSystemNodeKeys(nodes map[string]struct{}, eips []*eip.Instance) {
 	}
 }
 
+// mergeELBSystemNodeKeys 与 EIP 一致：节点名为 effectiveSysNodeName(云, 地域, "")，与 ECS 默认节点命名规则对齐。
+func mergeELBSystemNodeKeys(nodes map[string]struct{}, elbs []*elb.Instance) {
+	for _, e := range elbs {
+		if e == nil {
+			continue
+		}
+		k := effectiveSysNodeName(elbTenantProvider(e), strings.TrimSpace(e.RegionName), "")
+		if k != "" {
+			nodes[k] = struct{}{}
+		}
+	}
+}
+
+func elbTenantProvider(inst *elb.Instance) pbtenant.CloudProvider {
+	switch strings.ToLower(strings.TrimSpace(inst.Provider)) {
+	case "huawei":
+		return pbtenant.CloudProvider_huawei
+	case "ali", "aliyun":
+		return pbtenant.CloudProvider_ali
+	case "tencent":
+		return pbtenant.CloudProvider_tencent
+	case "aws":
+		return pbtenant.CloudProvider_aws
+	default:
+		return pbtenant.CloudProvider_huawei
+	}
+}
+
 func eipTenantProvider(inst *eip.Instance) pbtenant.CloudProvider {
 	switch strings.ToLower(strings.TrimSpace(inst.Provider)) {
 	case "huawei":
@@ -1024,6 +1061,75 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			continue
 		}
 		glog.Infof("cmdb sync eip(add ok): system_id=%s eip_id=%s resp=%+v", systemID, e.EipId, d)
+		st.Added++
+	}
+	return st
+}
+
+// addCMDBELBs 写入 CI 类型 ELB；与节点关联字段 sys_node_name + system_id（与 ECS/EIP 同源 effectiveSysNodeName）。
+func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyncStats {
+	st := componentSyncStats{}
+	for _, e := range elbs {
+		if e == nil || strings.TrimSpace(e.ID) == "" {
+			continue
+		}
+		sysNode := effectiveSysNodeName(elbTenantProvider(e), strings.TrimSpace(e.RegionName), "")
+		if sysNode == "" {
+			glog.Warningf("cmdb sync elb(skip no sys_node): system_id=%s elb_id=%s", systemID, e.ID)
+			st.Errors++
+			continue
+		}
+		q := map[string]any{
+			"q": fmt.Sprintf("_type:ELB,uuid:%s,system_id:%s", strings.TrimSpace(e.ID), systemID),
+		}
+		exists, err := s.Client.GetCIID(q)
+		if err != nil {
+			glog.Errorf("cmdb sync elb(get): system_id=%s elb_id=%s err=%v", systemID, e.ID, err)
+			st.Errors++
+			continue
+		}
+		fields := map[string]any{
+			"elb_name":               strings.TrimSpace(e.Name),
+			"listener_protocol_port": strings.TrimSpace(e.Listeners),
+			"ipv4_private_address":   strings.TrimSpace(e.IPv4Private),
+			"ipv4_public_address":    strings.TrimSpace(e.IPv4Public),
+			"ipv4_bandwidth":         strconv.FormatInt(int64(e.IPv4BandwidthMbit), 10),
+			"sys_node_name":          sysNode,
+		}
+		if exists != "" {
+			row, err := s.Client.GetCIFirst(q)
+			if err != nil {
+				glog.Errorf("cmdb sync elb(get row): system_id=%s elb_id=%s err=%v", systemID, e.ID, err)
+				st.Errors++
+				continue
+			}
+			if row != nil && !eipCIChanged(row, fields) {
+				glog.Infof("cmdb sync elb(skip): system_id=%s elb_id=%s id=%s", systemID, e.ID, exists)
+				st.Skipped++
+				continue
+			}
+			_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{"ci_type": "ELB"}, fields))
+			if err != nil {
+				glog.Errorf("cmdb sync elb(update): system_id=%s elb_id=%s id=%s err=%v", systemID, e.ID, exists, err)
+				st.Errors++
+				continue
+			}
+			glog.Infof("cmdb sync elb(update ok): system_id=%s elb_id=%s id=%s", systemID, e.ID, exists)
+			st.Updated++
+			continue
+		}
+		payload := mergeAttrMaps(map[string]any{
+			"uuid":      strings.TrimSpace(e.ID),
+			"ci_type":   "ELB",
+			"system_id": systemID,
+		}, fields)
+		d, err := s.Client.AddCI(payload)
+		if err != nil {
+			glog.Errorf("cmdb sync elb(add): system_id=%s elb_id=%s err=%v", systemID, e.ID, err)
+			st.Errors++
+			continue
+		}
+		glog.Infof("cmdb sync elb(add ok): system_id=%s elb_id=%s resp=%+v", systemID, e.ID, d)
 		st.Added++
 	}
 	return st
