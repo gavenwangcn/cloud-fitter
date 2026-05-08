@@ -221,8 +221,8 @@ func queryListeners(cli *hwelb.ElbClient, lbID string) ([]string, error) {
 func pickPublicIPAndBandwidth(lb elbmodel.LoadBalancer, eipBW map[string]int32) (string, int32) {
 	var ip string
 	var bw int32
-	if lb.Publicips != nil {
-		for _, p := range *lb.Publicips {
+	if len(lb.Publicips) > 0 {
+		for _, p := range lb.Publicips {
 			if strings.TrimSpace(p.PublicipAddress) == "" {
 				continue
 			}

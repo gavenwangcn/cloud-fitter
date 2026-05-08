@@ -62,7 +62,7 @@ func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, bil
 			cat := billingagg.HuaweiCategoryFromServiceType(svc)
 			amt := 0.0
 			if row.ConsumeAmount != nil {
-				amt = *row.ConsumeAmount
+				amt = row.ConsumeAmount.InexactFloat64()
 			}
 			a := m[cat]
 			if a == nil {

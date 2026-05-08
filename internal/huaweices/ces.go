@@ -20,7 +20,7 @@ import (
 // Huawei CES 批量接口单请求最多 10 个指标（见 BatchListMetricDataRequestBody.Metrics 注释）。
 const MaxMetricsPerBatch = 10
 
-// Period1Hour 聚合粒度：3600 秒，小时级数据点（文档 period 取值）。
+// Period1Hour 聚合粒度：3600 秒（与 cesmodel.BatchListMetricDataRequestBodyPeriodEnum.E_3600 一致）。
 const Period1Hour = "3600"
 
 // NewClient 与 ECS/RDS 相同：解析区域对应 project_id 后创建 CES 客户端。
@@ -84,22 +84,22 @@ func BatchQueryAverageSeries(ctx context.Context, cli *hwces.CesClient, queries 
 		chunk := queries[start:end]
 		metrics := make([]cesmodel.MetricInfo, 0, len(chunk))
 		for _, q := range chunk {
-			v := q.DimValue
 			dims := make([]cesmodel.MetricsDimension, 0, 1+len(q.ExtraDims))
-			dims = append(dims, cesmodel.MetricsDimension{Name: q.DimName, Value: &v})
+			dims = append(dims, cesmodel.MetricsDimension{Name: q.DimName, Value: q.DimValue})
 			for _, e := range q.ExtraDims {
-				ev := e.Value
-				en := e.Name
-				dims = append(dims, cesmodel.MetricsDimension{Name: en, Value: &ev})
+				dims = append(dims, cesmodel.MetricsDimension{Name: e.Name, Value: e.Value})
 			}
 			metrics = append(metrics, cesmodel.MetricInfo{
 				Namespace: q.Namespace, MetricName: q.MetricName, Dimensions: dims,
 			})
 		}
+		periodEnum := cesmodel.GetBatchListMetricDataRequestBodyPeriodEnum()
+		filterEnum := cesmodel.GetFilterEnum()
+		avgFilter := filterEnum.AVERAGE
 		body := &cesmodel.BatchListMetricDataRequestBody{
 			Metrics: metrics,
-			Period:  Period1Hour,
-			Filter:  "average",
+			Period:  periodEnum.E_3600,
+			Filter:  &avgFilter,
 			From:    fromMs,
 			To:      toMs,
 		}
@@ -115,8 +115,8 @@ func BatchQueryAverageSeries(ctx context.Context, cli *hwces.CesClient, queries 
 			var keyParts []string
 			if m.Dimensions != nil {
 				for _, d := range *m.Dimensions {
-					if d.Value != nil && *d.Value != "" {
-						keyParts = append(keyParts, *d.Value)
+					if strings.TrimSpace(d.Value) != "" {
+						keyParts = append(keyParts, d.Value)
 					}
 				}
 			}

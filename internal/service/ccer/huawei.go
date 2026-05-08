@@ -2,7 +2,6 @@ package ccer
 
 import (
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -98,20 +97,16 @@ func ecsFlavorRAMMB(f *ecsmodel.ServerFlavor) int32 {
 	return int32(n)
 }
 
-func cceNodePhaseString(p *ccemodel.V3NodeStatusPhase) string {
+func cceNodePhaseString(p *ccemodel.NodeStatusPhase) string {
 	if p == nil {
 		return ""
 	}
-	b, err := json.Marshal(p)
-	if err != nil {
-		return ""
-	}
-	return strings.Trim(string(b), `"`)
+	return p.Value()
 }
 
 func cceNodePhaseNormal(phase string) bool {
 	switch strings.ToLower(strings.TrimSpace(phase)) {
-	case "active", "installed":
+	case "active", "installed", "installing":
 		return true
 	default:
 		return false
