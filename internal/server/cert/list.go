@@ -3,6 +3,8 @@ package cert
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,33 +67,33 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 		return nil, errors.Errorf("no tenants for provider %v account %q", provider, scope.AccountName(ctx))
 	}
 
-	regions := tenanter.GetAllRegionIds(provider)
-	glog.Infof("cert list start provider=%s account_filter=%q tenant_count=%d region_count=%d",
-		provider.String(), scope.AccountName(ctx), len(tenanters), len(regions))
+	scmRegions := huaweiSCMEndpointRegions()
+	glog.Infof("cert list start provider=%s account_filter=%q tenant_count=%d scm_endpoint_regions=%v",
+		provider.String(), scope.AccountName(ctx), len(tenanters), scmRegions)
 
 	var (
 		wg  sync.WaitGroup
 		mu  sync.Mutex
 		all []*Instance
 	)
-	wg.Add(len(tenanters) * len(regions))
+	wg.Add(len(tenanters) * len(scmRegions))
 	for _, t := range tenanters {
-		for _, r := range regions {
-			go func(tenant tenanter.Tenanter, region tenanter.Region) {
+		for _, scmReg := range scmRegions {
+			go func(tenant tenanter.Tenanter, scmRegion string) {
 				defer wg.Done()
-				items, err := listHuaweiCertificatesByRegion(tenant, region)
+				items, err := listHuaweiCertificatesForTenant(tenant, scmRegion)
 				if err != nil {
-					glog.Errorf("cert list failed account=%s region=%s err=%v", tenant.AccountName(), region.GetName(), err)
+					glog.Errorf("cert list failed account=%s scm_region=%s err=%v", tenant.AccountName(), scmRegion, err)
 					return
 				}
 				mu.Lock()
 				all = append(all, items...)
 				mu.Unlock()
-			}(t, r)
+			}(t, scmReg)
 		}
 	}
 	wg.Wait()
-	// 同一账号下证书 ID 全局唯一；多地域 endpoint 可能返回相同条目，按账号+ID 去重保留首次出现的地域。
+	// 多 SCM 接入区可能返回相同证书；同一账号下证书 ID 全局唯一，按账号+ID 去重。
 	seen := make(map[string]struct{}, len(all))
 	uniq := make([]*Instance, 0, len(all))
 	for _, x := range all {
@@ -110,13 +112,45 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 	return uniq, nil
 }
 
-func listHuaweiCertificatesByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]*Instance, error) {
+// huaweiSCMEndpointRegions 返回要轮询的 SCM（CCM）接入 Region 列表（每个对应 scm.<region>.myhuaweicloud.com）。
+// 并非所有业务 Region 都有 SCM 域名；与 ECS 枚举地域无关，需单独配置接入区。
+//
+// 优先级：
+//  1. CLOUD_FITTER_HUAWEI_SCM_REGIONS — 逗号分隔，例如 "cn-north-4,ap-southeast-1,ru-moscow-1"
+//  2. CLOUD_FITTER_HUAWEI_SCM_REGION — 兼容旧版，仅单个接入区
+//  3. 默认 cn-north-4、ap-southeast-1、ru-moscow-1（华北 SCM + 香港/国际站 + 俄罗斯莫斯科接入）
+func huaweiSCMEndpointRegions() []string {
+	if raw := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_SCM_REGIONS")); raw != "" {
+		var out []string
+		seen := make(map[string]struct{})
+		for _, p := range strings.Split(raw, ",") {
+			r := strings.TrimSpace(p)
+			if r == "" {
+				continue
+			}
+			if _, ok := seen[r]; ok {
+				continue
+			}
+			seen[r] = struct{}{}
+			out = append(out, r)
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	if single := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_SCM_REGION")); single != "" {
+		return []string{single}
+	}
+	return []string{"cn-north-4", "ap-southeast-1", "ru-moscow-1"}
+}
+
+func listHuaweiCertificatesForTenant(tenant tenanter.Tenanter, endpointRegion string) ([]*Instance, error) {
 	begin := time.Now()
 	t, ok := tenant.(*tenanter.AccessKeyTenant)
 	if !ok {
 		return nil, nil
 	}
-	rName := region.GetName()
+	rName := endpointRegion
 	baseAuth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 	iamHc := hwiam.IamClientBuilder().
 		WithRegion(huaweicloudregion.EndpointForService("iam", rName)).
@@ -159,7 +193,7 @@ func listHuaweiCertificatesByRegion(tenant tenanter.Tenanter, region tenanter.Re
 				out = append(out, &Instance{
 					Provider:             "huawei",
 					AccountName:          tenant.AccountName(),
-					RegionName:           rName,
+					RegionName:           rName, // SCM 接入地域（证书为账号级，非资源所属 VPC 地域）
 					ID:                   c.Id,
 					Name:                 c.Name,
 					Domain:               c.Domain,

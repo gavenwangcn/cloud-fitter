@@ -101,11 +101,13 @@ enum TencentRegionId {
   tc_na_toronto = 19;       // 多伦多
 }
 
-// 华为云区域，需要将对应的 _ 转化为 -。当前仅 cn-east-3、cn-east-4。
+// 华为云区域，需要将对应的 _ 转化为 -。
 enum HuaweiRegionId {
   hw_all = 0;
   hw_cn_east_3 = 1; // cn-east-3
   hw_cn_east_4 = 2; // cn-east-4
+  hw_ap_southeast_1 = 3; // ap-southeast-1 中国香港
+  hw_ru_moscow_1 = 4; // ru-moscow-1 俄罗斯（莫斯科）
 }
 
 // 亚马逊云区域，需要将对应的 _ 转化为 -
