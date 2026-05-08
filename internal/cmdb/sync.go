@@ -1143,24 +1143,23 @@ func eipCIChanged(row map[string]any, want map[string]any) bool {
 	return false
 }
 
-// cmdbSyncEIPBandwidthType 同步至 CMDB 的 bandwidth_type。
-// 默认写入华为枚举名 PER / WHOLE，避免 CMDB 属性「预定义值」校验失败（若模型允许中文，可通过环境变量覆盖）。
-// CLOUD_FITTER_CMDB_EIP_BW_PER、CLOUD_FITTER_CMDB_EIP_BW_OTHER（可选）。
+// cmdbSyncEIPBandwidthType 同步至 CMDB 的 bandwidth_type：华为侧 PER（独享带宽）写「独享」，其余写「共享」；不同步英文 PER/WHOLE，避免多 EIP 同写 PER 触发 CMDB 错误唯一约束。
+// 可选环境变量覆盖展示文案：CLOUD_FITTER_CMDB_EIP_BW_EXCLUSIVE、CLOUD_FITTER_CMDB_EIP_BW_SHARED。
 func cmdbSyncEIPBandwidthType(raw string) string {
-	per := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_BW_PER"))
-	if per == "" {
-		per = "PER"
+	exclusive := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_BW_EXCLUSIVE"))
+	if exclusive == "" {
+		exclusive = "独享"
 	}
-	other := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_BW_OTHER"))
-	if other == "" {
-		other = "WHOLE"
+	shared := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_BW_SHARED"))
+	if shared == "" {
+		shared = "共享"
 	}
 	r := strings.TrimSpace(raw)
 	switch {
 	case r == "&{PER}", strings.EqualFold(r, "PER"):
-		return per
+		return exclusive
 	default:
-		return other
+		return shared
 	}
 }
 
