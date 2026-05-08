@@ -227,24 +227,28 @@ func (c *Client) UpdateCI(_id string, fields map[string]any) (map[string]any, er
 	return c.doJSON("PUT", u.String(), "application/json", b)
 }
 
-// DeleteCI 硬删除 CI，DELETE /api/v0.1/ci/<ci_id>，签名方式与 cmdb_api.delete_ci 一致。
+// DeleteCI 硬删除 CI：DELETE /api/v0.1/ci/<ci_id>。
+// 服务端：cmdb-api api/views/cmdb/ci.py CIView.delete(ci_id)，仅使用路径参数。
+// 鉴权：api/lib/perm/auth.py _auth_with_key 从 request.values 读 _key/_secret；Flask 下查询参数会进入 values，JSON body 不一定参与签名参数合并。
+// 前端控制台：cmdb-ui modules/cmdb/api/ci.js deleteCI 为无 body 的 DELETE + Access-Token。
+// 本客户端（API Key）：与 GetCI 一致，将 BuildAPIKey 结果挂到 URL query，避免 DELETE + JSON 与鉴权不一致。
 func (c *Client) DeleteCI(ciID string) (map[string]any, error) {
 	id := strings.TrimSpace(ciID)
 	if id == "" {
 		return nil, fmt.Errorf("delete ci: empty ci id")
 	}
-	path := "/api/v0.1/ci/" + id
-	u, err := url.Parse(c.BaseURL + path)
+	u, err := url.Parse(c.BaseURL + "/api/v0.1/ci/" + id)
 	if err != nil {
 		return nil, err
 	}
 	p := map[string]any{}
 	c.BuildAPIKey(u.Path, p)
-	b, err := json.Marshal(p)
-	if err != nil {
-		return nil, err
+	qv := u.Query()
+	for _, k := range sortedKeys(p) {
+		qv.Set(k, fmt.Sprint(p[k]))
 	}
-	return c.doJSON("DELETE", u.String(), "application/json", b)
+	u.RawQuery = qv.Encode()
+	return c.doJSON("DELETE", u.String(), "application/json", nil)
 }
 
 func (c *Client) postCIBody(p map[string]any) (map[string]any, error) {
