@@ -506,6 +506,54 @@ func (s *Store) ToCloudConfigs() (*pbtenant.CloudConfigs, map[string]int32, erro
 	return cfg, huaweiScopeByName, rows.Err()
 }
 
+// MaxSystemIDNumericSuffixForPrefix 扫描 systems.system_id，只统计「prefix + 十进制数字」形式（如 YH-000003、D-12），返回其中最大数字；无匹配返回 0。
+func (s *Store) MaxSystemIDNumericSuffixForPrefix(prefix string) (uint64, error) {
+	if s == nil || s.db == nil {
+		return 0, nil
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return 0, nil
+	}
+	rows, err := s.db.Query(`SELECT system_id FROM systems WHERE system_id LIKE ?`, prefix+"%")
+	if err != nil {
+		return 0, errors.WithMessage(err, "query system_id by prefix")
+	}
+	defer rows.Close()
+	var max uint64
+	for rows.Next() {
+		var sid string
+		if err := rows.Scan(&sid); err != nil {
+			return 0, err
+		}
+		if !strings.HasPrefix(sid, prefix) {
+			continue
+		}
+		tail := sid[len(prefix):]
+		if tail == "" {
+			continue
+		}
+		ok := true
+		for i := 0; i < len(tail); i++ {
+			if tail[i] < '0' || tail[i] > '9' {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseUint(tail, 10, 64)
+		if err != nil {
+			continue
+		}
+		if n > max {
+			max = n
+		}
+	}
+	return max, rows.Err()
+}
+
 // Count 返回表中行数。
 func (s *Store) Count() (int, error) {
 	var n int

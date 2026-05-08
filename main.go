@@ -27,6 +27,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/server"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
+	"github.com/cloud-fitter/cloud-fitter/internal/systemidseq"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -40,7 +41,7 @@ var (
 	cmdbSecret  = flag.String("cmdb-secret", "", "CMDB API signing secret (overrides CLOUD_FITTER_CMDB_SECRET if set)")
 )
 
-func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
+func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer, seqStore *systemidseq.Store) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -126,6 +127,8 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
 			jsonapi.BillingSummaryByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-system-id" && r.Method == http.MethodPost:
 			jsonapi.BillingSummaryBySystemID(w, r, store)
+		case r.URL.Path == "/apis/system-id/next" && r.Method == http.MethodPost:
+			jsonapi.NextSystemID(w, r, seqStore)
 		default:
 			mux.ServeHTTP(w, r)
 		}
@@ -137,8 +140,10 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer) error {
 func main() {
 	var configFile string
 	var sqlitePath string
+	var dataDir string
 	flag.StringVar(&configFile, "conf", "config.yaml", "config file path")
 	flag.StringVar(&sqlitePath, "sqlitedb", "cloud-fitter.db", "sqlite database path (当未使用 MySQL 时)")
+	flag.StringVar(&dataDir, "data-dir", "data", "应用数据目录（系统ID序号文件 YH/D）；可被环境变量 CLOUD_FITTER_DATA_DIR 覆盖")
 	flag.Parse()
 	defer glog.Flush()
 
@@ -160,6 +165,25 @@ func main() {
 		}
 	}
 	defer store.Close()
+
+	seqDir := systemidseq.DataDirFromEnvOr(dataDir)
+	seqStore, err := systemidseq.Open(seqDir)
+	if err != nil {
+		glog.Fatalf("system id seq store: %v", err)
+	}
+	seqStore.SetMaxSuffixQuery(func(kind string) (uint64, error) {
+		var prefix string
+		switch strings.ToUpper(strings.TrimSpace(kind)) {
+		case "YH":
+			prefix = "YH-"
+		case "D":
+			prefix = "D-"
+		default:
+			return 0, nil
+		}
+		return store.MaxSystemIDNumericSuffixForPrefix(prefix)
+	})
+	glog.Infof("system id sequences dir=%s (merged with DB max suffix)", seqDir)
 
 	n, err := store.Count()
 	if err != nil {
@@ -237,7 +261,7 @@ func main() {
 		glog.Infof("CMDB daily sync enabled at 02:00 (local)")
 	}
 
-	if err := run(store, cmdbSyncer); err != nil {
+	if err := run(store, cmdbSyncer, seqStore); err != nil {
 		glog.Fatal(err)
 	}
 }

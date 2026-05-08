@@ -9,8 +9,8 @@ import {
   updateSystem,
   SystemRow,
 } from '@/services/systemManage';
+import { allocateNextSystemId } from '@/services/nextSystemId';
 
-const genSystemID = (): string => `sys-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
 const DEFAULT_PAGE_SIZE = 50;
 const dateRule = { pattern: /^\d{4}-\d{2}-\d{2}$/, message: '请使用 YYYY-MM-DD' };
 
@@ -62,7 +62,6 @@ const SystemPage: React.FC = () => {
     setEditingId(null);
     void loadConfigsForModal();
     form.resetFields();
-    form.setFieldsValue({ systemId: genSystemID() });
     setModalOpen(true);
   };
 
@@ -246,17 +245,41 @@ const SystemPage: React.FC = () => {
             rules={[{ required: true, message: '请输入系统ID' }]}
           >
             <Input
-              placeholder="系统ID"
+              placeholder="请点击右侧 YH 或 DFT 自动生成"
               addonAfter={
                 modalMode === 'create' ? (
-                  <Button
-                    type="link"
-                    size="small"
-                    style={{ padding: 0 }}
-                    onClick={() => form.setFieldsValue({ systemId: genSystemID() })}
-                  >
-                    生成
-                  </Button>
+                  <Space size={4}>
+                    <Button
+                      type="link"
+                      size="small"
+                      style={{ padding: '0 4px' }}
+                      onClick={async () => {
+                        try {
+                          const res = await allocateNextSystemId('YH');
+                          form.setFieldsValue({ systemId: res.systemId });
+                        } catch (e: any) {
+                          message.error(e?.message || e?.data?.error || '获取 YH 序号失败');
+                        }
+                      }}
+                    >
+                      YH
+                    </Button>
+                    <Button
+                      type="link"
+                      size="small"
+                      style={{ padding: '0 4px' }}
+                      onClick={async () => {
+                        try {
+                          const res = await allocateNextSystemId('D');
+                          form.setFieldsValue({ systemId: res.systemId });
+                        } catch (e: any) {
+                          message.error(e?.message || e?.data?.error || '获取 D 序号失败');
+                        }
+                      }}
+                    >
+                      DFT
+                    </Button>
+                  </Space>
                 ) : null
               }
             />
