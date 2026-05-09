@@ -104,6 +104,9 @@ func serverResourceChanged(row map[string]any, h hostRec) bool {
 }
 
 func middlewareResourceChanged(row map[string]any, m mwRec) bool {
+	if strings.TrimSpace(anyToCompareStr(row["instance_id"])) != strings.TrimSpace(m.InstanceID) {
+		return true
+	}
 	oCPU := anyToCompareStr(row["cpu_count"])
 	nCPU := strings.TrimSpace(m.CPU)
 	oMem := anyToCompareStr(row["ram_size"])

@@ -321,6 +321,23 @@ func parseCloudInstanceUUID(raw string) (string, bool) {
 	return u.String(), true
 }
 
+// namespaceMiddlewareNonRFC 用于将「非标准 UUID」的云实例 ID（如华为 RDS 带后缀）映射为确定性 RFC4122 UUID（SHA1 / UUID v5）。
+var namespaceMiddlewareNonRFC = uuid.MustParse("8f7e6d5c-4b3a-2918-0f1e-2d3c4b5a6978")
+
+// middlewareCMDBUUID 生成写入 CMDB middle_software.uuid 的值：若云返回已是合法 UUID 则规范化；
+// 否则用 UUID v5 稳定映射，便于与云实例 ID 一一对应。
+func middlewareCMDBUUID(instanceID string) (string, bool) {
+	instanceID = strings.TrimSpace(instanceID)
+	if instanceID == "" {
+		return "", false
+	}
+	if u, err := uuid.Parse(instanceID); err == nil {
+		return u.String(), true
+	}
+	u := uuid.NewSHA1(namespaceMiddlewareNonRFC, []byte(instanceID))
+	return u.String(), true
+}
+
 func uuidSetFromHosts(hosts []hostRec) map[string]struct{} {
 	m := make(map[string]struct{})
 	for _, h := range hosts {
@@ -334,7 +351,7 @@ func uuidSetFromHosts(hosts []hostRec) map[string]struct{} {
 func uuidSetFromMiddlewares(mws []mwRec) map[string]struct{} {
 	m := make(map[string]struct{})
 	for _, x := range mws {
-		if u, ok := parseCloudInstanceUUID(x.InstanceID); ok {
+		if u, ok := middlewareCMDBUUID(x.InstanceID); ok {
 			m[u] = struct{}{}
 		}
 	}
@@ -377,7 +394,7 @@ func uuidSetFromELBs(elbs []*elb.Instance) map[string]struct{} {
 	return m
 }
 
-// reconcileCMDBCIsNotInAPI 在接口已成功返回且本次列表可构造出非空 keep（合法 UUID）时，删除 CMDB 中同 _type、同 system_id 但 uuid 不在接口集合中的 CI。
+// reconcileCMDBCIsNotInAPI 在接口已成功返回且本次列表可构造出非空 keep（CMDB uuid / middle_software 与 middlewareCMDBUUID 一致）时，删除 CMDB 中同 _type、同 system_id 但 uuid 不在接口集合中的 CI。
 // 接口列表为空或无任何合法 UUID 时不删除（避免误清空）。middle_software 仅处理 resource_type 在 mwTypes 内的行。
 func (s *Syncer) reconcileCMDBCIsNotInAPI(ciType, systemID string, keep map[string]struct{}, mwTypes []string) componentSyncStats {
 	st := componentSyncStats{}
@@ -568,7 +585,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 }
 
 type mwRec struct {
-	InstanceID                                                         string // 云实例 ID（华为 RDS/DCS/DMS 等为 UUID）
+	InstanceID                                                         string // 云实例 ID（可能为非标准字符串；CMDB 写入 instance_id 属性，uuid 见 middlewareCMDBUUID）
 	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName, DiskStr string
 	CpuPeak30, CpuAvg30, MemPeak30, MenAvg30                             string
 }
@@ -982,29 +999,52 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 		if sysNode == "" {
 			continue
 		}
-		instUUID, ok := parseCloudInstanceUUID(m.InstanceID)
+		rawID := strings.TrimSpace(m.InstanceID)
+		if rawID == "" {
+			glog.Warningf("cmdb sync middleware(skip empty instance_id): system_id=%s name=%q", systemID, m.Name)
+			st.Errors++
+			continue
+		}
+		instUUID, ok := middlewareCMDBUUID(rawID)
 		if !ok {
-			glog.Warningf("cmdb sync middleware(skip invalid instance uuid): system_id=%s name=%q instance_id=%q",
-				systemID, m.Name, m.InstanceID)
+			glog.Warningf("cmdb sync middleware(skip instance_id): system_id=%s name=%q instance_id=%q", systemID, m.Name, rawID)
 			st.Errors++
 			continue
 		}
-		mq := map[string]any{
-			"q": fmt.Sprintf("_type:middle_software,uuid:%s,system_id:%s", instUUID, systemID),
-		}
-		exists, err := s.Client.GetCIID(mq)
+		// 唯一性对齐：优先 instance_id + system_id；旧数据仅有 uuid 时回退按 uuid 命中并补写 instance_id
+		mqInst := map[string]any{"q": fmt.Sprintf("_type:middle_software,instance_id:%s,system_id:%s", rawID, systemID)}
+		exists, err := s.Client.GetCIID(mqInst)
 		if err != nil {
-			glog.Errorf("cmdb sync middleware(get): system_id=%s name=%q err=%v", systemID, m.Name, err)
+			glog.Errorf("cmdb sync middleware(get by instance_id): system_id=%s name=%q err=%v", systemID, m.Name, err)
 			st.Errors++
 			continue
 		}
+		var row map[string]any
 		if exists != "" {
-			row, err := s.Client.GetCIFirst(mq)
+			row, err = s.Client.GetCIFirst(mqInst)
 			if err != nil {
-				glog.Errorf("cmdb sync middleware(get row): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
+				glog.Errorf("cmdb sync middleware(get row by instance_id): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
 				st.Errors++
 				continue
 			}
+		} else {
+			mqUUID := map[string]any{"q": fmt.Sprintf("_type:middle_software,uuid:%s,system_id:%s", instUUID, systemID)}
+			exists, err = s.Client.GetCIID(mqUUID)
+			if err != nil {
+				glog.Errorf("cmdb sync middleware(get by uuid): system_id=%s name=%q err=%v", systemID, m.Name, err)
+				st.Errors++
+				continue
+			}
+			if exists != "" {
+				row, err = s.Client.GetCIFirst(mqUUID)
+				if err != nil {
+					glog.Errorf("cmdb sync middleware(get row by uuid): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
+					st.Errors++
+					continue
+				}
+			}
+		}
+		if exists != "" {
 			if row != nil && !middlewareResourceChanged(row, m) {
 				glog.Infof("cmdb sync middleware(skip): system_id=%s name=%q id=%s", systemID, m.Name, exists)
 				st.Skipped++
@@ -1019,14 +1059,22 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 				}
 			}
 			_, err = s.Client.UpdateCI(exists, map[string]any{
-				"ci_type":     ciType,
-				"cpu_count":   m.CPU,
-				"ram_size":    m.Mem,
-				"disk_size":   m.DiskStr,
-				"cpu_peak_30": m.CpuPeak30,
-				"cpu_avg_30":  m.CpuAvg30,
-				"mem_peak_30": m.MemPeak30,
-				"men_avg_30":  m.MenAvg30,
+				"uuid":          instUUID,
+				"instance_id":   rawID,
+				"ci_type":       ciType,
+				"cpu_count":     m.CPU,
+				"ram_size":      m.Mem,
+				"disk_size":     m.DiskStr,
+				"cpu_peak_30":   m.CpuPeak30,
+				"cpu_avg_30":    m.CpuAvg30,
+				"mem_peak_30":   m.MemPeak30,
+				"men_avg_30":    m.MenAvg30,
+				"sys_node_name": sysNode,
+				"resource_name": m.Name,
+				"resource_type": m.MwType,
+				"location":      m.CloudLabel,
+				"cloud_type":    m.Region,
+				"private_ip":    m.IP,
 			})
 			if err != nil {
 				glog.Errorf("cmdb sync middleware(update): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
@@ -1040,6 +1088,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 		// 与 cmdb_api.py 中 add_cmdb_middlewares 字段一致（含 location / cloud_type 与 Python 相同赋值方式）
 		payload := map[string]any{
 			"uuid":          instUUID,
+			"instance_id":   rawID,
 			"ci_type":       "middle_software",
 			"system_id":     systemID,
 			"sys_node_name": sysNode,

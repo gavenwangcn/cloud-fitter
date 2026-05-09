@@ -103,7 +103,7 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer, seqStore *systemidse
 		switch {
 		case r.URL.Path == "/apis/configs" && (r.Method == http.MethodGet || r.Method == http.MethodPost || r.Method == http.MethodDelete):
 			configHandler.ServeHTTP(w, r)
-		case r.URL.Path == "/apis/systems" && (r.Method == http.MethodGet || r.Method == http.MethodPost || r.Method == http.MethodPut):
+		case r.URL.Path == "/apis/systems" && (r.Method == http.MethodGet || r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete):
 			systemHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/apis/cmdb/sync" && r.Method == http.MethodPost:
 			cmdb.SyncHTTPHandler(cmdbSyncer).ServeHTTP(w, r)
