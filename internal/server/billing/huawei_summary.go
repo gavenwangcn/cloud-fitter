@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/global"
 	bssv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bss/v2"
 	bssmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/bss/v2/model"
@@ -64,6 +65,10 @@ func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, bil
 			if row.ConsumeAmount != nil {
 				amt = row.ConsumeAmount.InexactFloat64()
 			}
+			if cat == "其他" {
+				glog.Infof("huawei billing ShowCustomerMonthlySum -> 其他: account=%s bill_cycle=%s service_type_code=%q consume_amount=%.2f currency=%s",
+					tenant.AccountName(), billingCycle, svc, amt, currencyOrDash(resp.Currency))
+			}
 			a := m[cat]
 			if a == nil {
 				a = &agg{}
@@ -122,4 +127,11 @@ func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, bil
 		GrandTotalConsume: billingagg.RoundMoney2(grand),
 		Currency:          cur,
 	}, nil
+}
+
+func currencyOrDash(p *string) string {
+	if p != nil && strings.TrimSpace(*p) != "" {
+		return strings.TrimSpace(*p)
+	}
+	return "-"
 }

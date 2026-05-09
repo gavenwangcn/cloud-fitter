@@ -587,7 +587,22 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 type mwRec struct {
 	InstanceID                                                         string // 云实例 ID（可能为非标准字符串；CMDB 写入 instance_id 属性，uuid 见 middlewareCMDBUUID）
 	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName, DiskStr string
+	MiddlewareVersion                                                  string // RDS：引擎+引擎版本；DCS：spec_code；同步至 CMDB middleware_version
 	CpuPeak30, CpuAvg30, MemPeak30, MenAvg30                             string
+}
+
+// middlewareVersionFromRDS 使用 RDS 的数据库引擎与引擎版本（engine / engine_version）。
+func middlewareVersionFromRDS(engine, engineVersion string) string {
+	engine = strings.TrimSpace(engine)
+	engineVersion = strings.TrimSpace(engineVersion)
+	switch {
+	case engine != "" && engineVersion != "":
+		return engine + " " + engineVersion
+	case engineVersion != "":
+		return engineVersion
+	default:
+		return engine
+	}
 }
 
 func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafkaResp *pbkafka.ListResp) []mwRec {
@@ -597,20 +612,21 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 			ip := firstIP(r.GetPrivateIps(), r.GetPublicIps())
 			util := r.GetUtilizationAudit()
 			out = append(out, mwRec{
-				InstanceID:  strings.TrimSpace(r.GetInstanceId()),
-				Name:        r.GetInstanceName(),
-				MwType:      "RDS_INS",
-				IP:          ip,
-				CPU:         itoa32(r.GetCpu()),
-				Mem:         memGBStringFromMB(r.GetMemoryMb()),
-				CloudLabel:  cloudTypeLabel(r.GetProvider()),
-				Region:      r.GetRegionName(),
-				SysNodeName: effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
-				DiskStr:     "", // 列表 API 无独立磁盘字段
-				CpuPeak30:   utilWindowPeakText(util.GetCpuLast_30D()),
-				CpuAvg30:    utilWindowAvgText(util.GetCpuLast_30D()),
-				MemPeak30:   utilWindowPeakText(util.GetMemLast_30D()),
-				MenAvg30:    utilWindowAvgText(util.GetMemLast_30D()),
+				InstanceID:        strings.TrimSpace(r.GetInstanceId()),
+				Name:              r.GetInstanceName(),
+				MwType:            "RDS_INS",
+				IP:                ip,
+				CPU:               itoa32(r.GetCpu()),
+				Mem:               memGBStringFromMB(r.GetMemoryMb()),
+				CloudLabel:        cloudTypeLabel(r.GetProvider()),
+				Region:            r.GetRegionName(),
+				SysNodeName:       effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
+				DiskStr:           "", // 列表 API 无独立磁盘字段
+				MiddlewareVersion: middlewareVersionFromRDS(r.GetEngine(), r.GetEngineVersion()),
+				CpuPeak30:         utilWindowPeakText(util.GetCpuLast_30D()),
+				CpuAvg30:          utilWindowAvgText(util.GetCpuLast_30D()),
+				MemPeak30:         utilWindowPeakText(util.GetMemLast_30D()),
+				MenAvg30:          utilWindowAvgText(util.GetMemLast_30D()),
 			})
 		}
 	}
@@ -619,20 +635,21 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 			ip := firstIP(r.GetPrivateIps(), r.GetPublicIps())
 			memUtil := r.GetMemoryUtilizationAudit()
 			out = append(out, mwRec{
-				InstanceID:  strings.TrimSpace(r.GetInstanceId()),
-				Name:        r.GetInstanceName(),
-				MwType:      "DCS_REDIS",
-				IP:          ip,
-				CPU:         itoa32(r.GetCpu()),
-				Mem:         memGBStringFromMB(r.GetSize()), // 华为 DCS size 为 MB，与 cmdb 展示一致按 GB 字符串
-				CloudLabel:  cloudTypeLabel(r.GetProvider()),
-				Region:      r.GetRegionName(),
-				SysNodeName: effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
-				DiskStr:     itoa32(r.GetSize()) + "MB", // 容量规格（与内存 GB 独立对比）
-				CpuPeak30:   "",
-				CpuAvg30:    "",
-				MemPeak30:   utilWindowPeakText(memUtil.GetMemLast_30D()),
-				MenAvg30:    utilWindowAvgText(memUtil.GetMemLast_30D()),
+				InstanceID:        strings.TrimSpace(r.GetInstanceId()),
+				Name:              r.GetInstanceName(),
+				MwType:            "DCS_REDIS",
+				IP:                ip,
+				CPU:               itoa32(r.GetCpu()),
+				Mem:               memGBStringFromMB(r.GetSize()), // 华为 DCS size 为 MB，与 cmdb 展示一致按 GB 字符串
+				CloudLabel:        cloudTypeLabel(r.GetProvider()),
+				Region:            r.GetRegionName(),
+				SysNodeName:       effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
+				DiskStr:           itoa32(r.GetSize()) + "MB", // 容量规格（与内存 GB 独立对比）
+				MiddlewareVersion: strings.TrimSpace(r.GetSpecCode()),
+				CpuPeak30:         "",
+				CpuAvg30:          "",
+				MemPeak30:         utilWindowPeakText(memUtil.GetMemLast_30D()),
+				MenAvg30:          utilWindowAvgText(memUtil.GetMemLast_30D()),
 			})
 		}
 	}
@@ -1059,22 +1076,23 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 				}
 			}
 			_, err = s.Client.UpdateCI(exists, map[string]any{
-				"uuid":          instUUID,
-				"instance_id":   rawID,
-				"ci_type":       ciType,
-				"cpu_count":     m.CPU,
-				"ram_size":      m.Mem,
-				"disk_size":     m.DiskStr,
-				"cpu_peak_30":   m.CpuPeak30,
-				"cpu_avg_30":    m.CpuAvg30,
-				"mem_peak_30":   m.MemPeak30,
-				"men_avg_30":    m.MenAvg30,
-				"sys_node_name": sysNode,
-				"resource_name": m.Name,
-				"resource_type": m.MwType,
-				"location":      m.CloudLabel,
-				"cloud_type":    m.Region,
-				"private_ip":    m.IP,
+				"uuid":                instUUID,
+				"instance_id":         rawID,
+				"ci_type":             ciType,
+				"cpu_count":           m.CPU,
+				"ram_size":            m.Mem,
+				"disk_size":           m.DiskStr,
+				"cpu_peak_30":         m.CpuPeak30,
+				"cpu_avg_30":          m.CpuAvg30,
+				"mem_peak_30":         m.MemPeak30,
+				"men_avg_30":          m.MenAvg30,
+				"sys_node_name":       sysNode,
+				"resource_name":       m.Name,
+				"resource_type":       m.MwType,
+				"location":            m.CloudLabel,
+				"cloud_type":          m.Region,
+				"private_ip":          m.IP,
+				"middleware_version":  m.MiddlewareVersion,
 			})
 			if err != nil {
 				glog.Errorf("cmdb sync middleware(update): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
@@ -1087,23 +1105,24 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 		}
 		// 与 cmdb_api.py 中 add_cmdb_middlewares 字段一致（含 location / cloud_type 与 Python 相同赋值方式）
 		payload := map[string]any{
-			"uuid":          instUUID,
-			"instance_id":   rawID,
-			"ci_type":       "middle_software",
-			"system_id":     systemID,
-			"sys_node_name": sysNode,
-			"resource_name": m.Name,
-			"resource_type": m.MwType,
-			"location":      m.CloudLabel,
-			"cloud_type":    m.Region,
-			"private_ip":    m.IP,
-			"cpu_count":     m.CPU,
-			"ram_size":      m.Mem,
-			"disk_size":     m.DiskStr,
-			"cpu_peak_30":   m.CpuPeak30,
-			"cpu_avg_30":    m.CpuAvg30,
-			"mem_peak_30":   m.MemPeak30,
-			"men_avg_30":    m.MenAvg30,
+			"uuid":               instUUID,
+			"instance_id":        rawID,
+			"ci_type":            "middle_software",
+			"system_id":          systemID,
+			"sys_node_name":      sysNode,
+			"resource_name":      m.Name,
+			"resource_type":      m.MwType,
+			"location":           m.CloudLabel,
+			"cloud_type":         m.Region,
+			"private_ip":         m.IP,
+			"cpu_count":          m.CPU,
+			"ram_size":           m.Mem,
+			"disk_size":          m.DiskStr,
+			"cpu_peak_30":        m.CpuPeak30,
+			"cpu_avg_30":         m.CpuAvg30,
+			"mem_peak_30":        m.MemPeak30,
+			"men_avg_30":         m.MenAvg30,
+			"middleware_version": m.MiddlewareVersion,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {

@@ -134,6 +134,9 @@ func middlewareResourceChanged(row map[string]any, m mwRec) bool {
 	if !metricStrEqual(anyToCompareStr(row["men_avg_30"]), strings.TrimSpace(m.MenAvg30)) {
 		return true
 	}
+	if strings.TrimSpace(anyToCompareStr(row["middleware_version"])) != strings.TrimSpace(m.MiddlewareVersion) {
+		return true
+	}
 	return false
 }
 
