@@ -8,8 +8,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-// migrateSQLMySQL 与 migrateSQLSQLite 表结构一致：cloud_configs、systems。
-const migrateSQLMySQL = `
+// migrateSQLMySQL* 与 migrateSQLSQLite 表结构一致：cloud_configs、systems。
+// 须按语句分别 Exec：go-sql-driver/mysql 默认单次查询不执行多语句（否则第二条 CREATE 会报语法错）。
+const migrateSQLMySQLCloudConfigs = `
 CREATE TABLE IF NOT EXISTS cloud_configs (
 	id BIGINT NOT NULL AUTO_INCREMENT,
 	provider INT NOT NULL,
@@ -19,8 +20,9 @@ CREATE TABLE IF NOT EXISTS cloud_configs (
 	huawei_account_scope INT NOT NULL DEFAULT 0,
 	PRIMARY KEY (id),
 	UNIQUE KEY uk_cloud_configs_name (name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
 
+const migrateSQLMySQLSystems = `
 CREATE TABLE IF NOT EXISTS systems (
 	id BIGINT NOT NULL AUTO_INCREMENT,
 	name VARCHAR(512) NOT NULL,
@@ -33,8 +35,7 @@ CREATE TABLE IF NOT EXISTS systems (
 	status VARCHAR(64) NOT NULL DEFAULT '',
 	PRIMARY KEY (id),
 	UNIQUE KEY uk_systems_system_id (system_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-`
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
 
 // OpenMySQL 使用 MySQL 连接串打开 Store（连接池，适合多并发查询）。
 // dsn 示例：user:pass@tcp(127.0.0.1:3306)/dbname?parseTime=true&charset=utf8mb4&collation=utf8mb4_unicode_ci&loc=Local
@@ -58,17 +59,9 @@ func OpenMySQL(dsn string) (*Store, error) {
 }
 
 func migrateMySQL(db *sql.DB) error {
-	_, err := db.Exec(migrateSQLMySQL)
-	if err != nil {
-		return errors.WithMessage(err, "migrate mysql")
-	}
-	for _, stmt := range []string{
-		`ALTER TABLE systems ADD COLUMN english_name VARCHAR(512) NOT NULL DEFAULT ''`,
-		`ALTER TABLE systems ADD COLUMN short_name VARCHAR(256) NOT NULL DEFAULT ''`,
-		`ALTER TABLE cloud_configs ADD COLUMN huawei_account_scope INT NOT NULL DEFAULT 0`,
-	} {
-		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "Duplicate column name") {
-			return errors.WithMessage(err, "migrate alter systems columns")
+	for _, stmt := range []string{migrateSQLMySQLCloudConfigs, migrateSQLMySQLSystems} {
+		if _, err := db.Exec(stmt); err != nil {
+			return errors.WithMessage(err, "migrate mysql")
 		}
 	}
 	return nil
