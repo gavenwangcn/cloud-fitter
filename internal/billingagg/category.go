@@ -7,6 +7,13 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 )
 
+// BillingCategoryDisplayOrder 账单汇总表大类列顺序（有金额的类别才出现在结果中）。
+var BillingCategoryDisplayOrder = []string{
+	"ECS", "RDS", "DCS", "DMS", "CCE", "MongoDB",
+	"EIP/网络", "负载均衡", "对象存储", "VPC",
+	"其他",
+}
+
 // CategoryFromBillLine 根据阿里云/腾讯云账单明细行的产品字段归到大类。
 func CategoryFromBillLine(provider pbtenant.CloudProvider, productCode, productType string) string {
 	pc := strings.ToLower(strings.TrimSpace(productCode))
@@ -31,6 +38,21 @@ func CategoryFromBillLine(provider pbtenant.CloudProvider, productCode, productT
 		if strings.Contains(pc, "cs") || strings.Contains(pc, "k8s") || strings.Contains(pt, "容器") {
 			return "CCE"
 		}
+		if strings.Contains(pc, "oss") || strings.Contains(pt, "对象存储") {
+			return "对象存储"
+		}
+		if strings.Contains(pc, "slb") || strings.Contains(pc, "alb") || strings.Contains(pc, "nlb") ||
+			strings.Contains(pt, "负载均衡") || strings.Contains(pt, "应用型负载均衡") {
+			return "负载均衡"
+		}
+		if strings.Contains(pc, "eip") || strings.Contains(pc, "cbwp") || strings.Contains(pc, "bandwidthpackage") ||
+			strings.Contains(pt, "弹性公网") || strings.Contains(pt, "共享带宽") || strings.Contains(pc, "vpn") {
+			return "EIP/网络"
+		}
+		if strings.Contains(pc, "vpc") || strings.Contains(pc, "nat_gateway") || strings.Contains(pc, "natgateway") ||
+			strings.Contains(pt, "专有网络") || strings.Contains(pt, "nat网关") {
+			return "VPC"
+		}
 	case pbtenant.CloudProvider_tencent:
 		if strings.HasPrefix(pc, "sp_cvm") || strings.Contains(pc, "cvm") {
 			return "ECS"
@@ -44,15 +66,33 @@ func CategoryFromBillLine(provider pbtenant.CloudProvider, productCode, productT
 		if strings.Contains(pc, "ckafka") || strings.Contains(pc, "kafka") {
 			return "DMS"
 		}
+		if strings.Contains(pc, "mongodb") {
+			return "MongoDB"
+		}
 		if strings.Contains(pc, "tke") || strings.Contains(pc, "eks") {
 			return "CCE"
+		}
+		if strings.Contains(pc, "cos") || strings.HasPrefix(pc, "sp_cos") || strings.Contains(pt, "对象存储") {
+			return "对象存储"
+		}
+		if strings.Contains(pc, "clb") || strings.Contains(pc, "elb") || strings.Contains(pc, "alb") ||
+			strings.HasPrefix(pc, "sp_clb") || strings.Contains(pt, "负载均衡") {
+			return "负载均衡"
+		}
+		if strings.Contains(pc, "eip") || strings.Contains(pc, "bwp") || strings.Contains(pc, "anycasteip") ||
+			strings.Contains(pt, "弹性公网") || strings.Contains(pt, "共享带宽") || strings.Contains(pc, "vpn") {
+			return "EIP/网络"
+		}
+		if strings.Contains(pc, "vpc") || strings.Contains(pc, "nat") || strings.Contains(pt, "私有网络") ||
+			strings.Contains(pt, "nat网关") {
+			return "VPC"
 		}
 	}
 	return "其他"
 }
 
 // HuaweiCategoryFromServiceType 华为云 BSS 汇总账单中的云服务类型编码 -> 展示大类。
-// 参考账单字段说明：ECS 为 hws.service.type.ec2 等。
+// 编码参见费用中心/ShowCustomerMonthlySum 等接口返回的 service_type_code（未覆盖的类型归入「其他」）。
 func HuaweiCategoryFromServiceType(serviceTypeCode string) string {
 	switch strings.TrimSpace(serviceTypeCode) {
 	case "hws.service.type.ec2":
@@ -65,6 +105,19 @@ func HuaweiCategoryFromServiceType(serviceTypeCode string) string {
 		return "DMS"
 	case "hws.service.type.cce":
 		return "CCE"
+	case "hws.service.type.obs":
+		return "对象存储"
+	case "hws.service.type.vpc":
+		return "VPC"
+	case "hws.service.type.eip":
+		return "EIP/网络"
+	case "hws.service.type.elb", "hws.service.type.loadbalancer":
+		return "负载均衡"
+	// NAT 网关等归属 VPC；VPN 连接等与专线网络相关费用归入 EIP/网络
+	case "hws.service.type.nat_gateway", "hws.service.type.natgw":
+		return "VPC"
+	case "hws.service.type.vpn":
+		return "EIP/网络"
 	default:
 		return "其他"
 	}
@@ -106,9 +159,8 @@ func AggregateBillInstances(
 		cur = "CNY"
 	}
 	rows := make([]*pbbilling.BillingCategoryRow, 0, len(m))
-	order := []string{"ECS", "RDS", "DCS", "DMS", "CCE", "MongoDB", "其他"}
 	seen := make(map[string]bool)
-	for _, cat := range order {
+	for _, cat := range BillingCategoryDisplayOrder {
 		if a, ok := m[cat]; ok && a != nil {
 			rows = append(rows, &pbbilling.BillingCategoryRow{
 				Provider:            provider,

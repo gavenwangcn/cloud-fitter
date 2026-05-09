@@ -1385,7 +1385,10 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 	return st
 }
 
-func billingCostFieldsChanged(row map[string]any, rowCount, totalCost string) bool {
+func billingCostFieldsChanged(row map[string]any, rowCount, totalCost, resourceCategory string) bool {
+	if strings.TrimSpace(anyToCompareStr(row["resource_category"])) != strings.TrimSpace(resourceCategory) {
+		return true
+	}
 	if strings.TrimSpace(anyToCompareStr(row["row_count"])) != strings.TrimSpace(rowCount) {
 		return true
 	}
@@ -1398,7 +1401,8 @@ func billingCostFieldsChanged(row map[string]any, rowCount, totalCost string) bo
 // addCMDBBillings 将消费大类汇总写入 CMDB 模型 billing。
 //
 // 关联关系按「系统」维护：必需字段 system_id（与 CMDB system、本地系统 system_id 对齐），不再使用节点名称；
-// 同一系统下按 billing_month、resource_category、account_name（云账号）唯一标识一行；写入字段含 currency、row_count、total_cost、account_name，不含 sys_node_name。
+// 同一系统下按 billing_month、resource_category、account_name（云账号）唯一标识一行；
+// resource_category 与账单汇总接口大类一致（含 EIP/网络、负载均衡、对象存储、VPC 等，见 billingagg）。
 func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, resp *pbbilling.ListBillingSummaryResp) componentSyncStats {
 	st := componentSyncStats{}
 	if resp == nil {
@@ -1444,10 +1448,11 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 		rowCountStr := itoa32(row.SourceRowCount)
 		totalStr := strconv.FormatFloat(row.TotalConsumeAmount, 'f', 2, 64)
 		fields := map[string]any{
-			"currency":     cur,
-			"row_count":    rowCountStr,
-			"total_cost":   totalStr,
-			"account_name": accountName,
+			"currency":           cur,
+			"row_count":          rowCountStr,
+			"total_cost":         totalStr,
+			"account_name":       accountName,
+			"resource_category": cat,
 		}
 		if exists != "" {
 			frow, err := s.Client.GetCIFirst(q)
@@ -1456,7 +1461,7 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 				st.Errors++
 				continue
 			}
-			if frow != nil && !billingCostFieldsChanged(frow, rowCountStr, totalStr) {
+			if frow != nil && !billingCostFieldsChanged(frow, rowCountStr, totalStr, cat) {
 				glog.Infof("cmdb sync billing(skip): system_id=%s account=%s category=%s id=%s", systemID, accountName, cat, exists)
 				st.Skipped++
 				continue

@@ -47,9 +47,8 @@ func MergeCategorySummaries(billingCycle, accountLabel string, parts []*pbbillin
 	multiCloud := len(provSet) > 1
 	var grand float64
 	rows := make([]*pbbilling.BillingCategoryRow, 0, len(m))
-	order := []string{"ECS", "RDS", "DCS", "DMS", "CCE", "MongoDB", "其他"}
 	seen := make(map[catProvKey]bool)
-	for _, cat := range order {
+	for _, cat := range billingagg.BillingCategoryDisplayOrder {
 		for k, a := range m {
 			if k.c != cat || a == nil {
 				continue

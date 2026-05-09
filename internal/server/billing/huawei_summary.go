@@ -87,9 +87,8 @@ func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, bil
 	cur = strings.TrimSpace(cur)
 
 	rows := make([]*pbbilling.BillingCategoryRow, 0, len(m))
-	order := []string{"ECS", "RDS", "DCS", "DMS", "CCE", "其他"}
 	seen := make(map[string]bool)
-	for _, cat := range order {
+	for _, cat := range billingagg.BillingCategoryDisplayOrder {
 		if a, ok := m[cat]; ok && a != nil {
 			rows = append(rows, &pbbilling.BillingCategoryRow{
 				Provider:            pbtenant.CloudProvider_huawei,
