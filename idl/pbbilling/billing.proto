@@ -74,7 +74,7 @@ message BillingCategoryRow {
   string account_name = 2;
   // 账单月份 YYYY-MM（与请求汇总月份一致）
   string billing_cycle = 3;
-  // 大类展示名：ECS、RDS、DCS、DMS、CCE、MongoDB、EIP/网络、负载均衡、对象存储、VPC、其他
+  // 大类展示名：ECS、RDS、DCS、DMS、CCE、MongoDB、EIP/网络、负载均衡、对象存储、VPC、云硬盘、云防火墙、主机安全、NAT网关、日志服务、云监控、云商店、其他
   string category = 4;
   // 该大类应付/消费金额合计
   double total_consume_amount = 5;

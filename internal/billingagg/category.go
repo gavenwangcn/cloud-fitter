@@ -11,6 +11,7 @@ import (
 var BillingCategoryDisplayOrder = []string{
 	"ECS", "RDS", "DCS", "DMS", "CCE", "MongoDB",
 	"EIP/网络", "负载均衡", "对象存储", "VPC",
+	"云硬盘", "云防火墙", "主机安全", "NAT网关", "日志服务", "云监控", "云商店",
 	"其他",
 }
 
@@ -113,9 +114,22 @@ func HuaweiCategoryFromServiceType(serviceTypeCode string) string {
 		return "EIP/网络"
 	case "hws.service.type.elb", "hws.service.type.loadbalancer":
 		return "负载均衡"
-	// NAT 网关等归属 VPC；VPN 连接等与专线网络相关费用归入 EIP/网络
-	case "hws.service.type.nat_gateway", "hws.service.type.natgw":
-		return "VPC"
+	// 块存储（账单侧常见编码为 ebs；evs 亦归入云硬盘）
+	case "hws.service.type.ebs", "hws.service.type.evs":
+		return "云硬盘"
+	case "hws.service.type.cfw":
+		return "云防火墙"
+	case "hws.service.type.hss":
+		return "主机安全"
+	case "hws.service.type.marketplace":
+		return "云商店"
+	case "hws.service.type.lts":
+		return "日志服务"
+	case "hws.service.type.ces":
+		return "云监控"
+	// NAT 网关（与专有网络 VPC 分列）；BSS 可能返回 nat_gateway / natgw / natgateway
+	case "hws.service.type.nat_gateway", "hws.service.type.natgw", "hws.service.type.natgateway":
+		return "NAT网关"
 	case "hws.service.type.vpn":
 		return "EIP/网络"
 	default:
