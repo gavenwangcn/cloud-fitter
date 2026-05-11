@@ -613,14 +613,14 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			StorageAttr:  storageAttr,
 			OS:           firstNonEmpty(e.GetImageName(), e.GetOsType()),
 			CceClusterID: cceID, // 华为：由 CCE ListNodes 的 status.serverId 与集群 metadata.uid 映射得到，与 CceCluster.cluster_uid 一致
-			CpuPeak30:    utilWindowPeakText(util.GetCpuLast_30D()),
-			CpuPeak180:   utilWindowPeakText(util.GetCpuLast_180D()),
-			CpuAvg30:     utilWindowAvgText(util.GetCpuLast_30D()),
-			CpuAvg180:    utilWindowAvgText(util.GetCpuLast_180D()),
-			MemPeak30:    utilWindowPeakText(util.GetMemLast_30D()),
-			MenPeak180:   utilWindowPeakText(util.GetMemLast_180D()),
-			MemAvg30:     utilWindowAvgText(util.GetMemLast_30D()),
-			MenAvg180:    utilWindowAvgText(util.GetMemLast_180D()),
+			CpuPeak30:     utilWindowPeakPercentDecimal(util.GetCpuLast_30D()),
+			CpuPeak180:    utilWindowPeakPercentDecimal(util.GetCpuLast_180D()),
+			CpuAvg30:      utilWindowAvgPercentDecimal(util.GetCpuLast_30D()),
+			CpuAvg180:     utilWindowAvgPercentDecimal(util.GetCpuLast_180D()),
+			MemPeak30:     utilWindowPeakPercentDecimal(util.GetMemLast_30D()),
+			MenPeak180:    utilWindowPeakPercentDecimal(util.GetMemLast_180D()),
+			MemAvg30:      utilWindowAvgPercentDecimal(util.GetMemLast_30D()),
+			MenAvg180:     utilWindowAvgPercentDecimal(util.GetMemLast_180D()),
 			DiskUsage30:   periodUtilizationText(util.GetDiskLast_30D()),
 			DiskUsage180:  periodUtilizationText(util.GetDiskLast_180D()),
 			SecurityGroup: joinSecurityGroupsForCMDB(e.GetSecurityGroupNames()),
@@ -633,8 +633,10 @@ type mwRec struct {
 	InstanceID                                                         string // 云实例 ID（可能为非标准字符串；CMDB 写入 instance_id 属性，uuid 见 middlewareCMDBUUID）
 	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName, DiskStr string
 	MiddlewareVersion                                                  string // RDS：引擎+引擎版本；DCS：spec_code；同步至 CMDB middleware_version
-	CpuPeak30, CpuAvg30, MemPeak30, MenAvg30                             string
-	SecurityGroup                                                       string // CMDB 属性 security_group
+	// 以下为利用率百分比字符串（两位小数或空），写入 CMDB 浮点属性时用 cmdbFloatMetricJSON。
+	CpuPeak30, CpuAvg30, CpuPeak180, CpuAvg180                         string
+	MemPeak30, MenAvg30, MenPeak180, MenAvg180                         string
+	SecurityGroup                                                      string // CMDB 属性 security_group
 }
 
 // middlewareVersionFromRDS 使用 RDS 的数据库引擎与引擎版本（engine / engine_version）。
@@ -669,10 +671,14 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				SysNodeName:       effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
 				DiskStr:           "", // 列表 API 无独立磁盘字段
 				MiddlewareVersion: middlewareVersionFromRDS(r.GetEngine(), r.GetEngineVersion()),
-				CpuPeak30:         utilWindowPeakText(util.GetCpuLast_30D()),
-				CpuAvg30:          utilWindowAvgText(util.GetCpuLast_30D()),
-				MemPeak30:         utilWindowPeakText(util.GetMemLast_30D()),
-				MenAvg30:          utilWindowAvgText(util.GetMemLast_30D()),
+				CpuPeak30:         utilWindowPeakPercentDecimal(util.GetCpuLast_30D()),
+				CpuAvg30:          utilWindowAvgPercentDecimal(util.GetCpuLast_30D()),
+				CpuPeak180:        utilWindowPeakPercentDecimal(util.GetCpuLast_180D()),
+				CpuAvg180:         utilWindowAvgPercentDecimal(util.GetCpuLast_180D()),
+				MemPeak30:         utilWindowPeakPercentDecimal(util.GetMemLast_30D()),
+				MenAvg30:          utilWindowAvgPercentDecimal(util.GetMemLast_30D()),
+				MenPeak180:        utilWindowPeakPercentDecimal(util.GetMemLast_180D()),
+				MenAvg180:         utilWindowAvgPercentDecimal(util.GetMemLast_180D()),
 				SecurityGroup:     joinSecurityGroupsForCMDB(r.GetSecurityGroupNames()),
 			})
 		}
@@ -695,8 +701,12 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				MiddlewareVersion: strings.TrimSpace(r.GetSpecCode()),
 				CpuPeak30:         "",
 				CpuAvg30:          "",
-				MemPeak30:         utilWindowPeakText(memUtil.GetMemLast_30D()),
-				MenAvg30:          utilWindowAvgText(memUtil.GetMemLast_30D()),
+				CpuPeak180:        "",
+				CpuAvg180:         "",
+				MemPeak30:         utilWindowPeakPercentDecimal(memUtil.GetMemLast_30D()),
+				MenAvg30:          utilWindowAvgPercentDecimal(memUtil.GetMemLast_30D()),
+				MenPeak180:        utilWindowPeakPercentDecimal(memUtil.GetMemLast_180D()),
+				MenAvg180:         utilWindowAvgPercentDecimal(memUtil.GetMemLast_180D()),
 				SecurityGroup:     joinSecurityGroupsForCMDB(r.GetSecurityGroupNames()),
 			})
 		}
@@ -704,21 +714,25 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 	if kafkaResp != nil {
 		for _, k := range kafkaResp.Kafkas {
 			out = append(out, mwRec{
-				InstanceID:  strings.TrimSpace(k.GetInstanceId()),
-				Name:        k.GetInstanceName(),
-				MwType:      "DMS_ROCKETMQ",
-				IP:          strings.TrimSpace(k.GetEndPoint()),
-				CPU:         "",
-				Mem:         "",
-				CloudLabel:  cloudTypeLabel(k.GetProvider()),
-				Region:      k.GetRegionName(),
-				SysNodeName: effectiveSysNodeName(k.GetProvider(), k.GetRegionName(), k.GetNodeTagValue()),
-				DiskStr:     itoa32(k.GetDistSize()) + "GB",
-				CpuPeak30:   "",
-				CpuAvg30:    "",
-				MemPeak30:       "",
-				MenAvg30:        "",
-				SecurityGroup:   joinSecurityGroupsForCMDB(k.GetSecurityGroupNames()),
+				InstanceID:    strings.TrimSpace(k.GetInstanceId()),
+				Name:          k.GetInstanceName(),
+				MwType:        "DMS_ROCKETMQ",
+				IP:            strings.TrimSpace(k.GetEndPoint()),
+				CPU:           "",
+				Mem:           "",
+				CloudLabel:    cloudTypeLabel(k.GetProvider()),
+				Region:        k.GetRegionName(),
+				SysNodeName:   effectiveSysNodeName(k.GetProvider(), k.GetRegionName(), k.GetNodeTagValue()),
+				DiskStr:       itoa32(k.GetDistSize()) + "GB",
+				CpuPeak30:     "",
+				CpuAvg30:      "",
+				CpuPeak180:    "",
+				CpuAvg180:     "",
+				MemPeak30:     "",
+				MenAvg30:      "",
+				MenPeak180:    "",
+				MenAvg180:     "",
+				SecurityGroup: joinSecurityGroupsForCMDB(k.GetSecurityGroupNames()),
 			})
 		}
 	}
@@ -999,16 +1013,16 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 				"ram_size":       h.MemGBStr,
 				"disk_size":      h.DiskStr,
 				"storage":        h.StorageAttr,
-				"cpu_peak_30":    h.CpuPeak30,
-				"cpu_peak_180":   h.CpuPeak180,
-				"cpu_avg_30":     h.CpuAvg30,
-				"cpu_avg_180":    h.CpuAvg180,
-				"mem_peak_30":    h.MemPeak30,
-				"men_peak_180":   h.MenPeak180,
-				"men_avg_30":     h.MemAvg30,
-				"men_avg_180":    h.MenAvg180,
-				"disk_usage_30":  h.DiskUsage30,
-				"disk_usage_180": h.DiskUsage180,
+				"cpu_peak_30":    cmdbFloatMetricJSON(h.CpuPeak30),
+				"cpu_peak_180":   cmdbFloatMetricJSON(h.CpuPeak180),
+				"cpu_avg_30":     cmdbFloatMetricJSON(h.CpuAvg30),
+				"cpu_avg_180":    cmdbFloatMetricJSON(h.CpuAvg180),
+				"mem_peak_30":    cmdbFloatMetricJSON(h.MemPeak30),
+				"men_peak_180":   cmdbFloatMetricJSON(h.MenPeak180),
+				"men_avg_30":     cmdbFloatMetricJSON(h.MemAvg30),
+				"men_avg_180":    cmdbFloatMetricJSON(h.MenAvg180),
+				"disk_usage_30":  cmdbFloatMetricJSON(h.DiskUsage30),
+				"disk_usage_180": cmdbFloatMetricJSON(h.DiskUsage180),
 				"security_group": h.SecurityGroup,
 			})
 			if err != nil {
@@ -1035,16 +1049,16 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 			"os_version":     h.OS,
 			"location":       locn,
 			"cloud_type":     ct,
-			"cpu_peak_30":    h.CpuPeak30,
-			"cpu_peak_180":   h.CpuPeak180,
-			"cpu_avg_30":     h.CpuAvg30,
-			"cpu_avg_180":    h.CpuAvg180,
-			"mem_peak_30":    h.MemPeak30,
-			"men_peak_180":   h.MenPeak180,
-			"men_avg_30":     h.MemAvg30,
-			"men_avg_180":    h.MenAvg180,
-			"disk_usage_30":  h.DiskUsage30,
-			"disk_usage_180": h.DiskUsage180,
+			"cpu_peak_30":    cmdbFloatMetricJSON(h.CpuPeak30),
+			"cpu_peak_180":   cmdbFloatMetricJSON(h.CpuPeak180),
+			"cpu_avg_30":     cmdbFloatMetricJSON(h.CpuAvg30),
+			"cpu_avg_180":    cmdbFloatMetricJSON(h.CpuAvg180),
+			"mem_peak_30":    cmdbFloatMetricJSON(h.MemPeak30),
+			"men_peak_180":   cmdbFloatMetricJSON(h.MenPeak180),
+			"men_avg_30":     cmdbFloatMetricJSON(h.MemAvg30),
+			"men_avg_180":    cmdbFloatMetricJSON(h.MenAvg180),
+			"disk_usage_30":  cmdbFloatMetricJSON(h.DiskUsage30),
+			"disk_usage_180": cmdbFloatMetricJSON(h.DiskUsage180),
 			"security_group": h.SecurityGroup,
 		}
 		d, err := s.Client.AddCI(payload)
@@ -1129,24 +1143,28 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 				}
 			}
 			_, err = s.Client.UpdateCI(exists, map[string]any{
-				"uuid":                instUUID,
-				"instance_id":         rawID,
-				"ci_type":             ciType,
-				"cpu_count":           m.CPU,
-				"ram_size":            m.Mem,
-				"disk_size":           m.DiskStr,
-				"cpu_peak_30":         m.CpuPeak30,
-				"cpu_avg_30":          m.CpuAvg30,
-				"mem_peak_30":         m.MemPeak30,
-				"men_avg_30":          m.MenAvg30,
-				"sys_node_name":       sysNode,
-				"resource_name":       m.Name,
-				"resource_type":       m.MwType,
-				"location":            m.CloudLabel,
-				"cloud_type":          m.Region,
-				"private_ip":          m.IP,
-				"middleware_version":  m.MiddlewareVersion,
-				"security_group":      m.SecurityGroup,
+				"uuid":               instUUID,
+				"instance_id":        rawID,
+				"ci_type":            ciType,
+				"cpu_count":          m.CPU,
+				"ram_size":           m.Mem,
+				"disk_size":          m.DiskStr,
+				"cpu_peak_30":        cmdbFloatMetricJSON(m.CpuPeak30),
+				"cpu_avg_30":         cmdbFloatMetricJSON(m.CpuAvg30),
+				"cpu_peak_180":       cmdbFloatMetricJSON(m.CpuPeak180),
+				"cpu_avg_180":        cmdbFloatMetricJSON(m.CpuAvg180),
+				"mem_peak_30":        cmdbFloatMetricJSON(m.MemPeak30),
+				"men_avg_30":         cmdbFloatMetricJSON(m.MenAvg30),
+				"men_peak_180":       cmdbFloatMetricJSON(m.MenPeak180),
+				"men_avg_180":        cmdbFloatMetricJSON(m.MenAvg180),
+				"sys_node_name":      sysNode,
+				"resource_name":      m.Name,
+				"resource_type":      m.MwType,
+				"location":           m.CloudLabel,
+				"cloud_type":         m.Region,
+				"private_ip":         m.IP,
+				"middleware_version": m.MiddlewareVersion,
+				"security_group":     m.SecurityGroup,
 			})
 			if err != nil {
 				glog.Errorf("cmdb sync middleware(update): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
@@ -1172,10 +1190,14 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 			"cpu_count":          m.CPU,
 			"ram_size":           m.Mem,
 			"disk_size":          m.DiskStr,
-			"cpu_peak_30":        m.CpuPeak30,
-			"cpu_avg_30":         m.CpuAvg30,
-			"mem_peak_30":        m.MemPeak30,
-			"men_avg_30":         m.MenAvg30,
+			"cpu_peak_30":        cmdbFloatMetricJSON(m.CpuPeak30),
+			"cpu_avg_30":         cmdbFloatMetricJSON(m.CpuAvg30),
+			"cpu_peak_180":       cmdbFloatMetricJSON(m.CpuPeak180),
+			"cpu_avg_180":        cmdbFloatMetricJSON(m.CpuAvg180),
+			"mem_peak_30":        cmdbFloatMetricJSON(m.MemPeak30),
+			"men_avg_30":         cmdbFloatMetricJSON(m.MenAvg30),
+			"men_peak_180":       cmdbFloatMetricJSON(m.MenPeak180),
+			"men_avg_180":        cmdbFloatMetricJSON(m.MenAvg180),
 			"middleware_version": m.MiddlewareVersion,
 			"security_group":     m.SecurityGroup,
 		}
@@ -1621,6 +1643,22 @@ func utilWindowPeakText(w *pbutilization.UtilizationWindow) string {
 		return ""
 	}
 	return percentIntText(w.GetPeakPercent())
+}
+
+// utilWindowPeakPercentDecimal 窗口内峰值百分比（CPU/内存）：保留小数，供主机利用率写入 CMDB 浮点属性。
+func utilWindowPeakPercentDecimal(w *pbutilization.UtilizationWindow) string {
+	if w == nil || !w.GetAvailable() {
+		return ""
+	}
+	return percentText(w.GetPeakPercent())
+}
+
+// utilWindowAvgPercentDecimal 窗口内平均值百分比：保留小数，同上。
+func utilWindowAvgPercentDecimal(w *pbutilization.UtilizationWindow) string {
+	if w == nil || !w.GetAvailable() {
+		return ""
+	}
+	return percentText(w.GetAvgPercent())
 }
 
 func utilWindowAvgText(w *pbutilization.UtilizationWindow) string {

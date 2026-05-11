@@ -54,6 +54,21 @@ func metricStrEqual(a, b string) bool {
 	return false
 }
 
+// cmdbFloatMetricJSON 将主机/中间件利用率等字段写入 CMDB「浮点数」属性：JSON 中为 number 类型。
+// 云上经 FormatFloat 得到的整数或小数串均可解析；空串保持空串（服务端对非 TEXT 空串视为清空）。
+// 解析失败时退回空串，避免 PUT/POST 400。
+func cmdbFloatMetricJSON(s string) any {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return ""
+	}
+	return f
+}
+
 // cmdbSecurityGroupStr 读取 CMDB CI 中 security_group（字符串或多值列表均可），与 joinSecurityGroupsForCMDB 结果对齐比较。
 func cmdbSecurityGroupStr(row map[string]any) string {
 	v := row["security_group"]
@@ -157,10 +172,22 @@ func middlewareResourceChanged(row map[string]any, m mwRec) bool {
 	if !metricStrEqual(anyToCompareStr(row["cpu_avg_30"]), strings.TrimSpace(m.CpuAvg30)) {
 		return true
 	}
+	if !metricStrEqual(anyToCompareStr(row["cpu_peak_180"]), strings.TrimSpace(m.CpuPeak180)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["cpu_avg_180"]), strings.TrimSpace(m.CpuAvg180)) {
+		return true
+	}
 	if !metricStrEqual(anyToCompareStr(row["mem_peak_30"]), strings.TrimSpace(m.MemPeak30)) {
 		return true
 	}
 	if !metricStrEqual(anyToCompareStr(row["men_avg_30"]), strings.TrimSpace(m.MenAvg30)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["men_peak_180"]), strings.TrimSpace(m.MenPeak180)) {
+		return true
+	}
+	if !metricStrEqual(anyToCompareStr(row["men_avg_180"]), strings.TrimSpace(m.MenAvg180)) {
 		return true
 	}
 	if strings.TrimSpace(anyToCompareStr(row["middleware_version"])) != strings.TrimSpace(m.MiddlewareVersion) {
