@@ -539,6 +539,31 @@ type hostRec struct {
 	MemPeak30, MenPeak180                     string
 	MemAvg30, MenAvg180                       string
 	DiskUsage30, DiskUsage180                 string
+	SecurityGroup                             string // CMDB 属性 security_group：关联安全组（名称或 ID，顿号分隔）
+}
+
+// joinSecurityGroupsForCMDB 将云上 repeated 安全组名/ID 去重后写入 CMDB 属性 security_group（顿号分隔，与控制台列表习惯一致）。
+func joinSecurityGroupsForCMDB(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	seen := make(map[string]struct{}, len(names))
+	var parts []string
+	for _, raw := range names {
+		s := strings.TrimSpace(raw)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		parts = append(parts, s)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "、")
 }
 
 // hostStorageAttr 生成主机 CI 的 storage 属性：系统盘/数据盘任一存在即写入；皆有则为「系统盘:xG&数据盘:yG」。
@@ -596,8 +621,9 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			MenPeak180:   utilWindowPeakText(util.GetMemLast_180D()),
 			MemAvg30:     utilWindowAvgText(util.GetMemLast_30D()),
 			MenAvg180:    utilWindowAvgText(util.GetMemLast_180D()),
-			DiskUsage30:  periodUtilizationText(util.GetDiskLast_30D()),
-			DiskUsage180: periodUtilizationText(util.GetDiskLast_180D()),
+			DiskUsage30:   periodUtilizationText(util.GetDiskLast_30D()),
+			DiskUsage180:  periodUtilizationText(util.GetDiskLast_180D()),
+			SecurityGroup: joinSecurityGroupsForCMDB(e.GetSecurityGroupNames()),
 		})
 	}
 	return out
@@ -608,6 +634,7 @@ type mwRec struct {
 	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName, DiskStr string
 	MiddlewareVersion                                                  string // RDS：引擎+引擎版本；DCS：spec_code；同步至 CMDB middleware_version
 	CpuPeak30, CpuAvg30, MemPeak30, MenAvg30                             string
+	SecurityGroup                                                       string // CMDB 属性 security_group
 }
 
 // middlewareVersionFromRDS 使用 RDS 的数据库引擎与引擎版本（engine / engine_version）。
@@ -646,6 +673,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CpuAvg30:          utilWindowAvgText(util.GetCpuLast_30D()),
 				MemPeak30:         utilWindowPeakText(util.GetMemLast_30D()),
 				MenAvg30:          utilWindowAvgText(util.GetMemLast_30D()),
+				SecurityGroup:     joinSecurityGroupsForCMDB(r.GetSecurityGroupNames()),
 			})
 		}
 	}
@@ -669,6 +697,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CpuAvg30:          "",
 				MemPeak30:         utilWindowPeakText(memUtil.GetMemLast_30D()),
 				MenAvg30:          utilWindowAvgText(memUtil.GetMemLast_30D()),
+				SecurityGroup:     joinSecurityGroupsForCMDB(r.GetSecurityGroupNames()),
 			})
 		}
 	}
@@ -687,8 +716,9 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				DiskStr:     itoa32(k.GetDistSize()) + "GB",
 				CpuPeak30:   "",
 				CpuAvg30:    "",
-				MemPeak30:   "",
-				MenAvg30:    "",
+				MemPeak30:       "",
+				MenAvg30:        "",
+				SecurityGroup:   joinSecurityGroupsForCMDB(k.GetSecurityGroupNames()),
 			})
 		}
 	}
@@ -979,6 +1009,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 				"men_avg_180":    h.MenAvg180,
 				"disk_usage_30":  h.DiskUsage30,
 				"disk_usage_180": h.DiskUsage180,
+				"security_group": h.SecurityGroup,
 			})
 			if err != nil {
 				glog.Errorf("cmdb sync host(update): system_id=%s host=%q ip=%s id=%s err=%v", systemID, h.Name, h.IP, exists, err)
@@ -1014,6 +1045,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 			"men_avg_180":    h.MenAvg180,
 			"disk_usage_30":  h.DiskUsage30,
 			"disk_usage_180": h.DiskUsage180,
+			"security_group": h.SecurityGroup,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
@@ -1114,6 +1146,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 				"cloud_type":          m.Region,
 				"private_ip":          m.IP,
 				"middleware_version":  m.MiddlewareVersion,
+				"security_group":      m.SecurityGroup,
 			})
 			if err != nil {
 				glog.Errorf("cmdb sync middleware(update): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
@@ -1144,6 +1177,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 			"mem_peak_30":        m.MemPeak30,
 			"men_avg_30":         m.MenAvg30,
 			"middleware_version": m.MiddlewareVersion,
+			"security_group":     m.SecurityGroup,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {

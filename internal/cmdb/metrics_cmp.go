@@ -54,6 +54,29 @@ func metricStrEqual(a, b string) bool {
 	return false
 }
 
+// cmdbSecurityGroupStr 读取 CMDB CI 中 security_group（字符串或多值列表均可），与 joinSecurityGroupsForCMDB 结果对齐比较。
+func cmdbSecurityGroupStr(row map[string]any) string {
+	v := row["security_group"]
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case []any:
+		var parts []string
+		for _, x := range t {
+			s := strings.TrimSpace(anyToCompareStr(x))
+			if s != "" {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, "、")
+	default:
+		return strings.TrimSpace(anyToCompareStr(v))
+	}
+}
+
 func serverResourceChanged(row map[string]any, h hostRec) bool {
 	oCPU := anyToCompareStr(row["cpu_count"])
 	nCPU := anyToCompareStr(int(h.CPU))
@@ -103,6 +126,9 @@ func serverResourceChanged(row map[string]any, h hostRec) bool {
 	if !metricStrEqual(anyToCompareStr(row["disk_usage_180"]), strings.TrimSpace(h.DiskUsage180)) {
 		return true
 	}
+	if strings.TrimSpace(cmdbSecurityGroupStr(row)) != strings.TrimSpace(h.SecurityGroup) {
+		return true
+	}
 	return false
 }
 
@@ -138,6 +164,9 @@ func middlewareResourceChanged(row map[string]any, m mwRec) bool {
 		return true
 	}
 	if strings.TrimSpace(anyToCompareStr(row["middleware_version"])) != strings.TrimSpace(m.MiddlewareVersion) {
+		return true
+	}
+	if strings.TrimSpace(cmdbSecurityGroupStr(row)) != strings.TrimSpace(m.SecurityGroup) {
 		return true
 	}
 	return false
