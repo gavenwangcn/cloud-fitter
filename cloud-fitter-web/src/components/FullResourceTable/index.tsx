@@ -18,6 +18,34 @@ const PROVIDER_ENUM_CN: Record<number, string> = {
   3: 'AWS',
 };
 
+/** 兼容 proto JSON（camelCase）与 snake_case；RDS/DCS/DMS/ECS 等均使用 securityGroupNames */
+function effectiveSecurityGroupNames(record: any): string[] | undefined {
+  const v = record?.securityGroupNames ?? record?.security_group_names;
+  if (v == null) {
+    return undefined;
+  }
+  if (Array.isArray(v)) {
+    return v as string[];
+  }
+  if (typeof v === 'string' && v.trim() !== '') {
+    return [v];
+  }
+  return undefined;
+}
+
+/** 表格中单列展示关联安全组（多个时用顿号分隔） */
+function renderSecurityGroups(record: any): React.ReactNode {
+  const list = effectiveSecurityGroupNames(record);
+  if (list == null || list.length === 0) {
+    return '—';
+  }
+  const text = list
+    .map((x) => String(x).trim())
+    .filter(Boolean)
+    .join('、');
+  return text || '—';
+}
+
 function effectiveNodeLabel(record: any): string {
   const raw = record?.nodeTagValue;
   if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
@@ -111,6 +139,8 @@ const FullResourceTable: React.FC<FullResourceTableProps> = ({
       render: (_: unknown, record: any) =>
         f.dataIndex === 'nodeTagValue'
           ? renderCell(effectiveNodeLabel(record))
+          : f.dataIndex === 'securityGroupNames'
+          ? renderSecurityGroups(record)
           : renderCell(record[f.dataIndex]),
     })),
   ];
