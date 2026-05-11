@@ -313,28 +313,33 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		if regionName == "" {
 			regionName = r.region.GetName()
 		}
+		var sgNames []string
+		if s := strings.TrimSpace(v.SecurityGroupId); s != "" {
+			sgNames = []string{s}
+		}
 		rdses[k] = &pbrds.RdsInstance{
-			Provider:      pbtenant.CloudProvider_huawei,
-			AccoutName:    r.tenanter.AccountName(),
-			InstanceId:    v.Id,
-			InstanceName:  v.Name,
-			RegionName:    regionName,
-			InstanceType:  formatHuaweiRDSInstanceMode(v),
-			Engine:        engine,
-			EngineVersion: engineVersion,
-			InstanceClass: v.FlavorRef,
-			Status:        v.Status,
-			CreationTime:  v.Created,
-			ExpireTime:    "",
-			Cpu:           cpu,
-			MemoryMb:      memMB,
-			PublicIps:     pub,
-			PrivateIps:    priv,
-			VpcId:         v.VpcId,
-			Port:          v.Port,
-			ChargeType:    charge,
-			EnvTagValue:   envtags.FromPairs(envtags.RDSKey(), tagPairs),
-			NodeTagValue:  envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			Provider:           pbtenant.CloudProvider_huawei,
+			AccoutName:         r.tenanter.AccountName(),
+			InstanceId:         v.Id,
+			InstanceName:       v.Name,
+			RegionName:         regionName,
+			InstanceType:       formatHuaweiRDSInstanceMode(v),
+			Engine:             engine,
+			EngineVersion:      engineVersion,
+			InstanceClass:      v.FlavorRef,
+			Status:             v.Status,
+			CreationTime:       v.Created,
+			ExpireTime:         "",
+			Cpu:                cpu,
+			MemoryMb:           memMB,
+			PublicIps:          pub,
+			PrivateIps:         priv,
+			VpcId:              v.VpcId,
+			Port:               v.Port,
+			ChargeType:         charge,
+			SecurityGroupNames: sgNames,
+			EnvTagValue:        envtags.FromPairs(envtags.RDSKey(), tagPairs),
+			NodeTagValue:       envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 	}
 

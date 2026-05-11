@@ -2,12 +2,14 @@ package rdser
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awsrds "github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/pkg/errors"
 
@@ -51,6 +53,20 @@ func newAwsRdsClient(region tenanter.Region, tenant tenanter.Tenanter) (Rdser, e
 	}, nil
 }
 
+func awsRDSSecurityGroupIDs(groups []types.VpcSecurityGroupMembership) []string {
+	if len(groups) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(groups))
+	for _, g := range groups {
+		id := strings.TrimSpace(aws.ToString(g.VpcSecurityGroupId))
+		if id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 func (rds *AwsRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*pbrds.ListDetailResp, error) {
 	request := new(awsrds.DescribeDBInstancesInput)
 	request.MaxRecords = &req.PageSize
@@ -67,20 +83,21 @@ func (rds *AwsRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			tagPairs = append(tagPairs, [2]string{aws.ToString(t.Key), aws.ToString(t.Value)})
 		}
 		rdses[k] = &pbrds.RdsInstance{
-			Provider:      pbtenant.CloudProvider_aws,
-			AccoutName:    rds.tenanter.AccountName(),
-			InstanceId:    *v.DBInstanceIdentifier,
-			InstanceName:  "",
-			RegionName:    rds.region.GetName(),
-			InstanceType:  "",
-			Engine:        *v.Engine,
-			EngineVersion: *v.EngineVersion,
-			InstanceClass: *v.DBInstanceClass,
-			Status:        *v.DBInstanceStatus,
-			CreationTime:  v.InstanceCreateTime.Format(time.RFC3339),
-			ExpireTime:    "",
-			EnvTagValue:   envtags.FromPairs(envtags.RDSKey(), tagPairs),
-			NodeTagValue:  envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			Provider:           pbtenant.CloudProvider_aws,
+			AccoutName:         rds.tenanter.AccountName(),
+			InstanceId:         *v.DBInstanceIdentifier,
+			InstanceName:       "",
+			RegionName:         rds.region.GetName(),
+			InstanceType:       "",
+			Engine:             *v.Engine,
+			EngineVersion:      *v.EngineVersion,
+			InstanceClass:      *v.DBInstanceClass,
+			Status:             *v.DBInstanceStatus,
+			CreationTime:       v.InstanceCreateTime.Format(time.RFC3339),
+			ExpireTime:         "",
+			SecurityGroupNames: awsRDSSecurityGroupIDs(v.VpcSecurityGroups),
+			EnvTagValue:        envtags.FromPairs(envtags.RDSKey(), tagPairs),
+			NodeTagValue:       envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 	}
 

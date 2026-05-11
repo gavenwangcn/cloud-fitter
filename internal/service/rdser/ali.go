@@ -3,6 +3,7 @@ package rdser
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
@@ -48,6 +49,27 @@ func newAliRdsClient(region tenanter.Region, tenant tenanter.Tenanter) (Rdser, e
 		region:   region,
 		tenanter: tenant,
 	}, nil
+}
+
+func aliRDSSecurityGroupNames(cli *alirds.Client, dbInstanceID string) []string {
+	req := alirds.CreateDescribeSecurityGroupConfigurationRequest()
+	req.DBInstanceId = dbInstanceID
+	resp, err := cli.DescribeSecurityGroupConfiguration(req)
+	if err != nil {
+		glog.Warningf("Aliyun DescribeSecurityGroupConfiguration instance=%s: %v", dbInstanceID, err)
+		return nil
+	}
+	var out []string
+	for _, rel := range resp.Items.EcsSecurityGroupRelation {
+		if nm := strings.TrimSpace(rel.SecurityGroupName); nm != "" {
+			out = append(out, nm)
+			continue
+		}
+		if id := strings.TrimSpace(rel.SecurityGroupId); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*pbrds.ListDetailResp, error) {
@@ -116,6 +138,27 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			EnvTagValue:   ev,
 			NodeTagValue:  nv,
 		}
+	}
+
+	n := len(rdses)
+	if n > 0 {
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 10)
+		for i := 0; i < n; i++ {
+			i := i
+			id := rdses[i].InstanceId
+			if id == "" {
+				continue
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				rdses[i].SecurityGroupNames = aliRDSSecurityGroupNames(rds.cli, id)
+			}()
+		}
+		wg.Wait()
 	}
 
 	// PageNumber 分页：无 NextToken，以本页条数判断；NextToken 分页：以返回 NextToken 是否为空为准（末页可能仍满页）

@@ -304,6 +304,13 @@
         "utilizationAudit": {
           "$ref": "#/definitions/pbutilizationComputeUtilizationAudit",
           "title": "资源利用率审计（CPU/内存）；华为云 CES，其它云未填充"
+        },
+        "securityGroupNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "关联安全组（可读名称优先；部分云仅返回 ID）"
         }
       }
     },

@@ -3,11 +3,14 @@ package rdser
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	cdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cdb/v20170320"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
@@ -42,6 +45,37 @@ func newTencentCdbClient(region tenanter.Region, tenant tenanter.Tenanter) (Rdse
 	}, nil
 }
 
+func tencentRDSSecurityGroupNames(cli *cdb.Client, instanceID string) []string {
+	req := cdb.NewDescribeDBSecurityGroupsRequest()
+	req.InstanceId = common.StringPtr(instanceID)
+	resp, err := cli.DescribeDBSecurityGroups(req)
+	if err != nil {
+		glog.Warningf("Tencent DescribeDBSecurityGroups instance=%s: %v", instanceID, err)
+		return nil
+	}
+	if resp.Response == nil {
+		return nil
+	}
+	var out []string
+	for _, g := range resp.Response.Groups {
+		if g == nil {
+			continue
+		}
+		if g.SecurityGroupName != nil {
+			if nm := strings.TrimSpace(*g.SecurityGroupName); nm != "" {
+				out = append(out, nm)
+				continue
+			}
+		}
+		if g.SecurityGroupId != nil {
+			if id := strings.TrimSpace(*g.SecurityGroupId); id != "" {
+				out = append(out, id)
+			}
+		}
+	}
+	return out
+}
+
 func (rds *TencentCdb) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*pbrds.ListDetailResp, error) {
 	request := cdb.NewDescribeDBInstancesRequest()
 	request.Offset = common.Uint64Ptr(uint64((req.PageNumber - 1) * req.PageSize))
@@ -67,6 +101,27 @@ func (rds *TencentCdb) ListDetail(ctx context.Context, req *pbrds.ListDetailReq)
 			CreationTime:  *v.CreateTime,
 			ExpireTime:    *v.DeadlineTime,
 		}
+	}
+
+	n := len(rdses)
+	if n > 0 {
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 10)
+		for i := 0; i < n; i++ {
+			i := i
+			id := rdses[i].InstanceId
+			if id == "" {
+				continue
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				rdses[i].SecurityGroupNames = tencentRDSSecurityGroupNames(rds.cli, id)
+			}()
+		}
+		wg.Wait()
 	}
 
 	isFinished := false
