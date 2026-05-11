@@ -20,6 +20,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudhelper"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -117,6 +118,41 @@ func dcsSecurityGroupNames(v *model.InstanceListInfo) []string {
 		return nil
 	}
 	return []string{s}
+}
+
+// fillHuaweiDCSSecurityGroupDisplayNames 将 ListInstances 返回的安全组 UUID 解析为 VPC 中的可读名称（失败则保留 ID）。
+func fillHuaweiDCSSecurityGroupDisplayNames(region tenanter.Region, tenant tenanter.Tenanter, list []*pbredis.RedisInstance) {
+	if len(list) == 0 {
+		return
+	}
+	var idList []string
+	for _, e := range list {
+		if e == nil || len(e.SecurityGroupNames) != 1 {
+			continue
+		}
+		id := strings.TrimSpace(e.SecurityGroupNames[0])
+		if id != "" {
+			idList = append(idList, id)
+		}
+	}
+	if len(idList) == 0 {
+		return
+	}
+	vpcCli, err := huaweicloudhelper.NewVPCClient(region, tenant)
+	if err != nil {
+		glog.Warningf("Huawei DCS VPC client for security group names: %v", err)
+		return
+	}
+	nameByID := huaweicloudhelper.LookupSecurityGroupDisplayNames(vpcCli, idList)
+	for _, e := range list {
+		if e == nil || len(e.SecurityGroupNames) != 1 {
+			continue
+		}
+		id := strings.TrimSpace(e.SecurityGroupNames[0])
+		if nm, ok := nameByID[id]; ok {
+			e.SecurityGroupNames = []string{nm}
+		}
+	}
 }
 
 // 华为规格名中常见片段如 2u4g、8U16G 等
@@ -355,6 +391,8 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			SecurityGroupNames:   dcsSecurityGroupNames(&v),
 		}
 	}
+
+	fillHuaweiDCSSecurityGroupDisplayNames(redis.region, redis.tenanter, redises)
 
 	isFinished := false
 	if len(redises) < int(req.PageSize) {

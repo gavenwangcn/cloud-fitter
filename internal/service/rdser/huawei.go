@@ -13,8 +13,6 @@ import (
 	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	hwrds "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/rds/v3/model"
-	hwvpc "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v3"
-	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v3/model"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
@@ -22,6 +20,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudhelper"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -68,66 +67,30 @@ func newHuaweiRdsClient(region tenanter.Region, tenant tenanter.Tenanter) (Rdser
 	}, nil
 }
 
-func newHuaweiVpcClient(region tenanter.Region, tenant tenanter.Tenanter) (*hwvpc.VpcClient, error) {
-	switch t := tenant.(type) {
-	case *tenanter.AccessKeyTenant:
-		auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
-		rName := region.GetName()
-		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).Build()
-		c := hwiam.NewIamClient(cli)
-		request := new(iammodel.KeystoneListProjectsRequest)
-		request.Name = &rName
-		proj, err := c.KeystoneListProjects(request)
-		if err != nil || len(*proj.Projects) == 0 {
-			return nil, errors.Wrapf(err, "Huawei KeystoneListProjects regionName %s", rName)
-		}
-		projectId := (*proj.Projects)[0].Id
-
-		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcClient := hwvpc.VpcClientBuilder().WithRegion(huaweicloudregion.EndpointForService("vpc", rName)).WithCredential(auth).Build()
-		return hwvpc.NewVpcClient(hcClient), nil
-	default:
-	}
-	return nil, errors.New("init huawei vpc client: unsupported tenant")
-}
-
 // fillHuaweiRDSSecurityGroupDisplayNames 将 ListInstances 返回的安全组 UUID 解析为 VPC 中的可读名称（失败则保留 ID）。
 func fillHuaweiRDSSecurityGroupDisplayNames(region tenanter.Region, tenant tenanter.Tenanter, rdses []*pbrds.RdsInstance) {
 	if len(rdses) == 0 {
 		return
 	}
-	unique := make(map[string]struct{})
+	var idList []string
 	for _, e := range rdses {
 		if e == nil || len(e.SecurityGroupNames) != 1 {
 			continue
 		}
 		id := strings.TrimSpace(e.SecurityGroupNames[0])
-		if id == "" {
-			continue
+		if id != "" {
+			idList = append(idList, id)
 		}
-		unique[id] = struct{}{}
 	}
-	if len(unique) == 0 {
+	if len(idList) == 0 {
 		return
 	}
-	vpcCli, err := newHuaweiVpcClient(region, tenant)
+	vpcCli, err := huaweicloudhelper.NewVPCClient(region, tenant)
 	if err != nil {
 		glog.Warningf("Huawei RDS VPC client for security group names: %v", err)
 		return
 	}
-	nameByID := make(map[string]string, len(unique))
-	for id := range unique {
-		req := &vpcmodel.ShowSecurityGroupRequest{SecurityGroupId: id}
-		resp, err := vpcCli.ShowSecurityGroup(req)
-		if err != nil || resp == nil || resp.SecurityGroup == nil {
-			glog.V(2).Infof("Huawei ShowSecurityGroup id=%s err=%v", id, err)
-			continue
-		}
-		nm := strings.TrimSpace(resp.SecurityGroup.Name)
-		if nm != "" {
-			nameByID[id] = nm
-		}
-	}
+	nameByID := huaweicloudhelper.LookupSecurityGroupDisplayNames(vpcCli, idList)
 	for _, e := range rdses {
 		if e == nil || len(e.SecurityGroupNames) != 1 {
 			continue
