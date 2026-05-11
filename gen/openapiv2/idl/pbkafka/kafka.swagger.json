@@ -136,6 +136,13 @@
         "nodeTagValue": {
           "type": "string",
           "title": "节点标签值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node；各云若列表无标签则为空）"
+        },
+        "securityGroupNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "关联安全组（可读名称或 ID；腾讯 CKafka 列表可能为空）"
         }
       }
     },

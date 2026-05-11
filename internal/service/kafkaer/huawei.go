@@ -2,6 +2,7 @@ package kafkaer
 
 import (
 	"context"
+	"strings"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
@@ -58,6 +59,25 @@ func newHuaweiKafkaClient(region tenanter.Region, tenant tenanter.Tenanter) (Kaf
 	}, nil
 }
 
+func huaweiKafkaSecurityGroupNames(v *model.ShowInstanceResp) []string {
+	if v == nil {
+		return nil
+	}
+	if v.SecurityGroupName != nil {
+		s := strings.TrimSpace(*v.SecurityGroupName)
+		if s != "" {
+			return []string{s}
+		}
+	}
+	if v.SecurityGroupId != nil {
+		s := strings.TrimSpace(*v.SecurityGroupId)
+		if s != "" {
+			return []string{s}
+		}
+	}
+	return nil
+}
+
 func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetailReq) (*pbkafka.ListDetailResp, error) {
 	request := new(model.ListInstancesRequest)
 	request.Engine = model.GetListInstancesRequestEngineEnum().KAFKA
@@ -72,17 +92,18 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 	var kafkas = make([]*pbkafka.KafkaInstance, len(instances))
 	for k, v := range instances {
 		kafkas[k] = &pbkafka.KafkaInstance{
-			Provider:      pbtenant.CloudProvider_huawei,
-			AccoutName:    kafka.tenanter.AccountName(),
-			InstanceId:    *v.InstanceId,
-			InstanceName:  *v.Name,
-			RegionName:    kafka.region.GetName(),
-			EndPoint:      "",
-			TopicNumLimit: 0,
-			DistSize:      0,
-			Status:        *v.Status,
-			CreateTime:    *v.CreatedAt,
-			ExpiredTime:   "",
+			Provider:           pbtenant.CloudProvider_huawei,
+			AccoutName:         kafka.tenanter.AccountName(),
+			InstanceId:         *v.InstanceId,
+			InstanceName:       *v.Name,
+			RegionName:         kafka.region.GetName(),
+			EndPoint:           "",
+			TopicNumLimit:      0,
+			DistSize:           0,
+			Status:             *v.Status,
+			CreateTime:         *v.CreatedAt,
+			ExpiredTime:        "",
+			SecurityGroupNames: huaweiKafkaSecurityGroupNames(&v),
 		}
 	}
 

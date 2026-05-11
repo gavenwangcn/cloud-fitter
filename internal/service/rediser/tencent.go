@@ -2,11 +2,13 @@ package rediser
 
 import (
 	"context"
+	"strings"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
@@ -50,6 +52,66 @@ func newTencentRedisClient(region tenanter.Region, tenant tenanter.Tenanter) (Re
 	}, nil
 }
 
+func fillTencentRedisSecurityGroups(cli *redis.Client, instances []*pbredis.RedisInstance) {
+	if cli == nil || len(instances) == 0 {
+		return
+	}
+	const batchSize = 100
+	for start := 0; start < len(instances); start += batchSize {
+		end := start + batchSize
+		if end > len(instances) {
+			end = len(instances)
+		}
+		ids := make([]*string, 0, end-start)
+		indexByID := make(map[string]int, end-start)
+		for i := start; i < end; i++ {
+			e := instances[i]
+			if e == nil || e.InstanceId == "" {
+				continue
+			}
+			if _, dup := indexByID[e.InstanceId]; dup {
+				continue
+			}
+			indexByID[e.InstanceId] = i
+			ids = append(ids, common.StringPtr(e.InstanceId))
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		req := redis.NewDescribeInstanceSecurityGroupRequest()
+		req.InstanceIds = ids
+		resp, err := cli.DescribeInstanceSecurityGroup(req)
+		if err != nil || resp.Response == nil {
+			glog.Warningf("Tencent Redis DescribeInstanceSecurityGroup err=%v", err)
+			continue
+		}
+		for _, row := range resp.Response.InstanceSecurityGroupsDetail {
+			if row == nil || row.InstanceId == nil {
+				continue
+			}
+			id := *row.InstanceId
+			idx, ok := indexByID[id]
+			if !ok {
+				continue
+			}
+			var names []string
+			if row.SecurityGroupDetails != nil {
+				for _, sg := range row.SecurityGroupDetails {
+					if sg == nil {
+						continue
+					}
+					if sg.SecurityGroupName != nil && strings.TrimSpace(*sg.SecurityGroupName) != "" {
+						names = append(names, strings.TrimSpace(*sg.SecurityGroupName))
+					} else if sg.SecurityGroupId != nil && strings.TrimSpace(*sg.SecurityGroupId) != "" {
+						names = append(names, strings.TrimSpace(*sg.SecurityGroupId))
+					}
+				}
+			}
+			instances[idx].SecurityGroupNames = names
+		}
+	}
+}
+
 func (rds *TencentRedis) ListDetail(ctx context.Context, req *pbredis.ListDetailReq) (*pbredis.ListDetailResp, error) {
 	request := redis.NewDescribeInstancesRequest()
 	request.Offset = common.Uint64Ptr(uint64((req.PageNumber - 1) * req.PageSize))
@@ -79,6 +141,8 @@ func (rds *TencentRedis) ListDetail(ctx context.Context, req *pbredis.ListDetail
 	if len(rdses) < int(req.PageSize) {
 		isFinished = true
 	}
+
+	fillTencentRedisSecurityGroups(rds.cli, rdses)
 
 	return &pbredis.ListDetailResp{
 		Redises:    rdses,

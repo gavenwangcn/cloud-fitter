@@ -108,6 +108,17 @@ func derefString(p *string) string {
 	return *p
 }
 
+func dcsSecurityGroupNames(v *model.InstanceListInfo) []string {
+	if v == nil || v.SecurityGroupId == nil {
+		return nil
+	}
+	s := strings.TrimSpace(*v.SecurityGroupId)
+	if s == "" {
+		return nil
+	}
+	return []string{s}
+}
+
 // 华为规格名中常见片段如 2u4g、8U16G 等
 var dcsSpecCPURe = regexp.MustCompile(`(?i)(\d+)u`)
 
@@ -339,8 +350,9 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			UsedMemoryMb: used,
 			ChargeType:   dcsChargingMode(v.ChargingMode),
 			Cpu:          resolveDcsCPU(spec, cpuBySpec),
-			EnvTagValue:  envtags.FromPairs(envtags.RedisKey(), tagPairs),
-			NodeTagValue: envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			EnvTagValue:          envtags.FromPairs(envtags.RedisKey(), tagPairs),
+			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			SecurityGroupNames:   dcsSecurityGroupNames(&v),
 		}
 	}
 
