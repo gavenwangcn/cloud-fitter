@@ -192,6 +192,23 @@ func huaweiMetadataGet(m map[string]string, key string) string {
 	return m[key]
 }
 
+func huaweiSecurityGroupDisplayNames(groups []model.ServerSecurityGroup) []string {
+	if len(groups) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(groups))
+	for _, g := range groups {
+		if name := strings.TrimSpace(g.Name); name != "" {
+			out = append(out, name)
+			continue
+		}
+		if id := strings.TrimSpace(g.Id); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // huaweiDiskFromListServerBlockDevices 使用 ECS 磁盘管理 OpenAPI：
 // 「查询弹性云服务器挂载磁盘列表详情信息」ListServerBlockDevices
 // GET /v1/{project_id}/cloudservers/{server_id}/block_device
@@ -514,9 +531,10 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			OsBit:            huaweiMetadataGet(v.Metadata, "os_bit"),
 			SystemDiskSizeGb: disks[k].sys,
 			DataDiskTotalGb:  disks[k].data,
-			DiskSummary:      disks[k].summary,
-			EnvTagValue:      envtags.HuaweiECSFromServerDetail(v, envtags.ECSKey()),
-			NodeTagValue:     envtags.HuaweiECSFromServerDetail(v, envtags.NodeTagKey()),
+			DiskSummary:          disks[k].summary,
+			SecurityGroupNames:   huaweiSecurityGroupDisplayNames(v.SecurityGroups),
+			EnvTagValue:          envtags.HuaweiECSFromServerDetail(v, envtags.ECSKey()),
+			NodeTagValue:         envtags.HuaweiECSFromServerDetail(v, envtags.NodeTagKey()),
 		}
 	}
 

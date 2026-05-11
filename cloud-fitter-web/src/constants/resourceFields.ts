@@ -38,6 +38,7 @@ export const ECS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'creationTime', title: '创建时间' },
   { dataIndex: 'expireTime', title: '过期时间' },
   { dataIndex: 'innerIps', title: '内网 IP' },
+  { dataIndex: 'securityGroupNames', title: '关联安全组' },
   { dataIndex: 'vpcId', title: 'VPC ID' },
   { dataIndex: 'resourceGroupId', title: '资源组 ID' },
   { dataIndex: 'chargeType', title: '计费类型' },

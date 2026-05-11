@@ -62,6 +62,8 @@ message EcsInstance {
   string node_tag_value = 26;
   // 资源利用率审计（CPU/内存，约 30 天与约 180 天窗口）；当前主要对华为云通过 CES 拉取，其它云未填充
   pbutilization.ComputeUtilizationAudit utilization_audit = 27;
+  // 关联安全组（可读名称；云 API 可能返回名称或 UUID）
+  repeated string security_group_names = 28;
 }
 
 message ListDetailReq {
