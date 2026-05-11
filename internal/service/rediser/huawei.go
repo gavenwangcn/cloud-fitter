@@ -120,6 +120,50 @@ func dcsSecurityGroupNames(v *model.InstanceListInfo) []string {
 	return []string{s}
 }
 
+// dcsSecurityGroupNamesFromShow 来自 ShowInstance（查询指定实例 GET /v2/{project_id}/instances/{instance_id}）。
+// 华为文档中列表与详情均定义 security_group_id；实测部分租户/规格下列表不返回该字段，详情接口通常带有 security_group_name 或 id。
+func dcsSecurityGroupNamesFromShow(sr *model.ShowInstanceResponse) []string {
+	if sr == nil {
+		return nil
+	}
+	if sr.SecurityGroupName != nil {
+		s := strings.TrimSpace(*sr.SecurityGroupName)
+		if s != "" {
+			return []string{s}
+		}
+	}
+	if sr.SecurityGroupId != nil {
+		s := strings.TrimSpace(*sr.SecurityGroupId)
+		if s != "" {
+			return []string{s}
+		}
+	}
+	return nil
+}
+
+// fillHuaweiDCSFromShowInstanceWhenListSGEmpty 当 ListInstances 未带安全组时，按实例再调 ShowInstance 补全（官方 OpenAPI，与列表同一 DCS v2 服务）。
+func fillHuaweiDCSFromShowInstanceWhenListSGEmpty(redis *HuaweiDcs, list []*pbredis.RedisInstance) {
+	if redis == nil || len(list) == 0 {
+		return
+	}
+	for _, e := range list {
+		if e == nil || e.InstanceId == "" {
+			continue
+		}
+		if len(e.SecurityGroupNames) > 0 {
+			continue
+		}
+		sr, err := redis.cli.ShowInstance(&model.ShowInstanceRequest{InstanceId: e.InstanceId})
+		if err != nil {
+			glog.V(2).Infof("Huawei DCS ShowInstance(security_group) instance_id=%s err=%v", e.InstanceId, err)
+			continue
+		}
+		if names := dcsSecurityGroupNamesFromShow(sr); len(names) > 0 {
+			e.SecurityGroupNames = names
+		}
+	}
+}
+
 // fillHuaweiDCSSecurityGroupDisplayNames 将 ListInstances 返回的安全组 UUID 解析为 VPC 中的可读名称（失败则保留 ID）。
 func fillHuaweiDCSSecurityGroupDisplayNames(region tenanter.Region, tenant tenanter.Tenanter, list []*pbredis.RedisInstance) {
 	if len(list) == 0 {
@@ -392,6 +436,7 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 		}
 	}
 
+	fillHuaweiDCSFromShowInstanceWhenListSGEmpty(redis, redises)
 	fillHuaweiDCSSecurityGroupDisplayNames(redis.region, redis.tenanter, redises)
 
 	isFinished := false
