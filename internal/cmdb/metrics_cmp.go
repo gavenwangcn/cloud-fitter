@@ -70,6 +70,9 @@ func serverResourceChanged(row map[string]any, h hostRec) bool {
 	if !metricStrEqual(oDisk, nDisk) {
 		return true
 	}
+	if strings.TrimSpace(anyToCompareStr(row["storage"])) != strings.TrimSpace(h.StorageAttr) {
+		return true
+	}
 	if !metricStrEqual(anyToCompareStr(row["cpu_peak_30"]), strings.TrimSpace(h.CpuPeak30)) {
 		return true
 	}

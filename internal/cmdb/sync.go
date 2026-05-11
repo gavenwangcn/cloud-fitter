@@ -530,7 +530,8 @@ type hostRec struct {
 	Name, IP, CloudLabel, Region, SysNodeName string
 	CPU                                       int32
 	MemGBStr                                  string
-	DiskStr                                   string // 磁盘：优先 disk_summary，否则 系统盘GB+数据盘GB
+	DiskStr                                   string // 磁盘：系统盘/数据盘GB 有任一则为「a+b」；仅两者皆无(0)时用 disk_summary，再无则空
+	StorageAttr                               string // CMDB storage：系统盘/数据盘合计（与控制台列一致）
 	OS                                        string
 	CceClusterID                              string
 	CpuPeak30, CpuPeak180                     string
@@ -538,6 +539,18 @@ type hostRec struct {
 	MemPeak30, MenPeak180                     string
 	MemAvg30, MenAvg180                       string
 	DiskUsage30, DiskUsage180                 string
+}
+
+// hostStorageAttr 生成主机 CI 的 storage 属性：系统盘/数据盘任一存在即写入；皆有则为「系统盘:xG&数据盘:yG」。
+func hostStorageAttr(systemDiskGB, dataDiskTotalGB int32) string {
+	var parts []string
+	if systemDiskGB > 0 {
+		parts = append(parts, fmt.Sprintf("系统盘:%dG", systemDiskGB))
+	}
+	if dataDiskTotalGB > 0 {
+		parts = append(parts, fmt.Sprintf("数据盘:%dG", dataDiskTotalGB))
+	}
+	return strings.Join(parts, "&")
 }
 
 func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []hostRec {
@@ -553,10 +566,15 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			cceID = huaweiEcsIDToCceUID[e.GetInstanceId()]
 		}
 		util := e.GetUtilizationAudit()
-		diskStr := strings.TrimSpace(e.GetDiskSummary())
-		if diskStr == "" {
-			diskStr = fmt.Sprintf("%d+%d", e.GetSystemDiskSizeGb(), e.GetDataDiskTotalGb())
+		sysGB := e.GetSystemDiskSizeGb()
+		dataGB := e.GetDataDiskTotalGb()
+		var diskStr string
+		if sysGB > 0 || dataGB > 0 {
+			diskStr = fmt.Sprintf("%d+%d", sysGB, dataGB)
+		} else {
+			diskStr = strings.TrimSpace(e.GetDiskSummary())
 		}
+		storageAttr := hostStorageAttr(sysGB, dataGB)
 		out = append(out, hostRec{
 			InstanceID:   strings.TrimSpace(e.GetInstanceId()),
 			Name:         e.GetInstanceName(),
@@ -567,6 +585,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			CPU:          e.GetCpu(),
 			MemGBStr:     memGB,
 			DiskStr:      diskStr,
+			StorageAttr:  storageAttr,
 			OS:           firstNonEmpty(e.GetImageName(), e.GetOsType()),
 			CceClusterID: cceID, // 华为：由 CCE ListNodes 的 status.serverId 与集群 metadata.uid 映射得到，与 CceCluster.cluster_uid 一致
 			CpuPeak30:    utilWindowPeakText(util.GetCpuLast_30D()),
@@ -949,6 +968,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 				"cpu_count":      int(h.CPU),
 				"ram_size":       h.MemGBStr,
 				"disk_size":      h.DiskStr,
+				"storage":        h.StorageAttr,
 				"cpu_peak_30":    h.CpuPeak30,
 				"cpu_peak_180":   h.CpuPeak180,
 				"cpu_avg_30":     h.CpuAvg30,
@@ -980,6 +1000,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 			"cpu_count":      int(h.CPU),
 			"ram_size":       h.MemGBStr,
 			"disk_size":      h.DiskStr,
+			"storage":        h.StorageAttr,
 			"os_version":     h.OS,
 			"location":       locn,
 			"cloud_type":     ct,
