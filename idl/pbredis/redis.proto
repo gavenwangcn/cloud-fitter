@@ -42,8 +42,6 @@ message RedisInstance {
   string node_tag_value = 18;
   // 内存利用率审计（DCS）；华为云 CES memory_usage 等，其它云未填充
   pbutilization.MemoryUtilizationAudit memory_utilization_audit = 19;
-  // 关联安全组（可读名称优先；部分 API 仅返回 ID）
-  repeated string security_group_names = 20;
 }
 
 message ListDetailReq {

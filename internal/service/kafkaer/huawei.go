@@ -2,7 +2,6 @@ package kafkaer
 
 import (
 	"context"
-	"strings"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
@@ -73,18 +72,17 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 	var kafkas = make([]*pbkafka.KafkaInstance, len(instances))
 	for k, v := range instances {
 		kafkas[k] = &pbkafka.KafkaInstance{
-			Provider:           pbtenant.CloudProvider_huawei,
-			AccoutName:         kafka.tenanter.AccountName(),
-			InstanceId:         *v.InstanceId,
-			InstanceName:       *v.Name,
-			RegionName:         kafka.region.GetName(),
-			EndPoint:           "",
-			TopicNumLimit:      0,
-			DistSize:           0,
-			Status:             *v.Status,
-			CreateTime:         *v.CreatedAt,
-			ExpiredTime:        "",
-			SecurityGroupNames: huaweiKafkaSecurityGroupNames(&instances[k]),
+			Provider:      pbtenant.CloudProvider_huawei,
+			AccoutName:    kafka.tenanter.AccountName(),
+			InstanceId:    *v.InstanceId,
+			InstanceName:  *v.Name,
+			RegionName:    kafka.region.GetName(),
+			EndPoint:      "",
+			TopicNumLimit: 0,
+			DistSize:      0,
+			Status:        *v.Status,
+			CreateTime:    *v.CreatedAt,
+			ExpiredTime:   "",
 		}
 	}
 
@@ -96,21 +94,4 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 		PageSize:   req.PageSize,
 		RequestId:  "",
 	}, nil
-}
-
-func huaweiKafkaSecurityGroupNames(v *model.ShowInstanceResp) []string {
-	if v == nil {
-		return nil
-	}
-	if v.SecurityGroupName != nil {
-		if n := strings.TrimSpace(*v.SecurityGroupName); n != "" {
-			return []string{n}
-		}
-	}
-	if v.SecurityGroupId != nil {
-		if n := strings.TrimSpace(*v.SecurityGroupId); n != "" {
-			return []string{n}
-		}
-	}
-	return nil
 }

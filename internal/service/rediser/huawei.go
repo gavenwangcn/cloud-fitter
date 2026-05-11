@@ -322,31 +322,25 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			}
 		}
 
-		var sgNames []string
-		if id := strings.TrimSpace(derefString(v.SecurityGroupId)); id != "" {
-			sgNames = []string{id}
-		}
-
 		redises[k] = &pbredis.RedisInstance{
-			Provider:           pbtenant.CloudProvider_huawei,
-			AccoutName:         redis.tenanter.AccountName(),
-			InstanceId:         derefString(v.InstanceId),
-			InstanceName:       derefString(v.Name),
-			RegionName:         redis.region.GetName(),
-			Size:               size,
-			Status:             derefString(v.Status),
-			CreationTime:       derefString(v.CreatedAt),
-			ExpireTime:         "",
-			SpecCode:           spec,
-			VpcId:              derefString(v.VpcId),
-			PublicIps:          pub,
-			PrivateIps:         priv,
-			UsedMemoryMb:       used,
-			ChargeType:         dcsChargingMode(v.ChargingMode),
-			Cpu:                resolveDcsCPU(spec, cpuBySpec),
-			EnvTagValue:        envtags.FromPairs(envtags.RedisKey(), tagPairs),
-			NodeTagValue:       envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
-			SecurityGroupNames: sgNames,
+			Provider:     pbtenant.CloudProvider_huawei,
+			AccoutName:   redis.tenanter.AccountName(),
+			InstanceId:   derefString(v.InstanceId),
+			InstanceName: derefString(v.Name),
+			RegionName:   redis.region.GetName(),
+			Size:         size,
+			Status:       derefString(v.Status),
+			CreationTime: derefString(v.CreatedAt),
+			ExpireTime:   "",
+			SpecCode:     spec,
+			VpcId:        derefString(v.VpcId),
+			PublicIps:    pub,
+			PrivateIps:   priv,
+			UsedMemoryMb: used,
+			ChargeType:   dcsChargingMode(v.ChargingMode),
+			Cpu:          resolveDcsCPU(spec, cpuBySpec),
+			EnvTagValue:  envtags.FromPairs(envtags.RedisKey(), tagPairs),
+			NodeTagValue: envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 	}
 

@@ -2,9 +2,6 @@ package rediser
 
 import (
 	"context"
-	"strings"
-
-	"github.com/golang/glog"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
@@ -83,8 +80,6 @@ func (rds *TencentRedis) ListDetail(ctx context.Context, req *pbredis.ListDetail
 		isFinished = true
 	}
 
-	fillTencentRedisSecurityGroups(rds.cli, rdses)
-
 	return &pbredis.ListDetailResp{
 		Redises:    rdses,
 		Finished:   isFinished,
@@ -93,59 +88,4 @@ func (rds *TencentRedis) ListDetail(ctx context.Context, req *pbredis.ListDetail
 		PageSize:   req.PageSize,
 		RequestId:  *resp.Response.RequestId,
 	}, nil
-}
-
-func fillTencentRedisSecurityGroups(cli *redis.Client, instances []*pbredis.RedisInstance) {
-	ids := make([]*string, 0, len(instances))
-	for _, e := range instances {
-		if e == nil || e.InstanceId == "" {
-			continue
-		}
-		ids = append(ids, common.StringPtr(e.InstanceId))
-	}
-	if len(ids) == 0 {
-		return
-	}
-	req := redis.NewDescribeInstanceSecurityGroupRequest()
-	req.InstanceIds = ids
-	sgResp, err := cli.DescribeInstanceSecurityGroup(req)
-	if err != nil {
-		glog.Warningf("Tencent Redis DescribeInstanceSecurityGroup failed: %v", err)
-		return
-	}
-	if sgResp.Response == nil {
-		return
-	}
-	byInst := make(map[string][]string)
-	for _, det := range sgResp.Response.InstanceSecurityGroupsDetail {
-		if det == nil || det.InstanceId == nil {
-			continue
-		}
-		var names []string
-		for _, sg := range det.SecurityGroupDetails {
-			if sg == nil {
-				continue
-			}
-			if sg.SecurityGroupName != nil {
-				if n := strings.TrimSpace(*sg.SecurityGroupName); n != "" {
-					names = append(names, n)
-					continue
-				}
-			}
-			if sg.SecurityGroupId != nil {
-				if n := strings.TrimSpace(*sg.SecurityGroupId); n != "" {
-					names = append(names, n)
-				}
-			}
-		}
-		byInst[*det.InstanceId] = names
-	}
-	for _, e := range instances {
-		if e == nil {
-			continue
-		}
-		if x, ok := byInst[e.InstanceId]; ok && len(x) > 0 {
-			e.SecurityGroupNames = x
-		}
-	}
 }

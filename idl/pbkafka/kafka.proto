@@ -31,8 +31,6 @@ message KafkaInstance {
   string expired_time = 11;
   // 节点标签值（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node；各云若列表无标签则为空）
   string node_tag_value = 12;
-  // 关联安全组（可读名称优先；部分 API 仅返回 ID；腾讯 CKafka 等若 API 无字段则为空）
-  repeated string security_group_names = 13;
 }
 
 message ListDetailReq {

@@ -2,7 +2,6 @@ package kafkaer
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"time"
 
@@ -68,18 +67,17 @@ func (kafka *AliKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetailRe
 		status, _ := aliKafkaStatus[v.ServiceStatus]
 
 		kafkas[k] = &pbkafka.KafkaInstance{
-			Provider:           pbtenant.CloudProvider_ali,
-			AccoutName:         kafka.tenanter.AccountName(),
-			InstanceId:         v.InstanceId,
-			InstanceName:       v.Name,
-			RegionName:         kafka.region.GetName(),
-			EndPoint:           v.EndPoint,
-			TopicNumLimit:      int32(v.TopicNumLimit),
-			DistSize:           int32(v.DiskSize),
-			Status:             status,
-			CreateTime:         time.Unix(v.CreateTime/1000, 0).Format(time.RFC3339),
-			ExpiredTime:        time.Unix(v.ExpiredTime/1000, 0).Format(time.RFC3339),
-			SecurityGroupNames: splitAliKafkaSecurityGroups(v.SecurityGroup),
+			Provider:      pbtenant.CloudProvider_ali,
+			AccoutName:    kafka.tenanter.AccountName(),
+			InstanceId:    v.InstanceId,
+			InstanceName:  v.Name,
+			RegionName:    kafka.region.GetName(),
+			EndPoint:      v.EndPoint,
+			TopicNumLimit: int32(v.TopicNumLimit),
+			DistSize:      int32(v.DiskSize),
+			Status:        status,
+			CreateTime:    time.Unix(v.CreateTime/1000, 0).Format(time.RFC3339),
+			ExpiredTime:   time.Unix(v.ExpiredTime/1000, 0).Format(time.RFC3339),
 		}
 	}
 
@@ -92,22 +90,4 @@ func (kafka *AliKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetailRe
 		NextToken:  "",
 		RequestId:  resp.RequestId,
 	}, nil
-}
-
-func splitAliKafkaSecurityGroups(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == ';' || r == '，'
-	})
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
