@@ -20,6 +20,9 @@ type Region interface {
 	GetName() string
 }
 
+// huaweiTurkeyTrWest1RegionNum 与 idl/pbtenant tenant.proto 中 hw_tr_west_1 枚举号一致（OpenAPI region：tr-west-1）。
+const huaweiTurkeyTrWest1RegionNum int32 = 5
+
 type region struct {
 	provider   pbtenant.CloudProvider
 	regionId   int32
@@ -55,7 +58,7 @@ func (r *region) GetId() int32 {
 	return r.regionId
 }
 
-// RegionsForProviderAndTenant 返回该云账号下需扫描的地域：华为云按账号国内/国际分流，其它云与 GetAllRegionIds 一致。
+// RegionsForProviderAndTenant 返回该云账号下需扫描的地域：华为云按账号区域类型（国内 / 俄罗斯 / 土耳其）分流，其它云与 GetAllRegionIds 一致。
 func RegionsForProviderAndTenant(provider pbtenant.CloudProvider, tenant Tenanter) []Region {
 	if provider != pbtenant.CloudProvider_huawei {
 		return GetAllRegionIds(provider)
@@ -68,8 +71,15 @@ func huaweiRegionsForTenant(tenant Tenanter) []Region {
 	if !ok {
 		return huaweiDomesticRegionSlice()
 	}
-	if ak.HuaweiAccountScope() == HuaweiAccountScopeInternational {
+	if ak.HuaweiAccountScope() == HuaweiAccountScopeRussia {
 		r, err := NewRegion(pbtenant.CloudProvider_huawei, int32(pbtenant.HuaweiRegionId_hw_ru_moscow_1))
+		if err != nil {
+			return nil
+		}
+		return []Region{r}
+	}
+	if ak.HuaweiAccountScope() == HuaweiAccountScopeTurkey {
+		r, err := NewRegion(pbtenant.CloudProvider_huawei, huaweiTurkeyTrWest1RegionNum)
 		if err != nil {
 			return nil
 		}
@@ -153,6 +163,10 @@ func getTencentRegionName(regionId int32) (string, error) {
 
 // prefix hw_
 func getHuaweiRegionName(regionId int32) (string, error) {
+	// 土耳其（伊斯坦布尔）tr-west-1；与 tenant.proto hw_tr_west_1=5 一致（见华为云终端节点文档）。
+	if regionId == huaweiTurkeyTrWest1RegionNum {
+		return "tr-west-1", nil
+	}
 	name, ok := pbtenant.HuaweiRegionId_name[regionId]
 	if !ok || regionId == int32(pbtenant.HuaweiRegionId_hw_all) {
 		return "", errors.WithMessagef(ErrNoExistHuaweiRegionId, "input region id is %d", regionId)

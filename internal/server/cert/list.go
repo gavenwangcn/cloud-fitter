@@ -141,7 +141,7 @@ func scmRegionsFromEnvOverride() []string {
 	return nil
 }
 
-// huaweiSCMRegionsForTenant 国内账号：cn-north-4 + ap-southeast-1；国际账号：ru-moscow-1。环境变量覆盖优先。
+// huaweiSCMRegionsForTenant 国内账号：cn-north-4 + ap-southeast-1；俄罗斯：ru-moscow-1；土耳其：tr-west-1。环境变量覆盖优先。
 func huaweiSCMRegionsForTenant(tenant tenanter.Tenanter) []string {
 	if o := scmRegionsFromEnvOverride(); o != nil {
 		return o
@@ -150,10 +150,14 @@ func huaweiSCMRegionsForTenant(tenant tenanter.Tenanter) []string {
 	if !ok {
 		return []string{"cn-north-4", "ap-southeast-1"}
 	}
-	if ak.HuaweiAccountScope() == tenanter.HuaweiAccountScopeInternational {
+	switch ak.HuaweiAccountScope() {
+	case tenanter.HuaweiAccountScopeRussia:
 		return []string{"ru-moscow-1"}
+	case tenanter.HuaweiAccountScopeTurkey:
+		return []string{"tr-west-1"}
+	default:
+		return []string{"cn-north-4", "ap-southeast-1"}
 	}
-	return []string{"cn-north-4", "ap-southeast-1"}
 }
 
 func listHuaweiCertificatesForTenant(tenant tenanter.Tenanter, endpointRegion string) ([]*Instance, error) {

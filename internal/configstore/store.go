@@ -29,7 +29,7 @@ type Row struct {
 	ID                 int64  `json:"id"`
 	Provider           int32  `json:"provider"`
 	Name               string `json:"name"`
-	HuaweiAccountScope int32  `json:"huaweiAccountScope"` // 0=国内 1=国际，非华为云固定为 0
+	HuaweiAccountScope int32  `json:"huaweiAccountScope"` // 0=国内 1=俄罗斯 2=土耳其，非华为云固定为 0
 }
 
 type SystemRow struct {
@@ -287,11 +287,11 @@ func ParseIntDefault(s string, def int) int {
 	return n
 }
 
-// Create 插入一条配置；huaweiAccountScope 仅 provider 为华为云时有效（0=国内，1=国际）。
+// Create 插入一条配置；huaweiAccountScope 仅 provider 为华为云时有效（0=国内，1=俄罗斯，2=土耳其）。
 func (s *Store) Create(provider int32, name, accessID, accessSecret string, huaweiAccountScope int32) error {
 	if provider != int32(pbtenant.CloudProvider_huawei) {
 		huaweiAccountScope = 0
-	} else if huaweiAccountScope != 1 {
+	} else if huaweiAccountScope < 0 || huaweiAccountScope > 2 {
 		huaweiAccountScope = 0
 	}
 	_, err := s.db.Exec(
@@ -477,7 +477,7 @@ func (s *Store) AccountsBySystemName(systemName string) ([]Row, error) {
 	return out, nil
 }
 
-// ToCloudConfigs 读取全部行并转为租户加载结构；第二个返回值为华为账号名 -> 国际(1)，缺省表示国内。
+// ToCloudConfigs 读取全部行并转为租户加载结构；第二个返回值为华为账号名 -> 区域类型（1=俄罗斯，2=土耳其），缺省表示国内。
 func (s *Store) ToCloudConfigs() (*pbtenant.CloudConfigs, map[string]int32, error) {
 	rows, err := s.db.Query(`SELECT provider, name, access_id, access_secret, IFNULL(huawei_account_scope, 0) FROM cloud_configs ORDER BY id`)
 	if err != nil {
@@ -499,8 +499,8 @@ func (s *Store) ToCloudConfigs() (*pbtenant.CloudConfigs, map[string]int32, erro
 			AccessId:     ak,
 			AccessSecret: sk,
 		})
-		if pbtenant.CloudProvider(provider) == pbtenant.CloudProvider_huawei && scope == 1 {
-			huaweiScopeByName[name] = 1
+		if pbtenant.CloudProvider(provider) == pbtenant.CloudProvider_huawei && (scope == 1 || scope == 2) {
+			huaweiScopeByName[name] = scope
 		}
 	}
 	return cfg, huaweiScopeByName, rows.Err()

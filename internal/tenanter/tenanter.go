@@ -84,7 +84,7 @@ func load(configs *pbtenant.CloudConfigs, huaweiScopeByName map[string]int32) er
 }
 
 // ReloadFromConfigs 清空内存中的租户映射后按 configs 重新加载（用于 SQLite 或动态更新）。
-// huaweiScopeByName 按账号名称映射 0=国内、1=国际；nil 或缺省键视为国内。
+// huaweiScopeByName 按账号名称映射 0=国内、1=俄罗斯、2=土耳其；nil 或缺省键视为国内。
 func ReloadFromConfigs(configs *pbtenant.CloudConfigs, huaweiScopeByName map[string]int32) error {
 	gStore.Lock()
 	defer gStore.Unlock()
@@ -98,8 +98,8 @@ func applyConfigsLocked(configs *pbtenant.CloudConfigs, huaweiScopeByName map[st
 		if c.AccessId != "" && c.AccessSecret != "" {
 			scope := HuaweiAccountScopeDomestic
 			if c.Provider == pbtenant.CloudProvider_huawei && huaweiScopeByName != nil {
-				if s, ok := huaweiScopeByName[c.Name]; ok && s == HuaweiAccountScopeInternational {
-					scope = HuaweiAccountScopeInternational
+				if s, ok := huaweiScopeByName[c.Name]; ok && (s == HuaweiAccountScopeRussia || s == HuaweiAccountScopeTurkey) {
+					scope = s
 				}
 			}
 			gStore.stores[c.Provider] = append(gStore.stores[c.Provider], NewAccessKeyTenant(c.Name, c.AccessId, c.AccessSecret, scope))
@@ -166,8 +166,8 @@ func (raw rawCloudConfigsFile) toProtoAndHuaweiScopeMap() (*pbtenant.CloudConfig
 		if pbtenant.CloudProvider(c.Provider) != pbtenant.CloudProvider_huawei || c.Name == "" {
 			continue
 		}
-		if c.HuaweiAccountScope == HuaweiAccountScopeInternational {
-			huaweiScopeByName[c.Name] = HuaweiAccountScopeInternational
+		if c.HuaweiAccountScope == HuaweiAccountScopeRussia || c.HuaweiAccountScope == HuaweiAccountScopeTurkey {
+			huaweiScopeByName[c.Name] = c.HuaweiAccountScope
 		}
 	}
 	return cfg, huaweiScopeByName

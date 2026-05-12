@@ -108,6 +108,8 @@ enum HuaweiRegionId {
   hw_cn_east_4 = 2; // cn-east-4
   hw_ap_southeast_1 = 3; // ap-southeast-1 中国香港
   hw_ru_moscow_1 = 4; // ru-moscow-1 俄罗斯（莫斯科）
+  // 土耳其（伊斯坦布尔），OpenAPI/SDK 区域 ID 为 tr-west-1（见华为云「终端节点及区域」文档）；执行 buf generate 后同步 gen/idl/pbtenant。
+  hw_tr_west_1 = 5; // tr-west-1
 }
 
 // 亚马逊云区域，需要将对应的 _ 转化为 -

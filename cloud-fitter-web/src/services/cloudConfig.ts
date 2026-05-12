@@ -4,7 +4,7 @@ export interface CloudConfigRow {
   id: number;
   provider: number;
   name: string;
-  /** 0=国内 1=国际，非华为云为 0 */
+  /** 0=国内 1=俄罗斯 2=土耳其，非华为云为 0 */
   huaweiAccountScope: number;
 }
 

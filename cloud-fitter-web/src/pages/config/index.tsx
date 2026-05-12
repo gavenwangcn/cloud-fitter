@@ -125,7 +125,9 @@ const ConfigPage: React.FC = () => {
               if (record.provider !== 2) {
                 return '—';
               }
-              return s === 1 ? '国际' : '国内';
+              if (s === 1) return '俄罗斯';
+              if (s === 2) return '土耳其';
+              return '国内';
             },
           },
           {
@@ -179,7 +181,8 @@ const ConfigPage: React.FC = () => {
                     placeholder="请选择"
                     options={[
                       { label: '国内', value: 0 },
-                      { label: '国际', value: 1 },
+                      { label: '俄罗斯', value: 1 },
+                      { label: '土耳其（伊斯坦布尔）', value: 2 },
                     ]}
                   />
                 </Form.Item>
