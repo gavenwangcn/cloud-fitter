@@ -47,8 +47,9 @@ func keystoneProjectLookupBaseDelay() time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-// transientIAMLookupErr 判断 IAM 按地域查 project 时是否适合重试（多为 Docker DNS 偶发）。
-func transientIAMLookupErr(err error) bool {
+// TransientHuaweiNetworkErr 判断华为 SDK 请求失败是否可能为瞬时网络/DNS 问题（适合有限次重试）。
+// IAM KeystoneListProjects、CCE/ECS 等对外域名解析均可能命中 Docker 127.0.0.11 偶发失败。
+func TransientHuaweiNetworkErr(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -81,7 +82,7 @@ func KeystoneListProjectsResolveProject(client *hwiam.IamClient, regionName stri
 		r, err := client.KeystoneListProjects(req)
 		if err != nil {
 			lastErr = err
-			if attempt < max && transientIAMLookupErr(err) {
+			if attempt < max && TransientHuaweiNetworkErr(err) {
 				d := time.Duration(attempt) * base
 				if d > 3*time.Second {
 					d = 3 * time.Second

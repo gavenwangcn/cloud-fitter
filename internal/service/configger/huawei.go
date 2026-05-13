@@ -71,7 +71,9 @@ func (cfg *HuaweiCfg) Statistic(ctx context.Context) (*pbstatistic.StatisticInfo
 	req.Offset = &offset
 	req.Limit = &limit
 
-	resp, err := cfg.cli.ListServersDetails(req)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ListServersDetailsResponse, error) {
+		return cfg.cli.ListServersDetails(req)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Huawei ListServersDetails error")
 	}

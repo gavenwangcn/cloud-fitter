@@ -122,7 +122,9 @@ func (c *HuaweiCce) ecsFlavorByServerID() (map[string]*ecsmodel.ServerFlavor, er
 		off := offset
 		lim := limit
 		req := &ecsmodel.ListServersDetailsRequest{Offset: &off, Limit: &lim}
-		resp, err := c.ecsCli.ListServersDetails(req)
+		resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*ecsmodel.ListServersDetailsResponse, error) {
+			return c.ecsCli.ListServersDetails(req)
+		})
 		if err != nil {
 			return nil, errors.Wrap(err, "Huawei ECS ListServersDetails")
 		}
@@ -154,7 +156,9 @@ func (c *HuaweiCce) clusterNodeAgg(clusterID string, flavorByID map[string]*ecsm
 		return out
 	}
 	req := ccemodel.ListNodesRequest{ClusterId: clusterID}
-	resp, err := c.cceCli.ListNodes(&req)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*ccemodel.ListNodesResponse, error) {
+		return c.cceCli.ListNodes(&req)
+	})
 	if err != nil {
 		glog.Warningf("Huawei CCE ListNodes cluster_id=%s: %v", clusterID, err)
 		return out
@@ -188,7 +192,9 @@ func (c *HuaweiCce) clusterNodeAgg(clusterID string, flavorByID map[string]*ecsm
 func (c *HuaweiCce) MapEcsInstanceIDToClusterUID(ctx context.Context) (map[string]string, error) {
 	_ = ctx
 	r := new(ccemodel.ListClustersRequest)
-	clustersResp, err := c.cceCli.ListClusters(r)
+	clustersResp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*ccemodel.ListClustersResponse, error) {
+		return c.cceCli.ListClusters(r)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Huawei CCE ListClusters")
 	}
@@ -207,7 +213,9 @@ func (c *HuaweiCce) MapEcsInstanceIDToClusterUID(ctx context.Context) (map[strin
 			continue
 		}
 		nodeReq := ccemodel.ListNodesRequest{ClusterId: clusterUID}
-		nodeResp, err := c.cceCli.ListNodes(&nodeReq)
+		nodeResp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*ccemodel.ListNodesResponse, error) {
+			return c.cceCli.ListNodes(&nodeReq)
+		})
 		if err != nil {
 			return nil, errors.Wrapf(err, "Huawei CCE ListNodes cluster_id=%s", clusterUID)
 		}
@@ -234,7 +242,9 @@ func (c *HuaweiCce) MapEcsInstanceIDToClusterUID(ctx context.Context) (map[strin
 
 func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*pbcce.ListDetailResp, error) {
 	r := new(ccemodel.ListClustersRequest)
-	resp, err := c.cceCli.ListClusters(r)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*ccemodel.ListClustersResponse, error) {
+		return c.cceCli.ListClusters(r)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Huawei CCE ListClusters error")
 	}

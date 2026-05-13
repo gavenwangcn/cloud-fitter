@@ -83,7 +83,9 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 	request.Engine = model.GetListInstancesRequestEngineEnum().KAFKA
 	// v0.0.40-rc 的 ListInstancesRequest 无 offset/limit；ListInstances 单次返回当前过滤下全量
 
-	resp, err := kafka.cli.ListInstances(request)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ListInstancesResponse, error) {
+		return kafka.cli.ListInstances(request)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Huawei ListDetail error")
 	}

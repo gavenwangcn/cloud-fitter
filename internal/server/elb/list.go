@@ -135,7 +135,10 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 	eipLimit := int32(2000)
 	eipReq.Limit = &eipLimit
 	var eipCount int
-	if eipResp, e := eipCli.ListPublicips(eipReq); e == nil && eipResp != nil && eipResp.Publicips != nil {
+	eipResp, e := huaweicloudregion.DoWithTransientNetworkRetry(func() (*eipmodel.ListPublicipsResponse, error) {
+		return eipCli.ListPublicips(eipReq)
+	})
+	if e == nil && eipResp != nil && eipResp.Publicips != nil {
 		eipCount = len(*eipResp.Publicips)
 		for _, ip := range *eipResp.Publicips {
 			id := strings.TrimSpace(deref(ip.Id))
@@ -161,7 +164,9 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 	var lbCount, listenerErrCount int
 	for {
 		page++
-		resp, err := elbCli.ListLoadBalancers(req)
+		resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*elbmodel.ListLoadBalancersResponse, error) {
+			return elbCli.ListLoadBalancers(req)
+		})
 		if err != nil {
 			return nil, errors.Wrap(err, "Huawei ELB ListLoadBalancers error")
 		}
@@ -208,7 +213,9 @@ func queryListeners(cli *hwelb.ElbClient, lbID string) ([]string, error) {
 	req.LoadbalancerId = &[]string{lbID}
 	var out []string
 	for {
-		resp, err := cli.ListListeners(req)
+		resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*elbmodel.ListListenersResponse, error) {
+			return cli.ListListeners(req)
+		})
 		if err != nil {
 			return out, err
 		}

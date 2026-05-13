@@ -126,7 +126,9 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 	req := new(eipmodel.ListPublicipsRequest)
 	limit := int32(2000)
 	req.Limit = &limit
-	resp, err := eipCli.ListPublicips(req)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*eipmodel.ListPublicipsResponse, error) {
+		return eipCli.ListPublicips(req)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Huawei EIP ListPublicips error")
 	}

@@ -57,7 +57,9 @@ func LookupSecurityGroupDisplayNames(cli *hwvpc.VpcClient, ids []string) map[str
 		seen[id] = struct{}{}
 
 		req := &vpcmodel.ShowSecurityGroupRequest{SecurityGroupId: id}
-		resp, err := cli.ShowSecurityGroup(req)
+		resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*vpcmodel.ShowSecurityGroupResponse, error) {
+			return cli.ShowSecurityGroup(req)
+		})
 		if err != nil || resp == nil || resp.SecurityGroup == nil {
 			glog.V(2).Infof("Huawei ShowSecurityGroup id=%s err=%v", id, err)
 			continue

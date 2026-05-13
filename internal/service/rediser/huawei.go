@@ -153,7 +153,9 @@ func fillHuaweiDCSFromShowInstanceWhenListSGEmpty(redis *HuaweiDcs, list []*pbre
 		if len(e.SecurityGroupNames) > 0 {
 			continue
 		}
-		sr, err := redis.cli.ShowInstance(&model.ShowInstanceRequest{InstanceId: e.InstanceId})
+		sr, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ShowInstanceResponse, error) {
+			return redis.cli.ShowInstance(&model.ShowInstanceRequest{InstanceId: e.InstanceId})
+		})
 		if err != nil {
 			glog.V(2).Infof("Huawei DCS ShowInstance(security_group) instance_id=%s err=%v", e.InstanceId, err)
 			continue
@@ -250,7 +252,9 @@ func flavorItemCPU(item *model.FlavorsItems) int32 {
 func (redis *HuaweiDcs) buildFlavorCPUBySpec() map[string]int32 {
 	out := make(map[string]int32)
 	req := new(model.ListFlavorsRequest)
-	resp, err := redis.cli.ListFlavors(req)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ListFlavorsResponse, error) {
+		return redis.cli.ListFlavors(req)
+	})
 	if err != nil || resp == nil || resp.Flavors == nil {
 		return out
 	}
@@ -377,7 +381,9 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 	limit := req.PageSize
 	request.Limit = &limit
 
-	resp, err := redis.cli.ListInstances(request)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ListInstancesResponse, error) {
+		return redis.cli.ListInstances(request)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Huawei ListDetail error")
 	}

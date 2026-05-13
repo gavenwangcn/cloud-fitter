@@ -449,7 +449,9 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	limit := req.PageSize
 	request.Limit = &limit
 
-	resp, err := ecs.cli.ListServersDetails(request)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ListServersDetailsResponse, error) {
+		return ecs.cli.ListServersDetails(request)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Huawei ListDetail error")
 	}
@@ -475,7 +477,9 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			blkResp, blkErr := ecs.cli.ListServerBlockDevices(&model.ListServerBlockDevicesRequest{ServerId: v.Id})
+			blkResp, blkErr := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ListServerBlockDevicesResponse, error) {
+				return ecs.cli.ListServerBlockDevices(&model.ListServerBlockDevicesRequest{ServerId: v.Id})
+			})
 			if blkErr != nil {
 				atomic.AddInt32(&diskFail, 1)
 				glog.Warningf("Huawei ListServerBlockDevices failed server_id=%s server_name=%q account=%s region=%s err=%v",

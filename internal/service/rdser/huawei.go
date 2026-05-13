@@ -295,7 +295,9 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 	limit := req.PageSize
 	request.Limit = &limit
 
-	resp, err := r.cli.ListInstances(request)
+	resp, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ListInstancesResponse, error) {
+		return r.cli.ListInstances(request)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "Huawei RDS ListInstances error")
 	}
