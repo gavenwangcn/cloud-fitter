@@ -1836,7 +1836,7 @@ func percentIntText(v float64) string {
 	return strconv.FormatInt(int64(math.Round(v)), 10)
 }
 
-// StartDailyAt 在每天指定本地时刻执行一次 Run（默认 2:00，与需求「每天 2 点」一致）。
+// StartDailyAt 在每天指定本地时刻执行一次 Run（hour/min 为 24 小时制；默认 2,0 即凌晨 02:00，非下午）。
 func (s *Syncer) StartDailyAt(hour, min int) {
 	if s == nil {
 		return
@@ -1867,7 +1867,7 @@ func (s *Syncer) StartDailyAt(hour, min int) {
 }
 
 // CMDBConfigFromEnv 从环境变量读取 CMDB 地址与密钥；三者皆非空则启用。变量名：CLOUD_FITTER_CMDB_BASE_URL, CLOUD_FITTER_CMDB_KEY, CLOUD_FITTER_CMDB_SECRET。
-// 云资源快照与「仅从快照同步 CMDB」见 resourcecache 包：CLOUD_FITTER_RESOURCE_SNAPSHOT_*、CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT。
+// 云资源快照与「仅从快照同步 CMDB」见 resourcecache 包：CLOUD_FITTER_RESOURCE_SNAPSHOT_*、CLOUD_FITTER_RESOURCE_SNAPSHOT_BLACKOUT_LOCAL、CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT。
 func CMDBConfigFromEnv() (base, key, secret string, ok bool) {
 	base = strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_BASE_URL"))
 	key = strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_KEY"))

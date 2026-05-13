@@ -31,6 +31,9 @@ FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata
 
+# CMDB 定时同步、快照静默窗口、账单月等均按此时区解释「本地时刻」（可被 compose 的 environment.TZ 覆盖）
+ENV TZ=Asia/Shanghai
+
 WORKDIR /app
 COPY --from=builder /cloud-fitter ./cloud-fitter
 COPY --from=builder /init-mysql ./init-mysql

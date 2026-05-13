@@ -18,6 +18,8 @@ services:
     image: ${CLOUD_FITTER_APP_IMAGE:?required}
     container_name: cloud-fitter-init-mysql
     entrypoint: ["/app/init-mysql"]
+    environment:
+      TZ: Asia/Shanghai
     env_file:
       - ${CLOUD_FITTER_DEPLOY_ENV_FILE:-.env}
     networks:
@@ -36,6 +38,7 @@ services:
     env_file:
       - ${CLOUD_FITTER_DEPLOY_ENV_FILE:-.env}
     environment:
+      TZ: Asia/Shanghai
       # 强制 Go 网络栈禁用 IPv6，避免解析 AAAA 后因无 IPv6 路由导致华为云接口连接失败
       GODEBUG: ${GODEBUG:-}
       CLOUD_FITTER_DB_DRIVER: ${CLOUD_FITTER_DB_DRIVER:-mysql}
@@ -51,6 +54,8 @@ services:
       CLOUD_FITTER_CMDB_SECRET: ${CLOUD_FITTER_CMDB_SECRET:-}
       CLOUD_FITTER_RESOURCE_SNAPSHOT_ENABLE: ${CLOUD_FITTER_RESOURCE_SNAPSHOT_ENABLE:-true}
       CLOUD_FITTER_RESOURCE_SNAPSHOT_INTERVAL: ${CLOUD_FITTER_RESOURCE_SNAPSHOT_INTERVAL:-3h}
+      # 24 小时制，默认凌晨 01:00-06:00 不拉快照；与 TZ 一致
+      CLOUD_FITTER_RESOURCE_SNAPSHOT_BLACKOUT_LOCAL: ${CLOUD_FITTER_RESOURCE_SNAPSHOT_BLACKOUT_LOCAL:-}
       CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT: ${CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT:-false}
     networks:
       - app
@@ -66,6 +71,8 @@ services:
     image: ${CLOUD_FITTER_WEB_IMAGE:?required}
     container_name: cloud-fitter-web-mysql
     restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
     depends_on:
       - app
     networks:

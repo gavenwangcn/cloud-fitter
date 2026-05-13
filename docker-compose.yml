@@ -21,6 +21,7 @@ services:
     restart: unless-stopped
     # 统一环境类标签键；不设则默认键名 environment。节点类标签键；不设则默认 node（与 CMDB 系统节点/列表「节点(标签)」一致）
     environment:
+      TZ: Asia/Shanghai
       CLOUD_FITTER_ENV_TAG_KEY: ${CLOUD_FITTER_ENV_TAG_KEY:-}
       CLOUD_FITTER_NODE_TAG_KEY: ${CLOUD_FITTER_NODE_TAG_KEY:-}
       # 与根目录 .env 中 CLOUD_FITTER_CMDB_* 一致，供后端 CMDB 定时同步使用
@@ -46,6 +47,8 @@ services:
     image: cloud-fitter-web:local
     container_name: cloud-fitter-web
     restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
     depends_on:
       - app
     networks:

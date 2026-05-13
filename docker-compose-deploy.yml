@@ -21,6 +21,7 @@ services:
     container_name: cloud-fitter-app
     restart: unless-stopped
     environment:
+      TZ: Asia/Shanghai
       # 强制 Go 网络栈禁用 IPv6，避免解析 AAAA 后因无 IPv6 路由导致华为云接口连接失败
       GODEBUG: ${GODEBUG:-}
       CLOUD_FITTER_ENV_TAG_KEY: ${CLOUD_FITTER_ENV_TAG_KEY:-}
@@ -41,6 +42,8 @@ services:
     image: ${CLOUD_FITTER_WEB_IMAGE:?required}
     container_name: cloud-fitter-web
     restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
     depends_on:
       - app
     networks:
