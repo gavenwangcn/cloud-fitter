@@ -2,6 +2,9 @@ package ecs
 
 import (
 	"context"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -13,6 +16,25 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/service/ecser"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
+
+// ecsListMaxConcurrentJobs 限制 ECS List 中「账号×地域」任务的并发数，避免大量同时
+// NewEcsClient → IAM DNS 查询压垮 Docker 内置 DNS（127.0.0.11）出现 i/o timeout。
+// 环境变量 ECS_LIST_MAX_CONCURRENT，默认 16；非法或空则回退默认；上限 256。
+func ecsListMaxConcurrentJobs() int {
+	const defaultN = 16
+	s := strings.TrimSpace(os.Getenv("ECS_LIST_MAX_CONCURRENT"))
+	if s == "" {
+		return defaultN
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return defaultN
+	}
+	if n > 256 {
+		return 256
+	}
+	return n
+}
 
 func ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
 	var (
@@ -76,13 +98,17 @@ func List(ctx context.Context, req *pbecs.ListReq) (*pbecs.ListResp, error) {
 	for _, t := range tenanters {
 		nJobs += len(tenanter.RegionsForProviderAndTenant(req.Provider, t))
 	}
-	glog.Infof("ecs List provider=%s accounts=%d list_jobs=%d", pname, len(tenanters), nJobs)
+	maxConc := ecsListMaxConcurrentJobs()
+	glog.Infof("ecs List provider=%s accounts=%d list_jobs=%d max_concurrent=%d (ECS_LIST_MAX_CONCURRENT)", pname, len(tenanters), nJobs, maxConc)
+	sem := make(chan struct{}, maxConc)
 
 	wg.Add(nJobs)
 	for _, t := range tenanters {
 		regions := tenanter.RegionsForProviderAndTenant(req.Provider, t)
 		for _, region := range regions {
 			go func(tenant tenanter.Tenanter, region tenanter.Region) {
+				sem <- struct{}{}
+				defer func() { <-sem }()
 				defer wg.Done()
 				rName := region.GetName()
 				acc := tenant.AccountName()

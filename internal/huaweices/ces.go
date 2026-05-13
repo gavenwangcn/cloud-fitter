@@ -10,7 +10,6 @@ import (
 	hwces "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ces/v1"
 	cesmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ces/v1/model"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
-	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
@@ -32,10 +31,11 @@ func NewClient(regionName string, tenant tenanter.Tenanter) (*hwces.CesClient, e
 	auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 	cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", regionName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 	c := hwiam.NewIamClient(cli)
-	req := new(iammodel.KeystoneListProjectsRequest)
-	req.Name = &regionName
-	r, err := c.KeystoneListProjects(req)
-	if err != nil || r.Projects == nil || len(*r.Projects) == 0 {
+	r, err := huaweicloudregion.KeystoneListProjectsResolveProject(c, regionName)
+	if err != nil || r == nil || r.Projects == nil || len(*r.Projects) == 0 {
+		if err == nil {
+			err = errors.New("empty project list")
+		}
 		return nil, errors.Wrapf(err, "huaweices KeystoneListProjects region=%s", regionName)
 	}
 	projectID := (*r.Projects)[0].Id

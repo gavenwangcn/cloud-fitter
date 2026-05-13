@@ -6,7 +6,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
-	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	hwvpc "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v3"
 	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v3/model"
 	"github.com/pkg/errors"
@@ -23,10 +22,11 @@ func NewVPCClient(region tenanter.Region, tenant tenanter.Tenanter) (*hwvpc.VpcC
 		rName := region.GetName()
 		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		c := hwiam.NewIamClient(cli)
-		request := new(iammodel.KeystoneListProjectsRequest)
-		request.Name = &rName
-		proj, err := c.KeystoneListProjects(request)
-		if err != nil || len(*proj.Projects) == 0 {
+		proj, err := huaweicloudregion.KeystoneListProjectsResolveProject(c, rName)
+		if err != nil || proj == nil || proj.Projects == nil || len(*proj.Projects) == 0 {
+			if err == nil {
+				err = errors.New("empty project list")
+			}
 			return nil, errors.Wrapf(err, "Huawei KeystoneListProjects regionName %s", rName)
 		}
 		projectId := (*proj.Projects)[0].Id

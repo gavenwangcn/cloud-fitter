@@ -11,7 +11,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
-	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	hwscm "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/scm/v3"
 	scmmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/scm/v3/model"
 	"github.com/pkg/errors"
@@ -174,10 +173,11 @@ func listHuaweiCertificatesForTenant(tenant tenanter.Tenanter, endpointRegion st
 		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
 		Build()
 	iamCli := hwiam.NewIamClient(iamHc)
-	projReq := new(iammodel.KeystoneListProjectsRequest)
-	projReq.Name = &rName
-	projResp, err := iamCli.KeystoneListProjects(projReq)
+	projResp, err := huaweicloudregion.KeystoneListProjectsResolveProject(iamCli, rName)
 	if err != nil || projResp == nil || projResp.Projects == nil || len(*projResp.Projects) == 0 {
+		if err == nil {
+			err = errors.New("empty project list")
+		}
 		return nil, errors.Wrapf(err, "Huawei KeystoneListProjects regionName %s", rName)
 	}
 	projectID := (*projResp.Projects)[0].Id

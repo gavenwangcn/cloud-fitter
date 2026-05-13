@@ -11,7 +11,6 @@ import (
 	ecsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
 	hwecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
-	iammodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
@@ -41,10 +40,11 @@ func newHuaweiCceClient(region tenanter.Region, tenant tenanter.Tenanter) (Ccer,
 		rName := region.GetName()
 		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		c := hwiam.NewIamClient(cli)
-		request := new(iammodel.KeystoneListProjectsRequest)
-		request.Name = &rName
-		r, err := c.KeystoneListProjects(request)
-		if err != nil || len(*r.Projects) == 0 {
+		r, err := huaweicloudregion.KeystoneListProjectsResolveProject(c, rName)
+		if err != nil || r == nil || r.Projects == nil || len(*r.Projects) == 0 {
+			if err == nil {
+				err = errors.New("empty project list")
+			}
 			return nil, errors.Wrapf(err, "Huawei KeystoneListProjects regionName %s", rName)
 		}
 		projectId := (*r.Projects)[0].Id
