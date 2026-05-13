@@ -37,7 +37,7 @@ var (
 	// command-line options:
 	// gRPC server endpoint
 	grpcServerEndpoint = flag.String("grpc-server-endpoint", ":9091", "gRPC server endpoint")
-	// CMDB 同步（与 cmdb-sync 写入逻辑一致，云数据来自本进程 jsonapi 同源 List）。留空则不从命令行启用；环境变量见 cmdb.CMDBConfigFromEnv
+	// CMDB 同步（云数据来自本进程 jsonapi 同源 List）。留空则不从命令行启用；环境变量见 cmdb.CMDBConfigFromEnv
 	cmdbBaseURL = flag.String("cmdb-base-url", "", "CMDB API base URL, enables daily CMDB sync at 02:00 if key/secret set")
 	cmdbKey     = flag.String("cmdb-key", "", "CMDB API _key (overrides CLOUD_FITTER_CMDB_KEY if set)")
 	cmdbSecret  = flag.String("cmdb-secret", "", "CMDB API signing secret (overrides CLOUD_FITTER_CMDB_SECRET if set)")

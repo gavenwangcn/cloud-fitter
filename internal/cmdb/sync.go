@@ -30,7 +30,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
 )
 
-// Syncer 将 cloud-fitter 拉取逻辑（与 jsonapi 按 systemName 一致）与 cmdb-sync/api/cmdb_api.py 中写入 CMDB 的步骤对齐。
+// Syncer 将 cloud-fitter 拉取逻辑（与 jsonapi 按 systemName 一致）与 CMDB 开放 API 写入步骤对齐。
 type Syncer struct {
 	Client *Client
 	Store  *configstore.Store

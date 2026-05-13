@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// Client 对应 cmdb-sync 中 CMBDAPI 的 HTTP 与签名方式。
+// Client 封装 CMDB 开放 API 的 HTTP 与签名。
 type Client struct {
 	BaseURL  string
 	Key      string
