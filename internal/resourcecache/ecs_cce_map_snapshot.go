@@ -9,13 +9,14 @@ import (
 	"github.com/pkg/errors"
 )
 
-// ReplaceHuaweiEcsCceMapSnapshot 写入华为 ECS 实例 ID -> CCE 集群 metadata.uid 映射（单行 JSON 对象）。m 可为 nil 或空，表示清空该系统的映射。
+// ReplaceHuaweiEcsCceMapSnapshot 写入华为 ECS 实例 ID -> CCE 集群 metadata.uid 映射（单行 JSON 对象）。
+// 若 m 为 nil 或空 map 则不修改库（保留已有映射快照）。
 func ReplaceHuaweiEcsCceMapSnapshot(ctx context.Context, db *sql.DB, systemID string, m map[string]string) error {
 	if db == nil {
 		return errors.New("resourcecache ReplaceHuaweiEcsCceMapSnapshot: nil db")
 	}
-	if m == nil {
-		m = map[string]string{}
+	if len(m) == 0 {
+		return nil
 	}
 	raw, err := json.Marshal(m)
 	if err != nil {

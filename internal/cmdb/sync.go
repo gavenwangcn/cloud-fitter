@@ -1858,10 +1858,17 @@ func (s *Syncer) StartDailyAt(hour, min int) {
 			glog.Infof("cmdb sync: next run at %s (in %v)", next.Format(time.RFC3339), wait)
 			time.Sleep(wait)
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-			if err := s.Run(ctx); err != nil {
-				glog.Errorf("cmdb sync run: %v", err)
-			}
-			cancel()
+			func() {
+				defer cancel()
+				defer func() {
+					if r := recover(); r != nil {
+						glog.Errorf("cmdb sync run panic (recovered): %v", r)
+					}
+				}()
+				if err := s.Run(ctx); err != nil {
+					glog.Errorf("cmdb sync run: %v", err)
+				}
+			}()
 		}
 	}()
 }

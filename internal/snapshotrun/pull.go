@@ -11,20 +11,31 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbbilling"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
+	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/cmdb"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/resourcecache"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/billing"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/elb"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
 )
 
-// PullOneSystem 从云 API 全量拉取并覆盖写入快照表。某一类接口报错时跳过该类（不删不改该表已有数据）。账单按系统关联账号逐账号拉取，写入 cloud_snap_billing。
+// PullOneSystem 从云 API 全量拉取并覆盖写入快照表。某一类接口报错时跳过该类（不删不改该表已有数据）。
+// 每一类拉取若失败会再重试 1 次（间隔见 snapshotCategoryRetryBackoff），仍失败则跳过该类。
+// 某一类接口成功但返回空列表时也不删不改（保留上次非空快照）。账单仅在有成功拉取的账号行时才写库。
 func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, systemName, systemID string) error {
 	if db == nil {
 		return errors.New("snapshotrun PullOneSystem: nil db")
 	}
-	if ecsResp, err := jsonapi.ListEcsBySystemName(ctx, systemName); err != nil {
+	if ecsResp, err := listTwiceIfErr(ctx, systemID, systemName, "ecs", func(c context.Context) (*pbecs.ListResp, error) {
+		return jsonapi.ListEcsBySystemName(c, systemName)
+	}); err != nil {
 		glog.Warningf("resource snapshot: ecs skip system_id=%s name=%q: %v", systemID, systemName, err)
 	} else {
 		var rows []resourcecache.SnapshotRow
@@ -50,10 +61,16 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 		if err := resourcecache.ReplaceSnapshotTable(ctx, db, resourcecache.TableECS, systemID, systemName, rows); err != nil {
 			return errors.Wrap(err, "replace ecs snapshot")
 		}
-		glog.Infof("resource snapshot: ecs ok system_id=%s rows=%d", systemID, len(rows))
+		if len(rows) > 0 {
+			glog.Infof("resource snapshot: ecs ok system_id=%s rows=%d", systemID, len(rows))
+		} else {
+			glog.Infof("resource snapshot: ecs empty list, keep existing snapshot system_id=%s name=%q", systemID, systemName)
+		}
 	}
 
-	if rdsResp, err := jsonapi.ListRdsBySystemName(ctx, systemName); err != nil {
+	if rdsResp, err := listTwiceIfErr(ctx, systemID, systemName, "rds", func(c context.Context) (*pbrds.ListResp, error) {
+		return jsonapi.ListRdsBySystemName(c, systemName)
+	}); err != nil {
 		glog.Warningf("resource snapshot: rds skip system_id=%s name=%q: %v", systemID, systemName, err)
 	} else {
 		var rows []resourcecache.SnapshotRow
@@ -78,10 +95,16 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 		if err := resourcecache.ReplaceSnapshotTable(ctx, db, resourcecache.TableRDS, systemID, systemName, rows); err != nil {
 			return errors.Wrap(err, "replace rds snapshot")
 		}
-		glog.Infof("resource snapshot: rds ok system_id=%s rows=%d", systemID, len(rows))
+		if len(rows) > 0 {
+			glog.Infof("resource snapshot: rds ok system_id=%s rows=%d", systemID, len(rows))
+		} else {
+			glog.Infof("resource snapshot: rds empty list, keep existing snapshot system_id=%s name=%q", systemID, systemName)
+		}
 	}
 
-	if dcsResp, err := jsonapi.ListRedisBySystemName(ctx, systemName); err != nil {
+	if dcsResp, err := listTwiceIfErr(ctx, systemID, systemName, "dcs", func(c context.Context) (*pbredis.ListResp, error) {
+		return jsonapi.ListRedisBySystemName(c, systemName)
+	}); err != nil {
 		glog.Warningf("resource snapshot: dcs skip system_id=%s name=%q: %v", systemID, systemName, err)
 	} else {
 		var rows []resourcecache.SnapshotRow
@@ -106,10 +129,16 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 		if err := resourcecache.ReplaceSnapshotTable(ctx, db, resourcecache.TableDCS, systemID, systemName, rows); err != nil {
 			return errors.Wrap(err, "replace dcs snapshot")
 		}
-		glog.Infof("resource snapshot: dcs ok system_id=%s rows=%d", systemID, len(rows))
+		if len(rows) > 0 {
+			glog.Infof("resource snapshot: dcs ok system_id=%s rows=%d", systemID, len(rows))
+		} else {
+			glog.Infof("resource snapshot: dcs empty list, keep existing snapshot system_id=%s name=%q", systemID, systemName)
+		}
 	}
 
-	if kafkaResp, err := jsonapi.ListKafkaBySystemName(ctx, systemName); err != nil {
+	if kafkaResp, err := listTwiceIfErr(ctx, systemID, systemName, "dms/kafka", func(c context.Context) (*pbkafka.ListResp, error) {
+		return jsonapi.ListKafkaBySystemName(c, systemName)
+	}); err != nil {
 		glog.Warningf("resource snapshot: dms/kafka skip system_id=%s name=%q: %v", systemID, systemName, err)
 	} else {
 		var rows []resourcecache.SnapshotRow
@@ -134,10 +163,16 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 		if err := resourcecache.ReplaceSnapshotTable(ctx, db, resourcecache.TableDMS, systemID, systemName, rows); err != nil {
 			return errors.Wrap(err, "replace dms snapshot")
 		}
-		glog.Infof("resource snapshot: dms/kafka ok system_id=%s rows=%d", systemID, len(rows))
+		if len(rows) > 0 {
+			glog.Infof("resource snapshot: dms/kafka ok system_id=%s rows=%d", systemID, len(rows))
+		} else {
+			glog.Infof("resource snapshot: dms/kafka empty list, keep existing snapshot system_id=%s name=%q", systemID, systemName)
+		}
 	}
 
-	if cceResp, err := jsonapi.ListCceBySystemName(ctx, systemName); err != nil {
+	if cceResp, err := listTwiceIfErr(ctx, systemID, systemName, "cce", func(c context.Context) (*pbcce.ListResp, error) {
+		return jsonapi.ListCceBySystemName(c, systemName)
+	}); err != nil {
 		glog.Warningf("resource snapshot: cce skip system_id=%s name=%q: %v", systemID, systemName, err)
 	} else {
 		var rows []resourcecache.SnapshotRow
@@ -162,10 +197,16 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 		if err := resourcecache.ReplaceSnapshotTable(ctx, db, resourcecache.TableCCE, systemID, systemName, rows); err != nil {
 			return errors.Wrap(err, "replace cce snapshot")
 		}
-		glog.Infof("resource snapshot: cce ok system_id=%s rows=%d", systemID, len(rows))
+		if len(rows) > 0 {
+			glog.Infof("resource snapshot: cce ok system_id=%s rows=%d", systemID, len(rows))
+		} else {
+			glog.Infof("resource snapshot: cce empty list, keep existing snapshot system_id=%s name=%q", systemID, systemName)
+		}
 	}
 
-	if eipList, err := jsonapi.ListEipBySystemName(ctx, systemName); err != nil {
+	if eipList, err := listTwiceIfErr(ctx, systemID, systemName, "eip", func(c context.Context) ([]*eip.Instance, error) {
+		return jsonapi.ListEipBySystemName(c, systemName)
+	}); err != nil {
 		glog.Warningf("resource snapshot: eip skip system_id=%s name=%q: %v", systemID, systemName, err)
 	} else {
 		var rows []resourcecache.SnapshotRow
@@ -193,10 +234,16 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 		if err := resourcecache.ReplaceSnapshotTable(ctx, db, resourcecache.TableEIP, systemID, systemName, rows); err != nil {
 			return errors.Wrap(err, "replace eip snapshot")
 		}
-		glog.Infof("resource snapshot: eip ok system_id=%s rows=%d", systemID, len(rows))
+		if len(rows) > 0 {
+			glog.Infof("resource snapshot: eip ok system_id=%s rows=%d", systemID, len(rows))
+		} else {
+			glog.Infof("resource snapshot: eip empty list, keep existing snapshot system_id=%s name=%q", systemID, systemName)
+		}
 	}
 
-	if elbList, err := jsonapi.ListElbBySystemName(ctx, systemName); err != nil {
+	if elbList, err := listTwiceIfErr(ctx, systemID, systemName, "elb", func(c context.Context) ([]*elb.Instance, error) {
+		return jsonapi.ListElbBySystemName(c, systemName)
+	}); err != nil {
 		glog.Warningf("resource snapshot: elb skip system_id=%s name=%q: %v", systemID, systemName, err)
 	} else {
 		var rows []resourcecache.SnapshotRow
@@ -224,19 +271,29 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 		if err := resourcecache.ReplaceSnapshotTable(ctx, db, resourcecache.TableELB, systemID, systemName, rows); err != nil {
 			return errors.Wrap(err, "replace elb snapshot")
 		}
-		glog.Infof("resource snapshot: elb ok system_id=%s rows=%d", systemID, len(rows))
+		if len(rows) > 0 {
+			glog.Infof("resource snapshot: elb ok system_id=%s rows=%d", systemID, len(rows))
+		} else {
+			glog.Infof("resource snapshot: elb empty list, keep existing snapshot system_id=%s name=%q", systemID, systemName)
+		}
 	}
 
 	if store == nil {
 		return errors.New("snapshotrun PullOneSystem: nil store for ecs_cce map / billing")
 	}
-	if m, err := cmdb.HuaweiEcsIDToClusterUIDMap(ctx, store, systemName); err != nil {
+	if m, err := listTwiceIfErr(ctx, systemID, systemName, "ecs_cce_map", func(c context.Context) (map[string]string, error) {
+		return cmdb.HuaweiEcsIDToClusterUIDMap(c, store, systemName)
+	}); err != nil {
 		glog.Warningf("resource snapshot: ecs_cce_map skip system_id=%s name=%q: %v", systemID, systemName, err)
 	} else {
 		if err := resourcecache.ReplaceHuaweiEcsCceMapSnapshot(ctx, db, systemID, m); err != nil {
 			return errors.Wrap(err, "replace ecs_cce map snapshot")
 		}
-		glog.Infof("resource snapshot: ecs_cce_map ok system_id=%s entries=%d", systemID, len(m))
+		if len(m) > 0 {
+			glog.Infof("resource snapshot: ecs_cce_map ok system_id=%s entries=%d", systemID, len(m))
+		} else {
+			glog.Infof("resource snapshot: ecs_cce_map empty map, keep existing snapshot system_id=%s name=%q", systemID, systemName)
+		}
 	}
 
 	billLoc, lerr := time.LoadLocation("Asia/Shanghai")
@@ -250,10 +307,13 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 	}
 	var billRows []resourcecache.BillingAccountRow
 	for _, acc := range acco {
-		resp, err := billing.ListSummary(ctx, &pbbilling.ListBillingSummaryReq{
-			Provider:     pbtenant.CloudProvider(acc.Provider),
-			BillingCycle: billingMonth,
-			AccountName:  acc.Name,
+		acc := acc
+		resp, err := listTwiceIfErr(ctx, systemID, systemName, "billing:"+acc.Name, func(c context.Context) (*pbbilling.ListBillingSummaryResp, error) {
+			return billing.ListSummary(c, &pbbilling.ListBillingSummaryReq{
+				Provider:     pbtenant.CloudProvider(acc.Provider),
+				BillingCycle: billingMonth,
+				AccountName:  acc.Name,
+			})
 		})
 		if err != nil {
 			glog.Warningf("resource snapshot: billing skip account=%s system_id=%s: %v", acc.Name, systemID, err)

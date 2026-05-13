@@ -29,9 +29,13 @@ type SnapshotRow struct {
 }
 
 // ReplaceSnapshotTable 在事务内删除该系统该表全部行后批量插入（全量覆盖）。table 须为 resourcecache.Table* 常量。
+// 若 rows 为空则不修改库（保留上次成功写入的快照）。
 func ReplaceSnapshotTable(ctx context.Context, db *sql.DB, table, systemID, systemName string, rows []SnapshotRow) error {
 	if db == nil {
 		return errors.New("resourcecache: nil db")
+	}
+	if len(rows) == 0 {
+		return nil
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

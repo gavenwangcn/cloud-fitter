@@ -34,6 +34,10 @@ RUN apk add --no-cache ca-certificates tzdata
 # CMDB 定时同步、快照静默窗口、账单月等均按此时区解释「本地时刻」（可被 compose 的 environment.TZ 覆盖）
 ENV TZ=Asia/Shanghai
 
+# 华为云 Go SDK：建连（含 DNS）与整 HTTP 请求超时（秒）；见 internal/huaweicloudregion/sdk_http_config.go，compose 可覆盖
+ENV HUAWEI_SDK_DIAL_TIMEOUT_SECS=120 \
+    HUAWEI_SDK_HTTP_TIMEOUT_SECS=300
+
 WORKDIR /app
 COPY --from=builder /cloud-fitter ./cloud-fitter
 COPY --from=builder /init-mysql ./init-mysql

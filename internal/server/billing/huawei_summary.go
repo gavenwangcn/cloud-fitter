@@ -18,7 +18,14 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
-func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, billingCycle string) (*pbbilling.ListBillingSummaryResp, error) {
+func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, billingCycle string) (resp *pbbilling.ListBillingSummaryResp, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			resp = nil
+			err = errors.Errorf("huawei billing: sdk panic (often DNS/network to IAM): %v", r)
+		}
+	}()
+
 	t, ok := tenant.(*tenanter.AccessKeyTenant)
 	if !ok {
 		return nil, errors.New("huawei billing: only AccessKeyTenant supported")

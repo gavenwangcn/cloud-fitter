@@ -15,7 +15,10 @@ import (
 //
 // 环境变量（可选，单位：秒）：
 //   HUAWEI_SDK_HTTP_TIMEOUT_SECS — 单次请求总超时，默认 240
-//   HUAWEI_SDK_DIAL_TIMEOUT_SECS — net.Dialer 的 Timeout（含解析），默认 60
+//   HUAWEI_SDK_DIAL_TIMEOUT_SECS — net.Dialer 的 Timeout（含 DNS 解析 + TCP 建连），默认 60
+//
+// 若日志为 no such host / NXDOMAIN，属于解析失败而非「超时过短」，应修正容器 DNS（compose 的 dns:）
+// 或网络出口；仅靠调大本处秒数无法解决「域名不存在」类错误。
 func SDKHttpConfig() *config.HttpConfig {
 	c := config.DefaultHttpConfig()
 

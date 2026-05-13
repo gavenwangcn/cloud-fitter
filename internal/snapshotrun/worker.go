@@ -52,6 +52,12 @@ func StartResourceSnapshotWorker(store *configstore.Store, db *sql.DB) {
 }
 
 func runPullAll(ctx context.Context, store *configstore.Store, db *sql.DB) {
+	defer func() {
+		if r := recover(); r != nil {
+			glog.Errorf("resource snapshot: pull cycle panic (recovered): %v", r)
+		}
+	}()
+
 	systems, err := store.ListSystems()
 	if err != nil {
 		glog.Errorf("resource snapshot: list systems: %v", err)
@@ -67,11 +73,18 @@ func runPullAll(ctx context.Context, store *configstore.Store, db *sql.DB) {
 		if sid == "" || name == "" {
 			continue
 		}
-		cctx, cancel := context.WithTimeout(ctx, 90*time.Minute)
-		if err := PullOneSystem(cctx, db, store, name, sid); err != nil {
-			glog.Errorf("resource snapshot: system_id=%s name=%q err=%v", sid, name, err)
-		}
-		cancel()
+		func(sid, name string) {
+			defer func() {
+				if r := recover(); r != nil {
+					glog.Errorf("resource snapshot: system_id=%s name=%q panic (recovered): %v", sid, name, r)
+				}
+			}()
+			cctx, cancel := context.WithTimeout(ctx, 90*time.Minute)
+			defer cancel()
+			if err := PullOneSystem(cctx, db, store, name, sid); err != nil {
+				glog.Errorf("resource snapshot: system_id=%s name=%q err=%v", sid, name, err)
+			}
+		}(sid, name)
 	}
 	glog.Infof("resource snapshot: pull cycle done")
 }

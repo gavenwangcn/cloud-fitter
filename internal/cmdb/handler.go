@@ -3,6 +3,7 @@ package cmdb
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -41,7 +42,17 @@ func SyncHTTPHandler(syncer *Syncer) http.Handler {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Hour)
 		defer cancel()
-		if err := syncer.SyncOneBySystemName(ctx, name); err != nil {
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					glog.Errorf("cmdb single sync panic (recovered): %v", r)
+					err = fmt.Errorf("sync panic: %v", r)
+				}
+			}()
+			err = syncer.SyncOneBySystemName(ctx, name)
+		}()
+		if err != nil {
 			msg := err.Error()
 			glog.Warningf("cmdb single sync: %s", msg)
 			code := http.StatusInternalServerError
