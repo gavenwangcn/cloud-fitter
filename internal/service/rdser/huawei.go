@@ -41,7 +41,7 @@ func newHuaweiRdsClient(region tenanter.Region, tenant tenanter.Tenanter) (Rdser
 	case *tenanter.AccessKeyTenant:
 		auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 		rName := region.GetName()
-		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).Build()
+		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		c := hwiam.NewIamClient(cli)
 		request := new(iammodel.KeystoneListProjectsRequest)
 		request.Name = &rName
@@ -52,7 +52,7 @@ func newHuaweiRdsClient(region tenanter.Region, tenant tenanter.Tenanter) (Rdser
 		projectId := (*r.Projects)[0].Id
 
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcClient := hwrds.RdsClientBuilder().WithRegion(huaweicloudregion.EndpointForService("rds", rName)).WithCredential(auth).Build()
+		hcClient := hwrds.RdsClientBuilder().WithRegion(huaweicloudregion.EndpointForService("rds", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		client = hwrds.NewRdsClient(hcClient)
 	default:
 	}

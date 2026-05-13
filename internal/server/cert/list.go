@@ -171,6 +171,7 @@ func listHuaweiCertificatesForTenant(tenant tenanter.Tenanter, endpointRegion st
 	iamHc := hwiam.IamClientBuilder().
 		WithRegion(huaweicloudregion.EndpointForService("iam", rName)).
 		WithCredential(baseAuth).
+		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
 		Build()
 	iamCli := hwiam.NewIamClient(iamHc)
 	projReq := new(iammodel.KeystoneListProjectsRequest)
@@ -185,6 +186,7 @@ func listHuaweiCertificatesForTenant(tenant tenanter.Tenanter, endpointRegion st
 	scmCli := hwscm.NewScmClient(hwscm.ScmClientBuilder().
 		WithRegion(huaweicloudregion.EndpointForService("scm", rName)).
 		WithCredential(auth).
+		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
 		Build())
 
 	const pageSize int32 = 50

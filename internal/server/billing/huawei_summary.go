@@ -14,6 +14,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbbilling"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/billingagg"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -24,7 +25,7 @@ func huaweiListBillingSummary(ctx context.Context, tenant tenanter.Tenanter, bil
 	}
 	// BSS 属于华为云 global 服务，需使用 global.Credentials（官方 SDK 文档）。
 	auth := global.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
-	hc := bssv2.BssClientBuilder().WithRegion(bssregion.ValueOf("cn-north-1")).WithCredential(auth).Build()
+	hc := bssv2.BssClientBuilder().WithRegion(bssregion.ValueOf("cn-north-1")).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 	cli := bssv2.NewBssClient(hc)
 
 	type agg struct {

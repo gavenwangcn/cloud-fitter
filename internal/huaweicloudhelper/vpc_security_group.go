@@ -21,7 +21,7 @@ func NewVPCClient(region tenanter.Region, tenant tenanter.Tenanter) (*hwvpc.VpcC
 	case *tenanter.AccessKeyTenant:
 		auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 		rName := region.GetName()
-		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).Build()
+		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		c := hwiam.NewIamClient(cli)
 		request := new(iammodel.KeystoneListProjectsRequest)
 		request.Name = &rName
@@ -32,7 +32,7 @@ func NewVPCClient(region tenanter.Region, tenant tenanter.Tenanter) (*hwvpc.VpcC
 		projectId := (*proj.Projects)[0].Id
 
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcClient := hwvpc.VpcClientBuilder().WithRegion(huaweicloudregion.EndpointForService("vpc", rName)).WithCredential(auth).Build()
+		hcClient := hwvpc.VpcClientBuilder().WithRegion(huaweicloudregion.EndpointForService("vpc", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		return hwvpc.NewVpcClient(hcClient), nil
 	default:
 	}

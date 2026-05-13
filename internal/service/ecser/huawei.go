@@ -43,7 +43,7 @@ func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser
 	case *tenanter.AccessKeyTenant:
 		auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 		rName := region.GetName()
-		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).Build()
+		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		c := hwiam.NewIamClient(cli)
 		request := new(iammodel.KeystoneListProjectsRequest)
 		request.Name = &rName
@@ -54,7 +54,7 @@ func newHuaweiEcsClient(region tenanter.Region, tenant tenanter.Tenanter) (Ecser
 		projectId := (*r.Projects)[0].Id
 
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcEcs := hwecs.EcsClientBuilder().WithRegion(huaweicloudregion.EndpointForService("ecs", rName)).WithCredential(auth).Build()
+		hcEcs := hwecs.EcsClientBuilder().WithRegion(huaweicloudregion.EndpointForService("ecs", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		client = hwecs.NewEcsClient(hcEcs)
 	default:
 	}

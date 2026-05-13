@@ -33,7 +33,7 @@ func newHuaweiKafkaClient(region tenanter.Region, tenant tenanter.Tenanter) (Kaf
 	case *tenanter.AccessKeyTenant:
 		auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
 		rName := region.GetName()
-		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).Build()
+		cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		c := hwiam.NewIamClient(cli)
 		request := new(iammodel.KeystoneListProjectsRequest)
 		request.Name = &rName
@@ -44,7 +44,7 @@ func newHuaweiKafkaClient(region tenanter.Region, tenant tenanter.Tenanter) (Kaf
 		projectId := (*r.Projects)[0].Id
 
 		auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectId).Build()
-		hcClient := hwkafka.KafkaClientBuilder().WithRegion(huaweicloudregion.EndpointForService("dms", rName)).WithCredential(auth).Build()
+		hcClient := hwkafka.KafkaClientBuilder().WithRegion(huaweicloudregion.EndpointForService("dms", rName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 		client = hwkafka.NewKafkaClient(hcClient)
 	default:
 	}

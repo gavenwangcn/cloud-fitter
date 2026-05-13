@@ -104,6 +104,7 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 	iamHc := hwiam.IamClientBuilder().
 		WithRegion(huaweicloudregion.EndpointForService("iam", rName)).
 		WithCredential(baseAuth).
+		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
 		Build()
 	iamCli := hwiam.NewIamClient(iamHc)
 	projReq := new(iammodel.KeystoneListProjectsRequest)
@@ -119,6 +120,7 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 		// 华为云 EIP(v2) 走 vpc.<region>.myhuaweicloud.com
 		WithRegion(huaweicloudregion.EndpointForService("vpc", rName)).
 		WithCredential(auth).
+		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
 		Build()
 	eipCli := hweip.NewEipClient(eipHc)
 	req := new(eipmodel.ListPublicipsRequest)

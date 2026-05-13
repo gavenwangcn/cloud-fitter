@@ -30,7 +30,7 @@ func NewClient(regionName string, tenant tenanter.Tenanter) (*hwces.CesClient, e
 		return nil, errors.New("huaweices: only AccessKeyTenant supported")
 	}
 	auth := basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).Build()
-	cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", regionName)).WithCredential(auth).Build()
+	cli := hwiam.IamClientBuilder().WithRegion(huaweicloudregion.EndpointForService("iam", regionName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 	c := hwiam.NewIamClient(cli)
 	req := new(iammodel.KeystoneListProjectsRequest)
 	req.Name = &regionName
@@ -40,7 +40,7 @@ func NewClient(regionName string, tenant tenanter.Tenanter) (*hwces.CesClient, e
 	}
 	projectID := (*r.Projects)[0].Id
 	auth = basic.NewCredentialsBuilder().WithAk(t.GetId()).WithSk(t.GetSecret()).WithProjectId(projectID).Build()
-	hc := hwces.CesClientBuilder().WithRegion(huaweicloudregion.EndpointForService("ces", regionName)).WithCredential(auth).Build()
+	hc := hwces.CesClientBuilder().WithRegion(huaweicloudregion.EndpointForService("ces", regionName)).WithCredential(auth).WithHttpConfig(huaweicloudregion.SDKHttpConfig()).Build()
 	return hwces.NewCesClient(hc), nil
 }
 
