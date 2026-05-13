@@ -12,10 +12,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-// huaweiEcsIDToClusterUIDMap 在「与 jsonapi 相同的系统账号与区域维度」上，使用华为 CCE
+// HuaweiEcsIDToClusterUIDMap 在「与 jsonapi 相同的系统账号与区域维度」上，使用华为 CCE
 // ListClusters + ListNodes（见 ccer.HuaweiCce.MapEcsInstanceIDToClusterUID）建立 ECS 实例 ID 到集群 UID 的映射。
-// 非华为云账号被跳过；多账号、多区域结果合并为一张表。
-func huaweiEcsIDToClusterUIDMap(ctx context.Context, store *configstore.Store, systemName string) (map[string]string, error) {
+// 非华为云账号被跳过；多账号、多区域结果合并为一张表。供 CMDB 同步与资源快照拉取共用。
+func HuaweiEcsIDToClusterUIDMap(ctx context.Context, store *configstore.Store, systemName string) (map[string]string, error) {
 	accounts, err := store.AccountsBySystemName(systemName)
 	if err != nil {
 		return nil, errors.WithMessage(err, "AccountsBySystemName")

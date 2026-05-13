@@ -24,6 +24,14 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// SQLDB 返回底层连接池（MySQL/SQLite）；供快照等模块使用，勿在外部 Close。
+func (s *Store) SQLDB() *sql.DB {
+	if s == nil {
+		return nil
+	}
+	return s.db
+}
+
 // Row 对外展示（不含密钥）。
 type Row struct {
 	ID                 int64  `json:"id"`

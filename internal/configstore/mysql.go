@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/cloud-fitter/cloud-fitter/internal/resourcecache"
 	"github.com/pkg/errors"
 )
 
@@ -63,6 +64,9 @@ func migrateMySQL(db *sql.DB) error {
 		if _, err := db.Exec(stmt); err != nil {
 			return errors.WithMessage(err, "migrate mysql")
 		}
+	}
+	if err := resourcecache.MigrateMySQL(db); err != nil {
+		return errors.WithMessage(err, "migrate mysql resource snapshots")
 	}
 	return nil
 }

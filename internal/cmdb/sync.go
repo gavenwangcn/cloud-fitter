@@ -21,7 +21,9 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
+	"github.com/cloud-fitter/cloud-fitter/internal/billingagg"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
+	"github.com/cloud-fitter/cloud-fitter/internal/resourcecache"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/billing"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/elb"
@@ -52,7 +54,8 @@ type systemSyncStats struct {
 	Billing    componentSyncStats
 }
 
-// Run 与 Python main.cmdb 一致：分页拉取 CMDB 中全部 system，再对每个 system_id 同步；云资源来自本服务 List*BySystemName，不再请求 YJSCMDBAPI。
+// Run 与 Python main.cmdb 一致：分页拉取 CMDB 中全部 system，再对每个 system_id 同步。
+// 云资源默认来自本服务 List*BySystemName；若设置 CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT=true 且使用 MySQL，则从 cloud_snap_* 快照表读取（与定时快照任务配合）。
 func (s *Syncer) Run(ctx context.Context) error {
 	if s == nil || s.Client == nil || s.Store == nil {
 		return errors.New("cmdb syncer: nil client or store")
@@ -121,33 +124,75 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		cmdbSystemName = strings.TrimSpace(n)
 	}
 
-	ecsResp, err := jsonapi.ListEcsBySystemName(ctx, systemName)
-	if err != nil {
-		return errors.Wrap(err, "ListEcsBySystemName")
-	}
-	rdsResp, err := jsonapi.ListRdsBySystemName(ctx, systemName)
-	if err != nil {
-		return errors.Wrap(err, "ListRdsBySystemName")
-	}
-	redisResp, err := jsonapi.ListRedisBySystemName(ctx, systemName)
-	if err != nil {
-		return errors.Wrap(err, "ListRedisBySystemName")
-	}
-	kafkaResp, err := jsonapi.ListKafkaBySystemName(ctx, systemName)
-	if err != nil {
-		return errors.Wrap(err, "ListKafkaBySystemName")
-	}
-	cceResp, err := jsonapi.ListCceBySystemName(ctx, systemName)
-	if err != nil {
-		return errors.Wrap(err, "ListCceBySystemName")
-	}
-	eipList, err := jsonapi.ListEipBySystemName(ctx, systemName)
-	if err != nil {
-		return errors.Wrap(err, "ListEipBySystemName")
-	}
-	elbList, err := jsonapi.ListElbBySystemName(ctx, systemName)
-	if err != nil {
-		return errors.Wrap(err, "ListElbBySystemName")
+	useSnap := resourcecache.CMDBUseResourceSnapshotFromEnv() && configstore.UseMySQLFromEnv()
+	dbSnap := s.Store.SQLDB()
+
+	var ecsResp *pbecs.ListResp
+	var rdsResp *pbrds.ListResp
+	var redisResp *pbredis.ListResp
+	var kafkaResp *pbkafka.ListResp
+	var cceResp *pbcce.ListResp
+	var eipList []*eip.Instance
+	var elbList []*elb.Instance
+
+	if useSnap && dbSnap != nil {
+		var err error
+		if ecsResp, err = resourcecache.LoadECS(ctx, dbSnap, systemID); err != nil {
+			return errors.Wrap(err, "LoadECS snapshot")
+		}
+		if rdsResp, err = resourcecache.LoadRDS(ctx, dbSnap, systemID); err != nil {
+			return errors.Wrap(err, "LoadRDS snapshot")
+		}
+		if redisResp, err = resourcecache.LoadRedis(ctx, dbSnap, systemID); err != nil {
+			return errors.Wrap(err, "LoadRedis snapshot")
+		}
+		if kafkaResp, err = resourcecache.LoadKafka(ctx, dbSnap, systemID); err != nil {
+			return errors.Wrap(err, "LoadKafka snapshot")
+		}
+		if cceResp, err = resourcecache.LoadCCE(ctx, dbSnap, systemID); err != nil {
+			return errors.Wrap(err, "LoadCCE snapshot")
+		}
+		if eipList, err = resourcecache.LoadEIP(ctx, dbSnap, systemID); err != nil {
+			return errors.Wrap(err, "LoadEIP snapshot")
+		}
+		if elbList, err = resourcecache.LoadELB(ctx, dbSnap, systemID); err != nil {
+			return errors.Wrap(err, "LoadELB snapshot")
+		}
+		glog.Infof("cmdb sync system_id=%s: mysql snapshots ecs=%d rds=%d dcs=%d kafka=%d cce=%d eip=%d elb=%d (billing from snapshot when enabled)",
+			systemID, len(ecsResp.GetEcses()), len(rdsResp.GetRdses()), len(redisResp.GetRedises()), len(kafkaResp.GetKafkas()), len(cceResp.GetClusters()), len(eipList), len(elbList))
+	} else {
+		if useSnap && dbSnap == nil {
+			glog.Warningf("cmdb sync system_id=%s: CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT on but store has no SQL db, using cloud API", systemID)
+		}
+		var err error
+		ecsResp, err = jsonapi.ListEcsBySystemName(ctx, systemName)
+		if err != nil {
+			return errors.Wrap(err, "ListEcsBySystemName")
+		}
+		rdsResp, err = jsonapi.ListRdsBySystemName(ctx, systemName)
+		if err != nil {
+			return errors.Wrap(err, "ListRdsBySystemName")
+		}
+		redisResp, err = jsonapi.ListRedisBySystemName(ctx, systemName)
+		if err != nil {
+			return errors.Wrap(err, "ListRedisBySystemName")
+		}
+		kafkaResp, err = jsonapi.ListKafkaBySystemName(ctx, systemName)
+		if err != nil {
+			return errors.Wrap(err, "ListKafkaBySystemName")
+		}
+		cceResp, err = jsonapi.ListCceBySystemName(ctx, systemName)
+		if err != nil {
+			return errors.Wrap(err, "ListCceBySystemName")
+		}
+		eipList, err = jsonapi.ListEipBySystemName(ctx, systemName)
+		if err != nil {
+			return errors.Wrap(err, "ListEipBySystemName")
+		}
+		elbList, err = jsonapi.ListElbBySystemName(ctx, systemName)
+		if err != nil {
+			return errors.Wrap(err, "ListElbBySystemName")
+		}
 	}
 	billLoc, lerr := time.LoadLocation("Asia/Shanghai")
 	if lerr != nil {
@@ -159,18 +204,28 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		return errors.Wrap(err, "AccountsBySystemName")
 	}
 
-	// 华为 CCE：ListClusters + ListNodes 得到 ECS 实例 ID -> 集群 UID，供 host_ip_new
-	ecsIDToCceUID, err := huaweiEcsIDToClusterUIDMap(ctx, s.Store, systemName)
-	if err != nil {
-		glog.Warningf("cmdb sync: huawei ecs->cce uid map: %v (host_ip_new may be empty)", err)
-		ecsIDToCceUID = nil
+	// 华为 ECS→CCE 集群 UID：非快照模式调云 API；快照模式读 cloud_snap_ecs_cce_map（定时快照任务内写入）。
+	var ecsIDToCceUID map[string]string
+	if useSnap && dbSnap != nil {
+		var lerr error
+		ecsIDToCceUID, lerr = resourcecache.LoadHuaweiEcsCceMap(ctx, dbSnap, systemID)
+		if lerr != nil {
+			return errors.Wrap(lerr, "LoadHuaweiEcsCceMap snapshot")
+		}
+	} else {
+		var err error
+		ecsIDToCceUID, err = HuaweiEcsIDToClusterUIDMap(ctx, s.Store, systemName)
+		if err != nil {
+			glog.Warningf("cmdb sync: huawei ecs->cce uid map: %v (host_ip_new may be empty)", err)
+			ecsIDToCceUID = nil
+		}
 	}
 
 	systemNodes := collectSystemNodeKeys(ecsResp, rdsResp, redisResp, kafkaResp, cceResp)
 	mergeEIPSystemNodeKeys(systemNodes, eipList)
 	mergeELBSystemNodeKeys(systemNodes, elbList)
-	k8sList := buildK8sClusters(cceResp)
 	hosts := buildHosts(ecsResp, ecsIDToCceUID)
+	k8sList := buildK8sClusters(cceResp, hosts)
 	middlewares := buildMiddlewares(rdsResp, redisResp, kafkaResp)
 
 	clusterToECS := hostBelongsK8S(k8sList, hosts)
@@ -209,22 +264,33 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	}
 	stats.Billing = componentSyncStats{}
 	for _, acc := range acco {
-		billResp, err := billing.ListSummary(ctx, &pbbilling.ListBillingSummaryReq{
-			Provider:     pbtenant.CloudProvider(acc.Provider),
-			BillingCycle: billingMonth,
-			AccountName:  acc.Name,
-		})
-		if err != nil {
-			return errors.Wrapf(err, "billing ListSummary account=%s", acc.Name)
+		var billResp *pbbilling.ListBillingSummaryResp
+		if useSnap && dbSnap != nil {
+			var lerr error
+			billResp, lerr = resourcecache.LoadBilling(ctx, dbSnap, systemID, billingMonth, acc.Provider, acc.Name)
+			if lerr != nil {
+				return errors.Wrapf(lerr, "LoadBilling snapshot account=%s", acc.Name)
+			}
+		} else {
+			var lerr error
+			billResp, lerr = billing.ListSummary(ctx, &pbbilling.ListBillingSummaryReq{
+				Provider:     pbtenant.CloudProvider(acc.Provider),
+				BillingCycle: billingMonth,
+				AccountName:  acc.Name,
+			})
+			if lerr != nil {
+				return errors.Wrapf(lerr, "billing ListSummary account=%s", acc.Name)
+			}
 		}
 		st := s.addCMDBBillings(systemID, billingMonth, acc.Name, billResp)
 		stats.Billing.Added += st.Added
 		stats.Billing.Updated += st.Updated
 		stats.Billing.Skipped += st.Skipped
+		stats.Billing.Deleted += st.Deleted
 		stats.Billing.Errors += st.Errors
 	}
 	glog.Infof(
-		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,del=%d,err=%d) host(add=%d,upd=%d,skip=%d,del=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,del=%d,err=%d) eip(add=%d,upd=%d,skip=%d,del=%d,err=%d) elb(add=%d,upd=%d,skip=%d,del=%d,err=%d) billing(add=%d,upd=%d,skip=%d,err=%d)",
+		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,del=%d,err=%d) host(add=%d,upd=%d,skip=%d,del=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,del=%d,err=%d) eip(add=%d,upd=%d,skip=%d,del=%d,err=%d) elb(add=%d,upd=%d,skip=%d,del=%d,err=%d) billing(add=%d,upd=%d,skip=%d,del=%d,err=%d)",
 		systemID, systemName,
 		stats.SystemNode.Added, stats.SystemNode.Updated, stats.SystemNode.Skipped, stats.SystemNode.Errors,
 		stats.K8s.Added, stats.K8s.Updated, stats.K8s.Skipped, stats.K8s.Deleted, stats.K8s.Errors,
@@ -232,7 +298,7 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		stats.Middleware.Added, stats.Middleware.Updated, stats.Middleware.Skipped, stats.Middleware.Deleted, stats.Middleware.Errors,
 		stats.EIP.Added, stats.EIP.Updated, stats.EIP.Skipped, stats.EIP.Deleted, stats.EIP.Errors,
 		stats.ELB.Added, stats.ELB.Updated, stats.ELB.Skipped, stats.ELB.Deleted, stats.ELB.Errors,
-		stats.Billing.Added, stats.Billing.Updated, stats.Billing.Skipped, stats.Billing.Errors,
+		stats.Billing.Added, stats.Billing.Updated, stats.Billing.Skipped, stats.Billing.Deleted, stats.Billing.Errors,
 	)
 	return nil
 }
@@ -505,21 +571,77 @@ func cmdbCloudLocationFromSysNodeName(sysNodeName, fallbackCloud, fallbackLoc st
 
 type k8sCluster struct {
 	Name, Version, CloudLabel, Region, ClusterUID, SysNodeName string
+	Environment, Remarks string
 }
 
-func buildK8sClusters(resp *pbcce.ListResp) []k8sCluster {
+// k8sClusterEnvFromHosts 用挂载到该集群（CceCluster.cluster_uid）的 ECS 环境标签去重拼接，与快照中 ECS+CCE 镜像数据一致。
+func k8sClusterEnvFromHosts(clusterUID string, hosts []hostRec) string {
+	clusterUID = strings.TrimSpace(clusterUID)
+	if clusterUID == "" {
+		return ""
+	}
+	var parts []string
+	seen := make(map[string]struct{})
+	for _, h := range hosts {
+		if strings.TrimSpace(h.CceClusterID) != clusterUID {
+			continue
+		}
+		ev := strings.TrimSpace(h.EnvTagValue)
+		if ev == "" {
+			continue
+		}
+		if _, ok := seen[ev]; ok {
+			continue
+		}
+		seen[ev] = struct{}{}
+		parts = append(parts, ev)
+	}
+	return strings.Join(parts, "、")
+}
+
+// k8sRemarksFromCCE 用 CCE 列表/快照中已有字段拼备注（状态、规格、节点与容量），不依赖 proto 变更。
+func k8sRemarksFromCCE(c *pbcce.CceCluster) string {
+	if c == nil {
+		return ""
+	}
+	var parts []string
+	if s := strings.TrimSpace(c.GetPhase()); s != "" {
+		parts = append(parts, "状态:"+s)
+	}
+	if s := strings.TrimSpace(c.GetFlavor()); s != "" {
+		parts = append(parts, "规格:"+s)
+	}
+	if c.GetNodeTotal() > 0 {
+		parts = append(parts, fmt.Sprintf("节点:%d/%d", c.GetNodeNormal(), c.GetNodeTotal()))
+	}
+	if c.GetCpuTotal() > 0 {
+		parts = append(parts, fmt.Sprintf("vCPU:%d", c.GetCpuTotal()))
+	}
+	if c.GetMemoryTotalMb() > 0 {
+		parts = append(parts, fmt.Sprintf("内存:%dMB", c.GetMemoryTotalMb()))
+	}
+	return strings.Join(parts, "、")
+}
+
+func buildK8sClusters(resp *pbcce.ListResp, hosts []hostRec) []k8sCluster {
 	if resp == nil {
 		return nil
 	}
 	var out []k8sCluster
 	for _, c := range resp.Clusters {
+		if c == nil {
+			continue
+		}
+		uid := strings.TrimSpace(c.GetClusterUid())
 		out = append(out, k8sCluster{
 			Name:        c.GetClusterName(),
 			Version:     c.GetK8SVersion(),
 			CloudLabel:  cloudTypeLabel(c.GetProvider()),
 			Region:      c.GetRegionName(),
-			ClusterUID:  c.GetClusterUid(),
+			ClusterUID:  uid,
 			SysNodeName: effectiveSysNodeName(c.GetProvider(), c.GetRegionName(), c.GetNodeTagValue()),
+			Environment: k8sClusterEnvFromHosts(uid, hosts),
+			Remarks:     k8sRemarksFromCCE(c),
 		})
 	}
 	return out
@@ -534,6 +656,7 @@ type hostRec struct {
 	StorageAttr                               string // CMDB storage：系统盘/数据盘合计（与控制台列一致）
 	OS                                        string
 	CceClusterID                              string
+	EnvTagValue                               string // 环境标签（与 ECS 一致）；用于推导同集群 K8s CI 的 environment
 	CpuPeak30, CpuPeak180                     string
 	CpuAvg30, CpuAvg180                       string
 	MemPeak30, MenPeak180                     string
@@ -613,6 +736,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			StorageAttr:  storageAttr,
 			OS:           firstNonEmpty(e.GetImageName(), e.GetOsType()),
 			CceClusterID: cceID, // 华为：由 CCE ListNodes 的 status.serverId 与集群 metadata.uid 映射得到，与 CceCluster.cluster_uid 一致
+			EnvTagValue:  strings.TrimSpace(e.GetEnvTagValue()),
 			CpuPeak30:     utilWindowPeakPercentDecimal(util.GetCpuLast_30D()),
 			CpuPeak180:    utilWindowPeakPercentDecimal(util.GetCpuLast_180D()),
 			CpuAvg30:      utilWindowAvgPercentDecimal(util.GetCpuLast_30D()),
@@ -881,6 +1005,24 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 	return st
 }
 
+// k8sClusterCMDBFields 与 CMDB K8Sci（ci_type=k8s_cluster）属性对齐：uuid 与 k8s_uuid 均为集群资源 UUID。
+func k8sClusterCMDBFields(systemID string, c k8sCluster, clusterUUID, sysNode, ips, ct, locn string) map[string]any {
+	return map[string]any{
+		"uuid":              clusterUUID,
+		"k8s_uuid":          clusterUUID,
+		"ci_type":           "k8s_cluster",
+		"system_id":         systemID,
+		"sys_node_name":     sysNode,
+		"k8s_cluster_name":  c.Name,
+		"k8s_version":       c.Version,
+		"location":          locn,
+		"cloud_type":        ct,
+		"host_ip_new":       ips,
+		"environment":       c.Environment,
+		"remarks":           c.Remarks,
+	}
+}
+
 func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterToECS map[string][]string) componentSyncStats {
 	st := componentSyncStats{}
 	for _, c := range k8s {
@@ -909,6 +1051,7 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 		}
 		ips := strings.Join(clusterToECS[c.Name], ",")
 		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, c.CloudLabel, c.Region)
+		fields := k8sClusterCMDBFields(systemID, c, clusterUUID, sysNode, ips, ct, locn)
 		if exists != "" {
 			row, err := s.Client.GetCIFirst(kq)
 			if err != nil {
@@ -916,18 +1059,12 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 				st.Errors++
 				continue
 			}
-			if row != nil && !k8sResourceChanged(row, ips, c.Version, ct, locn) {
+			if row != nil && !k8sResourceChanged(row, clusterUUID, c, ips, ct, locn) {
 				glog.Infof("cmdb sync k8s(skip): system_id=%s cluster=%q id=%s", systemID, c.Name, exists)
 				st.Skipped++
 				continue
 			}
-			_, err = s.Client.UpdateCI(exists, map[string]any{
-				"ci_type":     "k8s_cluster",
-				"host_ip_new": ips,
-				"k8s_version": c.Version,
-				"cloud_type":  ct,
-				"location":    locn,
-			})
+			_, err = s.Client.UpdateCI(exists, fields)
 			if err != nil {
 				glog.Errorf("cmdb sync k8s(update): system_id=%s cluster=%q id=%s err=%v", systemID, c.Name, exists, err)
 				st.Errors++
@@ -937,19 +1074,7 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 			st.Updated++
 			continue
 		}
-		payload := map[string]any{
-			"uuid":             clusterUUID,
-			"k8s_uuid":         clusterUUID,
-			"ci_type":          "k8s_cluster",
-			"system_id":        systemID,
-			"sys_node_name":    sysNode,
-			"k8s_cluster_name": c.Name,
-			"host_ip_new":      ips,
-			"k8s_version":      c.Version,
-			"cloud_type":       ct,
-			"location":         locn,
-		}
-		d, err := s.Client.AddCI(payload)
+		d, err := s.Client.AddCI(fields)
 		if err != nil {
 			glog.Errorf("cmdb sync k8s(add): system_id=%s cluster=%q err=%v", systemID, c.Name, err)
 			st.Errors++
@@ -1499,6 +1624,7 @@ func billingCostFieldsChanged(row map[string]any, rowCount, totalCost, resourceC
 // 关联关系按「系统」维护：必需字段 system_id（与 CMDB system、本地系统 system_id 对齐），不再使用节点名称；
 // 同一系统下按 billing_month、resource_category、account_name（云账号）唯一标识一行；
 // resource_category 与账单汇总接口大类一致（含 EIP/网络、负载均衡、对象存储、VPC 等，见 billingagg）。
+// 消费合计按两位小数四舍五入后为 0 的行不同步（与前端「—」一致）：不新增、不更新；若 CMDB 已有同键 billing CI 则删除。
 func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, resp *pbbilling.ListBillingSummaryResp) componentSyncStats {
 	st := componentSyncStats{}
 	if resp == nil {
@@ -1528,12 +1654,39 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 		if cat == "" {
 			continue
 		}
-		cur := strings.TrimSpace(row.Currency)
-		if cur == "" {
-			cur = curDefault
+		rounded := billingagg.RoundMoney2(row.TotalConsumeAmount)
+		if math.IsNaN(rounded) || math.IsInf(rounded, 0) {
+			glog.Warningf("cmdb sync billing(skip invalid amount): system_id=%s account=%s category=%q raw=%v", systemID, accountName, cat, row.TotalConsumeAmount)
+			st.Skipped++
+			continue
 		}
 		q := map[string]any{
 			"q": fmt.Sprintf("_type:billing,system_id:%s,billing_month:%s,resource_category:%s,account_name:%s", systemID, billingMonth, cat, accountName),
+		}
+		if rounded == 0 {
+			exists0, err := s.Client.GetCIID(q)
+			if err != nil {
+				glog.Errorf("cmdb sync billing(get zero consume): system_id=%s account=%s category=%q err=%v", systemID, accountName, cat, err)
+				st.Errors++
+				continue
+			}
+			if exists0 == "" {
+				glog.Infof("cmdb sync billing(skip zero consume, no ci): system_id=%s account=%s category=%q", systemID, accountName, cat)
+				st.Skipped++
+				continue
+			}
+			if _, err := s.Client.DeleteCI(exists0); err != nil {
+				glog.Errorf("cmdb sync billing(delete zero consume): system_id=%s account=%s category=%q id=%s err=%v", systemID, accountName, cat, exists0, err)
+				st.Errors++
+				continue
+			}
+			glog.Infof("cmdb sync billing(delete ok zero consume): system_id=%s account=%s category=%s id=%s", systemID, accountName, cat, exists0)
+			st.Deleted++
+			continue
+		}
+		cur := strings.TrimSpace(row.Currency)
+		if cur == "" {
+			cur = curDefault
 		}
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
@@ -1714,6 +1867,7 @@ func (s *Syncer) StartDailyAt(hour, min int) {
 }
 
 // CMDBConfigFromEnv 从环境变量读取 CMDB 地址与密钥；三者皆非空则启用。变量名：CLOUD_FITTER_CMDB_BASE_URL, CLOUD_FITTER_CMDB_KEY, CLOUD_FITTER_CMDB_SECRET。
+// 云资源快照与「仅从快照同步 CMDB」见 resourcecache 包：CLOUD_FITTER_RESOURCE_SNAPSHOT_*、CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT。
 func CMDBConfigFromEnv() (base, key, secret string, ok bool) {
 	base = strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_BASE_URL"))
 	key = strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_KEY"))

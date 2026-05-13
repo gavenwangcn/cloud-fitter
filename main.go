@@ -25,8 +25,10 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbstatistic"
 	"github.com/cloud-fitter/cloud-fitter/internal/cmdb"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
+	"github.com/cloud-fitter/cloud-fitter/internal/resourcecache"
 	"github.com/cloud-fitter/cloud-fitter/internal/server"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
+	"github.com/cloud-fitter/cloud-fitter/internal/snapshotrun"
 	"github.com/cloud-fitter/cloud-fitter/internal/systemidseq"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
@@ -259,6 +261,16 @@ func main() {
 	if cmdbSyncer != nil {
 		cmdbSyncer.StartDailyAt(2, 0)
 		glog.Infof("CMDB daily sync enabled at 02:00 (local)")
+	}
+
+	if configstore.UseMySQLFromEnv() && resourcecache.SnapshotWorkerEnabled() {
+		if db := store.SQLDB(); db != nil {
+			snapshotrun.StartResourceSnapshotWorker(store, db)
+			glog.Infof("resource snapshot worker enabled (interval=%v)", resourcecache.SnapshotIntervalFromEnv())
+		}
+	}
+	if resourcecache.CMDBUseResourceSnapshotFromEnv() {
+		glog.Infof("CMDB sync will use MySQL resource snapshots when CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT is on and MySQL is enabled")
 	}
 
 	if err := run(store, cmdbSyncer, seqStore); err != nil {

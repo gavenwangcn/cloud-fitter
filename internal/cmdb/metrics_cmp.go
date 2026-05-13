@@ -199,17 +199,38 @@ func middlewareResourceChanged(row map[string]any, m mwRec) bool {
 	return false
 }
 
-func k8sResourceChanged(row map[string]any, hostIPNew, version, cloudType, location string) bool {
+func k8sResourceChanged(row map[string]any, clusterUUID string, c k8sCluster, hostIPNew, cloudType, location string) bool {
+	u := strings.TrimSpace(clusterUUID)
+	if u != "" {
+		if strings.TrimSpace(anyToCompareStr(row["uuid"])) != u {
+			return true
+		}
+		if strings.TrimSpace(anyToCompareStr(row["k8s_uuid"])) != u {
+			return true
+		}
+	}
 	if strings.TrimSpace(anyToCompareStr(row["host_ip_new"])) != strings.TrimSpace(hostIPNew) {
 		return true
 	}
-	if strings.TrimSpace(anyToCompareStr(row["k8s_version"])) != strings.TrimSpace(version) {
+	if strings.TrimSpace(anyToCompareStr(row["k8s_version"])) != strings.TrimSpace(c.Version) {
 		return true
 	}
 	if strings.TrimSpace(anyToCompareStr(row["cloud_type"])) != strings.TrimSpace(cloudType) {
 		return true
 	}
 	if strings.TrimSpace(anyToCompareStr(row["location"])) != strings.TrimSpace(location) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["k8s_cluster_name"])) != strings.TrimSpace(c.Name) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["sys_node_name"])) != strings.TrimSpace(c.SysNodeName) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["environment"])) != strings.TrimSpace(c.Environment) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["remarks"])) != strings.TrimSpace(c.Remarks) {
 		return true
 	}
 	return false
