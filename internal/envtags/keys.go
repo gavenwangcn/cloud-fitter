@@ -55,3 +55,11 @@ func NodeTagKey() string {
 	}
 	return defaultNodeTagKey
 }
+
+// SystemTagKey 返回用于与 CMDB system_id 对齐的系统维度标签键名；默认 "system"。配置：CLOUD_FITTER_SYSTEM_TAG_KEY。
+func SystemTagKey() string {
+	if k := strings.TrimSpace(os.Getenv("CLOUD_FITTER_SYSTEM_TAG_KEY")); k != "" {
+		return k
+	}
+	return "system"
+}

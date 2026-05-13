@@ -62,11 +62,12 @@ func BillingSummaryByAccount(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if body.SystemName != "" {
-		accounts, err := resolveSystemAccounts(body.SystemName)
+		sc, err := resolveSystemListScope(body.SystemName)
 		if err != nil {
 			writeBillingErr(w, http.StatusInternalServerError, errors.Wrapf(err, "resolve system accounts failed system=%q", body.SystemName))
 			return
 		}
+		accounts := sc.Accounts
 		if len(accounts) == 0 {
 			writeProtoJSON(w, &pbbilling.ListBillingSummaryResp{Currency: "CNY"}, nil)
 			return
@@ -120,10 +121,11 @@ func ListBillingSummaryBySystemName(ctx context.Context, systemName, billingMont
 		}
 		cycle = time.Now().In(loc).Format("2006-01")
 	}
-	accounts, err := resolveSystemAccounts(systemName)
+	sc, err := resolveSystemListScope(systemName)
 	if err != nil {
 		return nil, err
 	}
+	accounts := sc.Accounts
 	if len(accounts) == 0 {
 		return &pbbilling.ListBillingSummaryResp{Currency: "CNY"}, nil
 	}

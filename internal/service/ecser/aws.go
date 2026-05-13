@@ -16,6 +16,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -187,6 +188,9 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			var tagPairs [][2]string
 			for _, t := range v2.Tags {
 				tagPairs = append(tagPairs, [2]string{aws.ToString(t.Key), aws.ToString(t.Value)})
+			}
+			if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
+				continue
 			}
 			ecses = append(ecses, &pbecs.EcsInstance{
 				Provider:         pbtenant.CloudProvider_aws,

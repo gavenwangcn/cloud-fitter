@@ -33,23 +33,27 @@ func AliRDSInstanceTagMap(cli *alirds.Client, wantKey string) (map[string]string
 	return out, nil
 }
 
-// AliRDSInstanceTagValues 一次 DescribeTags，按 envKey / nodeKey 分别建 instanceId -> 标签值（键名为空则跳过该维度）。
-func AliRDSInstanceTagValues(cli *alirds.Client, envKey, nodeKey string) (envByInst, nodeByInst map[string]string, err error) {
+// AliRDSInstanceTagValues 一次 DescribeTags，按 envKey / nodeKey / systemKey 分别建 instanceId -> 标签值（键名为空则跳过该维度）。
+func AliRDSInstanceTagValues(cli *alirds.Client, envKey, nodeKey, systemKey string) (envByInst, nodeByInst, systemByInst map[string]string, err error) {
 	wantEnv := strings.TrimSpace(envKey)
 	wantNode := strings.TrimSpace(nodeKey)
-	if cli == nil || (wantEnv == "" && wantNode == "") {
-		return nil, nil, nil
+	wantSystem := strings.TrimSpace(systemKey)
+	if cli == nil || (wantEnv == "" && wantNode == "" && wantSystem == "") {
+		return nil, nil, nil, nil
 	}
 	req := alirds.CreateDescribeTagsRequest()
 	resp, err := cli.DescribeTags(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if wantEnv != "" {
 		envByInst = make(map[string]string)
 	}
 	if wantNode != "" {
 		nodeByInst = make(map[string]string)
+	}
+	if wantSystem != "" {
+		systemByInst = make(map[string]string)
 	}
 	for _, ti := range resp.Items.TagInfos {
 		tk := strings.TrimSpace(ti.TagKey)
@@ -70,6 +74,14 @@ func AliRDSInstanceTagValues(cli *alirds.Client, envKey, nodeKey string) (envByI
 				}
 			}
 		}
+		if wantSystem != "" && strings.EqualFold(tk, wantSystem) {
+			for _, id := range ti.DBInstanceIds.DBInstanceIds {
+				id = strings.TrimSpace(id)
+				if id != "" {
+					systemByInst[id] = val
+				}
+			}
+		}
 	}
-	return envByInst, nodeByInst, nil
+	return envByInst, nodeByInst, systemByInst, nil
 }

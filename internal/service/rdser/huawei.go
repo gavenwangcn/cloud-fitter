@@ -21,6 +21,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudhelper"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -314,8 +315,8 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 	}
 
 	instances := *resp.Instances
-	rdses := make([]*pbrds.RdsInstance, len(instances))
-	for k, v := range instances {
+	var rdses []*pbrds.RdsInstance
+	for _, v := range instances {
 		engine := ""
 		engineVersion := ""
 		if v.Datastore != nil {
@@ -347,6 +348,9 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		for _, tg := range v.Tags {
 			tagPairs = append(tagPairs, [2]string{tg.Key, tg.Value})
 		}
+		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
+			continue
+		}
 		regionName := strings.TrimSpace(v.Region)
 		if regionName == "" {
 			regionName = r.region.GetName()
@@ -355,7 +359,7 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		if s := strings.TrimSpace(v.SecurityGroupId); s != "" {
 			sgNames = []string{s}
 		}
-		rdses[k] = &pbrds.RdsInstance{
+		rdses = append(rdses, &pbrds.RdsInstance{
 			Provider:           pbtenant.CloudProvider_huawei,
 			AccoutName:         r.tenanter.AccountName(),
 			InstanceId:         v.Id,
@@ -378,7 +382,7 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			SecurityGroupNames: sgNames,
 			EnvTagValue:        envtags.FromPairs(envtags.RDSKey(), tagPairs),
 			NodeTagValue:       envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
-		}
+		})
 	}
 
 	isFinished := false

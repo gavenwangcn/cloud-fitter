@@ -14,6 +14,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -84,17 +85,18 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 
 	envKey := envtags.RDSKey()
 	nodeKey := envtags.NodeTagKey()
-	var tagByInst, nodeByInst map[string]string
-	if envKey != "" || nodeKey != "" {
-		tagByInst, nodeByInst, err = envtags.AliRDSInstanceTagValues(rds.cli, envKey, nodeKey)
+	sysKey := envtags.SystemTagKey()
+	var tagByInst, nodeByInst, systemByInst map[string]string
+	if envKey != "" || nodeKey != "" || sysKey != "" {
+		tagByInst, nodeByInst, systemByInst, err = envtags.AliRDSInstanceTagValues(rds.cli, envKey, nodeKey, sysKey)
 		if err != nil {
 			glog.Warningf("Aliyun RDS DescribeTags account=%s region=%s: %v", rds.tenanter.AccountName(), rds.region.GetName(), err)
-			tagByInst, nodeByInst = nil, nil
+			tagByInst, nodeByInst, systemByInst = nil, nil, nil
 		}
 	}
 
-	var rdses = make([]*pbrds.RdsInstance, len(resp.Items.DBInstance))
-	for k, v := range resp.Items.DBInstance {
+	var rdses []*pbrds.RdsInstance
+	for _, v := range resp.Items.DBInstance {
 		ev := ""
 		if tagByInst != nil {
 			ev = tagByInst[v.DBInstanceId]
@@ -102,6 +104,13 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 		nv := ""
 		if nodeByInst != nil {
 			nv = nodeByInst[v.DBInstanceId]
+		}
+		sv := ""
+		if systemByInst != nil {
+			sv = systemByInst[v.DBInstanceId]
+		}
+		if !scope.SystemListTagFilterMatches(ctx, sv) {
+			continue
 		}
 		instName := v.DBInstanceName
 		if instName == "" {
@@ -118,7 +127,7 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			}
 		}
 		memMB := int32(v.DBInstanceMemory)
-		rdses[k] = &pbrds.RdsInstance{
+		rdses = append(rdses, &pbrds.RdsInstance{
 			Provider:      pbtenant.CloudProvider_ali,
 			AccoutName:    rds.tenanter.AccountName(),
 			InstanceId:    v.DBInstanceId,
@@ -137,7 +146,7 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			ChargeType:    v.PayType,
 			EnvTagValue:   ev,
 			NodeTagValue:  nv,
-		}
+		})
 	}
 
 	n := len(rdses)

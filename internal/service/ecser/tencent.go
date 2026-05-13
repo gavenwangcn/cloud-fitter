@@ -8,6 +8,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 
 	"github.com/golang/glog"
@@ -83,8 +84,8 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 	glog.Infof("Tencent CVM ListDetail disk(from DescribeInstances) begin account=%s region=%s instances_in_page=%d page_number=%d",
 		ecs.tenanter.AccountName(), ecs.region.GetName(), nInst, req.PageNumber)
 
-	var ecses = make([]*pbecs.EcsInstance, nInst)
-	for k, v := range resp.Response.InstanceSet {
+	var ecses []*pbecs.EcsInstance
+	for _, v := range resp.Response.InstanceSet {
 		imageID := ""
 		if v.ImageId != nil {
 			imageID = *v.ImageId
@@ -105,7 +106,10 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 				tagPairs = append(tagPairs, [2]string{*t.Key, *t.Value})
 			}
 		}
-		ecses[k] = &pbecs.EcsInstance{
+		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
+			continue
+		}
+		inst := &pbecs.EcsInstance{
 			Provider:         pbtenant.CloudProvider_tencent,
 			AccountName:      ecs.tenanter.AccountName(),
 			InstanceId:       *v.InstanceId,
@@ -134,15 +138,16 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 			NodeTagValue:     envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 		}
 		for k1, v1 := range v.PublicIpAddresses {
-			ecses[k].PublicIps[k1] = *v1
+			inst.PublicIps[k1] = *v1
 		}
 		for k1, v1 := range v.PrivateIpAddresses {
-			ecses[k].InnerIps[k1] = *v1
+			inst.InnerIps[k1] = *v1
 		}
+		ecses = append(ecses, inst)
 	}
 
 	glog.Infof("Tencent CVM ListDetail disk end account=%s region=%s instances=%d (use -v=2 for per-instance lines)",
-		ecs.tenanter.AccountName(), ecs.region.GetName(), nInst)
+		ecs.tenanter.AccountName(), ecs.region.GetName(), len(ecses))
 
 	isFinished := false
 	if len(ecses) < int(req.PageSize) {

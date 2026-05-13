@@ -23,6 +23,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -442,6 +443,24 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 	}
 }
 
+// filterHuaweiECSBySystemTag 在按系统拉列表时按标签 system（见 envtags.SystemTagKey）与 CMDB system_id 过滤；标签值为空则保留。
+func filterHuaweiECSBySystemTag(ctx context.Context, insts []*pbecs.EcsInstance, servers []model.ServerDetail) []*pbecs.EcsInstance {
+	if len(insts) != len(servers) {
+		return insts
+	}
+	var out []*pbecs.EcsInstance
+	for i, inst := range insts {
+		if inst == nil {
+			continue
+		}
+		st := envtags.HuaweiECSFromServerDetail(servers[i], envtags.SystemTagKey())
+		if scope.SystemListTagFilterMatches(ctx, st) {
+			out = append(out, inst)
+		}
+	}
+	return out
+}
+
 func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
 	request := new(model.ListServersDetailsRequest)
 	offset := (req.PageNumber - 1) * req.PageSize
@@ -548,6 +567,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	}
 
 	fillHuaweiECSUtilization(ctx, ecses, ecs.region.GetName(), ecs.tenanter, ecs.tenanter.AccountName())
+	ecses = filterHuaweiECSBySystemTag(ctx, ecses, servers)
 
 	return &pbecs.ListDetailResp{
 		Ecses:      ecses,

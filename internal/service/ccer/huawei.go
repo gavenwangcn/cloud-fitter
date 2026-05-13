@@ -18,6 +18,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -269,11 +270,16 @@ func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*
 			if cl.Status != nil {
 				phase = derefStr(cl.Status.Phase)
 			}
-			agg := c.clusterNodeAgg(uid, flavorByID)
 			var nodeTag string
+			var labels map[string]string
 			if cl.Metadata != nil && cl.Metadata.Labels != nil {
-				nodeTag = envtags.FromMap(envtags.NodeTagKey(), cl.Metadata.Labels)
+				labels = cl.Metadata.Labels
+				nodeTag = envtags.FromMap(envtags.NodeTagKey(), labels)
 			}
+			if !scope.SystemListTagFilterMatches(ctx, envtags.FromMap(envtags.SystemTagKey(), labels)) {
+				continue
+			}
+			agg := c.clusterNodeAgg(uid, flavorByID)
 			clusters = append(clusters, &pbcce.CceCluster{
 				Provider:       pbtenant.CloudProvider_huawei,
 				AccoutName:     c.tenanter.AccountName(),

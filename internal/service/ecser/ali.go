@@ -14,6 +14,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -144,9 +145,9 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 	glog.Infof("Aliyun ECS ListDetail DescribeDisks batch begin account=%s region=%s instances_in_page=%d page_number=%d",
 		ecs.tenanter.AccountName(), ecs.region.GetName(), nInst, req.PageNumber)
 
-	var ecses = make([]*pbecs.EcsInstance, nInst)
+	var ecses []*pbecs.EcsInstance
 	var diskErrN int32
-	for k, v := range resp.Instances.Instance {
+	for _, v := range resp.Instances.Instance {
 		sysGB, dataGB, dsum, derr := ecs.aliDiskStats(v.InstanceId)
 		if derr != nil {
 			diskErrN++
@@ -157,6 +158,9 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 		for _, t := range v.Tags.Tag {
 			tagPairs = append(tagPairs, [2]string{t.TagKey, t.TagValue})
 		}
+		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
+			continue
+		}
 		cpu := int32(v.Cpu)
 		if cpu == 0 {
 			cpu = int32(v.CPU)
@@ -165,7 +169,7 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 		if imgName == "" {
 			imgName = v.OSNameEn
 		}
-		ecses[k] = &pbecs.EcsInstance{
+		ecses = append(ecses, &pbecs.EcsInstance{
 			Provider:          pbtenant.CloudProvider_ali,
 			AccountName:       ecs.tenanter.AccountName(),
 			InstanceId:        v.InstanceId,
@@ -192,7 +196,7 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			DiskSummary:       dsum,
 			EnvTagValue:       envtags.FromPairs(envtags.ECSKey(), tagPairs),
 			NodeTagValue:      envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
-		}
+		})
 	}
 
 	glog.Infof("Aliyun ECS ListDetail DescribeDisks batch end account=%s region=%s disk_api_errors=%d/%d (use -v=2 for per-instance disk lines)",

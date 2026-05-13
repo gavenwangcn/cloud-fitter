@@ -21,6 +21,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudhelper"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -391,8 +392,8 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 	instances := *resp.Instances
 	cpuBySpec := redis.buildFlavorCPUBySpec()
 
-	redises := make([]*pbredis.RedisInstance, len(instances))
-	for k, v := range instances {
+	redises := make([]*pbredis.RedisInstance, 0, len(instances))
+	for _, v := range instances {
 		size := int32(0)
 		if v.MaxMemory != nil {
 			size = *v.MaxMemory
@@ -418,8 +419,11 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 				tagPairs = append(tagPairs, [2]string{tg.Key, val})
 			}
 		}
+		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
+			continue
+		}
 
-		redises[k] = &pbredis.RedisInstance{
+		redises = append(redises, &pbredis.RedisInstance{
 			Provider:     pbtenant.CloudProvider_huawei,
 			AccoutName:   redis.tenanter.AccountName(),
 			InstanceId:   derefString(v.InstanceId),
@@ -439,7 +443,7 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			EnvTagValue:          envtags.FromPairs(envtags.RedisKey(), tagPairs),
 			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
 			SecurityGroupNames:   dcsSecurityGroupNames(&v),
-		}
+		})
 	}
 
 	fillHuaweiDCSFromShowInstanceWhenListSGEmpty(redis, redises)

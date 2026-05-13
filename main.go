@@ -83,10 +83,10 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer, seqStore *systemidse
 	}
 	configHandler := configstore.HTTPHandler(store, reloadTenants)
 	systemHandler := configstore.SystemHTTPHandler(store)
-	jsonapi.SetSystemAccountResolver(func(systemName string) ([]jsonapi.AccountScope, error) {
+	jsonapi.SetSystemListScopeResolver(func(systemName string) (jsonapi.SystemListScope, error) {
 		rows, err := store.AccountsBySystemName(systemName)
 		if err != nil {
-			return nil, err
+			return jsonapi.SystemListScope{}, err
 		}
 		out := make([]jsonapi.AccountScope, 0, len(rows))
 		for _, r := range rows {
@@ -95,7 +95,13 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer, seqStore *systemidse
 				AccountName: r.Name,
 			})
 		}
-		return out, nil
+		sid := ""
+		if sys, err := store.SystemByName(systemName); err == nil {
+			sid = strings.TrimSpace(sys.SystemID)
+		} else {
+			glog.V(1).Infof("jsonapi system list scope: SystemByName(%q): %v (system tag filter disabled for this name)", systemName, err)
+		}
+		return jsonapi.SystemListScope{Accounts: out, SystemID: sid}, nil
 	})
 
 	// Start HTTP server (grpc-gateway JSON API，与容器/compose 暴露端口 9090 一致)

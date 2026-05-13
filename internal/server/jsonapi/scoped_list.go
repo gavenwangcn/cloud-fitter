@@ -32,10 +32,32 @@ type AccountScope struct {
 	AccountName string
 }
 
-var systemAccountResolver func(systemName string) ([]AccountScope, error)
+// SystemListScope 为按系统名称拉云列表时的解析结果：关联账号 + CMDB system_id（用于标签 system 过滤）。
+type SystemListScope struct {
+	Accounts []AccountScope
+	SystemID string
+}
 
-func SetSystemAccountResolver(resolver func(systemName string) ([]AccountScope, error)) {
-	systemAccountResolver = resolver
+var systemListScopeResolver func(systemName string) (SystemListScope, error)
+
+// SetSystemListScopeResolver 由 main 注入：根据系统名称返回关联云账号与 system_id。
+func SetSystemListScopeResolver(resolver func(systemName string) (SystemListScope, error)) {
+	systemListScopeResolver = resolver
+}
+
+func resolveSystemListScope(systemName string) (SystemListScope, error) {
+	if systemListScopeResolver == nil {
+		return SystemListScope{}, nil
+	}
+	return systemListScopeResolver(systemName)
+}
+
+func withSystemListCtx(ctx0 context.Context, systemName string) (context.Context, SystemListScope, error) {
+	sc, err := resolveSystemListScope(systemName)
+	if err != nil {
+		return nil, SystemListScope{}, err
+	}
+	return scope.WithSystemListTagFilter(ctx0, sc.SystemID), sc, nil
 }
 
 type listByAccountBody struct {
@@ -212,21 +234,14 @@ func CertByAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"certificates": resp}, err)
 }
 
-func resolveSystemAccounts(systemName string) ([]AccountScope, error) {
-	if systemAccountResolver == nil {
-		return nil, nil
-	}
-	return systemAccountResolver(systemName)
-}
-
 func ecsBySystemName(ctx0 context.Context, systemName string) (*pbecs.ListResp, error) {
 	out := &pbecs.ListResp{}
-	accounts, err := resolveSystemAccounts(systemName)
+	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
 		return nil, err
 	}
-	for _, acc := range accounts {
-		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+	for _, acc := range sc.Accounts {
+		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := ecs.List(ctx, &pbecs.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
 		if err != nil {
 			return nil, err
@@ -240,12 +255,12 @@ func ecsBySystemName(ctx0 context.Context, systemName string) (*pbecs.ListResp, 
 
 func rdsBySystemName(ctx0 context.Context, systemName string) (*pbrds.ListResp, error) {
 	out := &pbrds.ListResp{}
-	accounts, err := resolveSystemAccounts(systemName)
+	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
 		return nil, err
 	}
-	for _, acc := range accounts {
-		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+	for _, acc := range sc.Accounts {
+		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := rds.List(ctx, &pbrds.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
 		if err != nil {
 			return nil, err
@@ -259,12 +274,12 @@ func rdsBySystemName(ctx0 context.Context, systemName string) (*pbrds.ListResp, 
 
 func redisBySystemName(ctx0 context.Context, systemName string) (*pbredis.ListResp, error) {
 	out := &pbredis.ListResp{}
-	accounts, err := resolveSystemAccounts(systemName)
+	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
 		return nil, err
 	}
-	for _, acc := range accounts {
-		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+	for _, acc := range sc.Accounts {
+		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := redis.List(ctx, &pbredis.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
 		if err != nil {
 			return nil, err
@@ -278,12 +293,12 @@ func redisBySystemName(ctx0 context.Context, systemName string) (*pbredis.ListRe
 
 func kafkaBySystemName(ctx0 context.Context, systemName string) (*pbkafka.ListResp, error) {
 	out := &pbkafka.ListResp{}
-	accounts, err := resolveSystemAccounts(systemName)
+	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
 		return nil, err
 	}
-	for _, acc := range accounts {
-		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+	for _, acc := range sc.Accounts {
+		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := kafka.List(ctx, &pbkafka.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
 		if err != nil {
 			return nil, err
@@ -297,12 +312,12 @@ func kafkaBySystemName(ctx0 context.Context, systemName string) (*pbkafka.ListRe
 
 func cceBySystemName(ctx0 context.Context, systemName string) (*pbcce.ListResp, error) {
 	out := &pbcce.ListResp{}
-	accounts, err := resolveSystemAccounts(systemName)
+	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
 		return nil, err
 	}
-	for _, acc := range accounts {
-		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+	for _, acc := range sc.Accounts {
+		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := ccesvc.List(ctx, &pbcce.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
 		if err != nil {
 			return nil, err
@@ -316,12 +331,12 @@ func cceBySystemName(ctx0 context.Context, systemName string) (*pbcce.ListResp, 
 
 func eipBySystemName(ctx0 context.Context, systemName string) ([]*eip.Instance, error) {
 	var out []*eip.Instance
-	accounts, err := resolveSystemAccounts(systemName)
+	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
 		return nil, err
 	}
-	for _, acc := range accounts {
-		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+	for _, acc := range sc.Accounts {
+		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := eip.List(ctx, pbtenant.CloudProvider(acc.Provider))
 		if err != nil {
 			return nil, err
@@ -333,12 +348,12 @@ func eipBySystemName(ctx0 context.Context, systemName string) ([]*eip.Instance, 
 
 func elbBySystemName(ctx0 context.Context, systemName string) ([]*elb.Instance, error) {
 	var out []*elb.Instance
-	accounts, err := resolveSystemAccounts(systemName)
+	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
 		return nil, err
 	}
-	for _, acc := range accounts {
-		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+	for _, acc := range sc.Accounts {
+		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := elb.List(ctx, pbtenant.CloudProvider(acc.Provider))
 		if err != nil {
 			return nil, err
@@ -350,12 +365,12 @@ func elbBySystemName(ctx0 context.Context, systemName string) ([]*elb.Instance, 
 
 func certificatesBySystemName(ctx0 context.Context, systemName string) ([]*cert.Instance, error) {
 	var out []*cert.Instance
-	accounts, err := resolveSystemAccounts(systemName)
+	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
 		return nil, err
 	}
-	for _, acc := range accounts {
-		ctx := scope.WithAccountName(ctx0, acc.AccountName)
+	for _, acc := range sc.Accounts {
+		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := cert.List(ctx, pbtenant.CloudProvider(acc.Provider))
 		if err != nil {
 			return nil, err
