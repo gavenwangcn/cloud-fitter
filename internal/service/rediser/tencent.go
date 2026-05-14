@@ -6,6 +6,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 
 	"github.com/golang/glog"
@@ -124,6 +125,7 @@ func (rds *TencentRedis) ListDetail(ctx context.Context, req *pbredis.ListDetail
 	var rdses = make([]*pbredis.RedisInstance, len(resp.Response.InstanceSet))
 	for k, v := range resp.Response.InstanceSet {
 		status, _ := tencentRedisStatus[*v.Status]
+		instName := strings.TrimSpace(*v.InstanceName)
 		rdses[k] = &pbredis.RedisInstance{
 			Provider:     pbtenant.CloudProvider_tencent,
 			AccoutName:   rds.tenanter.AccountName(),
@@ -134,6 +136,8 @@ func (rds *TencentRedis) ListDetail(ctx context.Context, req *pbredis.ListDetail
 			Status:       status,
 			CreationTime: *v.Createtime,
 			ExpireTime:   *v.DeadlineTime,
+			EnvTagValue:  envtags.EnvTagOrNameFallback("", instName),
+			NodeTagValue: envtags.NodeTagOrNameFallback("", instName),
 		}
 	}
 

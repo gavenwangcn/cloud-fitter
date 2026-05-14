@@ -8,7 +8,6 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
-	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 
 	"github.com/golang/glog"
@@ -97,18 +96,7 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 		sysGB, dataGB, dsum := tencentDiskInfo(v)
 		glog.V(2).Infof("Tencent CVM disk instance_id=%s account=%s region=%s sys_gb=%d data_gb=%d summary=%q",
 			*v.InstanceId, ecs.tenanter.AccountName(), ecs.region.GetName(), sysGB, dataGB, dsum)
-		var tagPairs [][2]string
-		if v.Tags != nil {
-			for _, t := range v.Tags {
-				if t == nil || t.Key == nil || t.Value == nil {
-					continue
-				}
-				tagPairs = append(tagPairs, [2]string{*t.Key, *t.Value})
-			}
-		}
-		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
-			continue
-		}
+		// 非华为云：不按标签取环境/节点/系统维度；环境、节点仅从实例名规则推断。
 		inst := &pbecs.EcsInstance{
 			Provider:         pbtenant.CloudProvider_tencent,
 			AccountName:      ecs.tenanter.AccountName(),
@@ -134,8 +122,8 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 			SystemDiskSizeGb: sysGB,
 			DataDiskTotalGb:  dataGB,
 			DiskSummary:      dsum,
-			EnvTagValue:      envtags.FromPairs(envtags.ECSKey(), tagPairs),
-			NodeTagValue:     envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			EnvTagValue:  envtags.EnvTagOrNameFallback("", *v.InstanceName),
+			NodeTagValue: envtags.NodeTagOrNameFallback("", *v.InstanceName),
 		}
 		for k1, v1 := range v.PublicIpAddresses {
 			inst.PublicIps[k1] = *v1

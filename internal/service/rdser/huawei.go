@@ -440,8 +440,10 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			Port:               v.Port,
 			ChargeType:         charge,
 			SecurityGroupNames: sgNames,
-			EnvTagValue:          envtags.FromPairs(envtags.RDSKey(), merged),
-			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), merged),
+			EnvTagValue: envtags.EnvTagOrNameFallback(
+				envtags.FromPairs(envtags.RDSKey(), merged), v.Name),
+			NodeTagValue: envtags.NodeTagOrNameFallback(
+				envtags.FromPairs(envtags.NodeTagKey(), merged), v.Name),
 			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
 			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userPairsDisp),
 		})

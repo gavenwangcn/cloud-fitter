@@ -618,6 +618,8 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 		listNode := envtags.HuaweiECSFromServerDetail(v, nodeKey)
 		envVal := huaweiECSMergedTag(v, showPairs, envKey)
 		nodeVal := huaweiECSMergedTag(v, showPairs, nodeKey)
+		envVal = envtags.EnvTagOrNameFallback(envVal, v.Name)
+		nodeVal = envtags.NodeTagOrNameFallback(nodeVal, v.Name)
 		systemTagPerRow[k] = huaweiECSMergedTag(v, showPairs, sysKey)
 		if listEnv == "" && envVal != "" {
 			filledEnvFromAPI++

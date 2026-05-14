@@ -14,7 +14,6 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
-	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -154,13 +153,7 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			sysGB, dataGB, dsum = 0, 0, ""
 			glog.Infof("Aliyun disk empty for instance_id=%s after DescribeDisks error", v.InstanceId)
 		}
-		tagPairs := make([][2]string, 0, len(v.Tags.Tag))
-		for _, t := range v.Tags.Tag {
-			tagPairs = append(tagPairs, [2]string{t.TagKey, t.TagValue})
-		}
-		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
-			continue
-		}
+		// 非华为云：不按标签取环境/节点/系统维度；环境、节点仅从实例名规则推断。
 		cpu := int32(v.Cpu)
 		if cpu == 0 {
 			cpu = int32(v.CPU)
@@ -194,8 +187,8 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			SystemDiskSizeGb:  sysGB,
 			DataDiskTotalGb:   dataGB,
 			DiskSummary:       dsum,
-			EnvTagValue:       envtags.FromPairs(envtags.ECSKey(), tagPairs),
-			NodeTagValue:      envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			EnvTagValue:  envtags.EnvTagOrNameFallback("", v.InstanceName),
+			NodeTagValue: envtags.NodeTagOrNameFallback("", v.InstanceName),
 		})
 	}
 

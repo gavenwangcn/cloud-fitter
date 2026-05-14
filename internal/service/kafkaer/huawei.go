@@ -166,7 +166,8 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 			Status:               *v.Status,
 			CreateTime:           *v.CreatedAt,
 			ExpiredTime:          "",
-			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), merged),
+			NodeTagValue: envtags.NodeTagOrNameFallback(
+				envtags.FromPairs(envtags.NodeTagKey(), merged), *v.Name),
 			SecurityGroupNames:   huaweiKafkaSecurityGroupNames(&v),
 			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
 			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userDisp),

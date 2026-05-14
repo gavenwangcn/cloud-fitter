@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 
 	"github.com/golang/glog"
@@ -87,6 +88,7 @@ func (rds *TencentCdb) ListDetail(ctx context.Context, req *pbrds.ListDetailReq)
 
 	var rdses = make([]*pbrds.RdsInstance, len(resp.Response.Items))
 	for k, v := range resp.Response.Items {
+		instName := strings.TrimSpace(*v.InstanceName)
 		rdses[k] = &pbrds.RdsInstance{
 			Provider:      pbtenant.CloudProvider_tencent,
 			AccoutName:    rds.tenanter.AccountName(),
@@ -100,6 +102,8 @@ func (rds *TencentCdb) ListDetail(ctx context.Context, req *pbrds.ListDetailReq)
 			Status:        fmt.Sprint(*v.Status),
 			CreationTime:  *v.CreateTime,
 			ExpireTime:    *v.DeadlineTime,
+			EnvTagValue:   envtags.EnvTagOrNameFallback("", instName),
+			NodeTagValue:  envtags.NodeTagOrNameFallback("", instName),
 		}
 	}
 

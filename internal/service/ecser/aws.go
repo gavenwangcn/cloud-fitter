@@ -16,7 +16,6 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
-	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -189,9 +188,10 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			for _, t := range v2.Tags {
 				tagPairs = append(tagPairs, [2]string{aws.ToString(t.Key), aws.ToString(t.Value)})
 			}
-			if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
-				continue
-			}
+			// 非华为云：不按标签取环境/节点/系统维度；环境、节点仅从 Name 标签或实例 ID 组成的名称规则推断。
+			ruleName := envtags.ResourceNameForTagFallback("", *v2.InstanceId, tagPairs)
+			ev := envtags.EnvTagOrNameFallback("", ruleName)
+			nv := envtags.NodeTagOrNameFallback("", ruleName)
 			ecses = append(ecses, &pbecs.EcsInstance{
 				Provider:         pbtenant.CloudProvider_aws,
 				AccountName:      ecs.tenanter.AccountName(),
@@ -213,8 +213,8 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 				SystemDiskSizeGb: sysGB,
 				DataDiskTotalGb:  dataGB,
 				DiskSummary:      dsum,
-				EnvTagValue:      envtags.FromPairs(envtags.ECSKey(), tagPairs),
-				NodeTagValue:     envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+				EnvTagValue:      ev,
+				NodeTagValue:     nv,
 			})
 		}
 	}

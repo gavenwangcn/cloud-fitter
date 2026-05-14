@@ -14,7 +14,6 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
-	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -83,35 +82,8 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 		return nil, errors.Wrap(err, "Aliyun ListDetail error")
 	}
 
-	envKey := envtags.RDSKey()
-	nodeKey := envtags.NodeTagKey()
-	sysKey := envtags.SystemTagKey()
-	var tagByInst, nodeByInst, systemByInst map[string]string
-	if envKey != "" || nodeKey != "" || sysKey != "" {
-		tagByInst, nodeByInst, systemByInst, err = envtags.AliRDSInstanceTagValues(rds.cli, envKey, nodeKey, sysKey)
-		if err != nil {
-			glog.Warningf("Aliyun RDS DescribeTags account=%s region=%s: %v", rds.tenanter.AccountName(), rds.region.GetName(), err)
-			tagByInst, nodeByInst, systemByInst = nil, nil, nil
-		}
-	}
-
 	var rdses []*pbrds.RdsInstance
 	for _, v := range resp.Items.DBInstance {
-		ev := ""
-		if tagByInst != nil {
-			ev = tagByInst[v.DBInstanceId]
-		}
-		nv := ""
-		if nodeByInst != nil {
-			nv = nodeByInst[v.DBInstanceId]
-		}
-		sv := ""
-		if systemByInst != nil {
-			sv = systemByInst[v.DBInstanceId]
-		}
-		if !scope.SystemListTagFilterMatches(ctx, sv) {
-			continue
-		}
 		instName := v.DBInstanceName
 		if instName == "" {
 			instName = v.DBInstanceDescription
@@ -144,8 +116,8 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			MemoryMb:      memMB,
 			VpcId:         v.VpcId,
 			ChargeType:    v.PayType,
-			EnvTagValue:   ev,
-			NodeTagValue:  nv,
+			EnvTagValue:   envtags.EnvTagOrNameFallback("", instName),
+			NodeTagValue:  envtags.NodeTagOrNameFallback("", instName),
 		})
 	}
 

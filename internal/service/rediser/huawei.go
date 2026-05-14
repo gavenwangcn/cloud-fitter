@@ -496,8 +496,10 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			UsedMemoryMb: used,
 			ChargeType:   dcsChargingMode(v.ChargingMode),
 			Cpu:          resolveDcsCPU(spec, cpuBySpec),
-			EnvTagValue:          envtags.FromPairs(envtags.RedisKey(), merged),
-			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), merged),
+			EnvTagValue: envtags.EnvTagOrNameFallback(
+				envtags.FromPairs(envtags.RedisKey(), merged), derefString(v.Name)),
+			NodeTagValue: envtags.NodeTagOrNameFallback(
+				envtags.FromPairs(envtags.NodeTagKey(), merged), derefString(v.Name)),
 			SecurityGroupNames:   dcsSecurityGroupNames(&v),
 			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
 			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userDisp),
