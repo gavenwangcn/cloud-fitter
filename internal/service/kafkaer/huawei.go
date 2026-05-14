@@ -3,7 +3,10 @@ package kafkaer
 import (
 	"context"
 	"strings"
+	"sync"
+	"sync/atomic"
 
+	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	hwkafka "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/kafka/v2"
@@ -12,7 +15,10 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
@@ -91,22 +97,77 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 	}
 
 	instances := *resp.Instances
-	var kafkas = make([]*pbkafka.KafkaInstance, len(instances))
-	for k, v := range instances {
-		kafkas[k] = &pbkafka.KafkaInstance{
-			Provider:           pbtenant.CloudProvider_huawei,
-			AccoutName:         kafka.tenanter.AccountName(),
-			InstanceId:         *v.InstanceId,
-			InstanceName:       *v.Name,
-			RegionName:         kafka.region.GetName(),
-			EndPoint:           "",
-			TopicNumLimit:      0,
-			DistSize:           0,
-			Status:             *v.Status,
-			CreateTime:         *v.CreatedAt,
-			ExpiredTime:        "",
-			SecurityGroupNames: huaweiKafkaSecurityGroupNames(&v),
+	n := len(instances)
+	type kafkaTagFetch struct {
+		pairs [][2]string
+		err   error
+	}
+	tagFetches := make([]kafkaTagFetch, n)
+	var tagOK, tagFail int32
+	glog.Infof("Huawei Kafka ListDetail ShowKafkaTags pull begin account=%s region=%s instances=%d",
+		kafka.tenanter.AccountName(), kafka.region.GetName(), n)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+	for ti := 0; ti < n; ti++ {
+		ti := ti
+		iv := instances[ti]
+		if iv.InstanceId == nil || strings.TrimSpace(*iv.InstanceId) == "" {
+			continue
 		}
+		iid := strings.TrimSpace(*iv.InstanceId)
+		wg.Add(1)
+		go func(ti int, iid string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			tr, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ShowKafkaTagsResponse, error) {
+				return kafka.cli.ShowKafkaTags(&model.ShowKafkaTagsRequest{InstanceId: iid})
+			})
+			if err != nil {
+				atomic.AddInt32(&tagFail, 1)
+				tagFetches[ti].err = err
+				glog.Warningf("Huawei Kafka ShowKafkaTags failed instance_id=%s account=%s region=%s err=%v (需 IAM 含 kafka:instance:listTags 或等价只读)",
+					iid, kafka.tenanter.AccountName(), kafka.region.GetName(), err)
+				return
+			}
+			atomic.AddInt32(&tagOK, 1)
+			tagFetches[ti].pairs = huaweitags.PairsFromKafkaTagEntities(tr.Tags)
+		}(ti, iid)
+	}
+	wg.Wait()
+	glog.Infof("Huawei Kafka ListDetail ShowKafkaTags pull end account=%s region=%s ok=%d fail=%d",
+		kafka.tenanter.AccountName(), kafka.region.GetName(), tagOK, tagFail)
+
+	var kafkas []*pbkafka.KafkaInstance
+	for i, v := range instances {
+		if v.InstanceId == nil || v.Name == nil || v.Status == nil || v.CreatedAt == nil {
+			continue
+		}
+		listPairs := huaweitags.PairsFromKafkaTagEntities(v.Tags)
+		var merged [][2]string
+		if tagFetches[i].err == nil && len(tagFetches[i].pairs) > 0 {
+			merged = huaweitags.MergePairsPreferPrimary(tagFetches[i].pairs, listPairs)
+		} else {
+			merged = listPairs
+		}
+		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
+			continue
+		}
+		kafkas = append(kafkas, &pbkafka.KafkaInstance{
+			Provider:             pbtenant.CloudProvider_huawei,
+			AccoutName:           kafka.tenanter.AccountName(),
+			InstanceId:           *v.InstanceId,
+			InstanceName:         *v.Name,
+			RegionName:           kafka.region.GetName(),
+			EndPoint:             "",
+			TopicNumLimit:        0,
+			DistSize:             0,
+			Status:               *v.Status,
+			CreateTime:           *v.CreatedAt,
+			ExpiredTime:          "",
+			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), merged),
+			SecurityGroupNames:   huaweiKafkaSecurityGroupNames(&v),
+		})
 	}
 
 	return &pbkafka.ListDetailResp{

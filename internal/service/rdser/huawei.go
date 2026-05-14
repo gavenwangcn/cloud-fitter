@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,6 +20,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudhelper"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
@@ -315,8 +318,58 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 	}
 
 	instances := *resp.Instances
+	n := len(instances)
+	type rdsTagFetch struct {
+		apiPairs [][2]string
+		sysPairs [][2]string
+		usrPairs [][2]string
+		err      error
+	}
+	tagFetches := make([]rdsTagFetch, n)
+	var tagOK, tagFail int32
+	glog.Infof("Huawei RDS ListDetail ListInstanceTags pull begin account=%s region=%s instances_in_page=%d",
+		r.tenanter.AccountName(), r.region.GetName(), n)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+	for ti := 0; ti < n; ti++ {
+		ti := ti
+		inst := instances[ti]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			tr, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ListInstanceTagsResponse, error) {
+				return r.cli.ListInstanceTags(&model.ListInstanceTagsRequest{InstanceId: inst.Id})
+			})
+			if err != nil {
+				atomic.AddInt32(&tagFail, 1)
+				tagFetches[ti].err = err
+				glog.Warningf("Huawei RDS ListInstanceTags failed instance_id=%s instance_name=%q account=%s region=%s err=%v (需 IAM 含查询实例标签相关只读权限，如 rds:instance:listInstanceTags)",
+					inst.Id, inst.Name, r.tenanter.AccountName(), r.region.GetName(), err)
+				return
+			}
+			atomic.AddInt32(&tagOK, 1)
+			sysP, usrP := huaweitags.SplitRDSInstanceTags(tr.Tags)
+			tagFetches[ti].apiPairs = huaweitags.PairsFromRDSListInstanceTags(tr.Tags)
+			tagFetches[ti].sysPairs = sysP
+			tagFetches[ti].usrPairs = usrP
+		}()
+	}
+	wg.Wait()
+	glog.Infof("Huawei RDS ListDetail ListInstanceTags pull end account=%s region=%s ok=%d fail=%d",
+		r.tenanter.AccountName(), r.region.GetName(), tagOK, tagFail)
+
+	huaweiRDSTagPairsFromList := func(tags []model.TagResponse) [][2]string {
+		var out [][2]string
+		for _, tg := range tags {
+			out = append(out, [2]string{tg.Key, tg.Value})
+		}
+		return out
+	}
+
 	var rdses []*pbrds.RdsInstance
-	for _, v := range instances {
+	for i, v := range instances {
 		engine := ""
 		engineVersion := ""
 		if v.Datastore != nil {
@@ -325,8 +378,8 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		}
 		cpu := int32(0)
 		if v.Cpu != nil {
-			if n, err := strconv.ParseInt(*v.Cpu, 10, 32); err == nil {
-				cpu = int32(n)
+			if n64, err := strconv.ParseInt(*v.Cpu, 10, 32); err == nil {
+				cpu = int32(n64)
 			}
 		}
 		memMB := int32(0)
@@ -344,11 +397,14 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		}
 		pub := append([]string(nil), v.PublicIps...)
 		priv := append([]string(nil), v.PrivateIps...)
-		var tagPairs [][2]string
-		for _, tg := range v.Tags {
-			tagPairs = append(tagPairs, [2]string{tg.Key, tg.Value})
+		listPairs := huaweiRDSTagPairsFromList(v.Tags)
+		var merged [][2]string
+		if tagFetches[i].err == nil && len(tagFetches[i].apiPairs) > 0 {
+			merged = huaweitags.MergePairsPreferPrimary(tagFetches[i].apiPairs, listPairs)
+		} else {
+			merged = listPairs
 		}
-		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
+		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
 			continue
 		}
 		regionName := strings.TrimSpace(v.Region)
@@ -380,8 +436,8 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			Port:               v.Port,
 			ChargeType:         charge,
 			SecurityGroupNames: sgNames,
-			EnvTagValue:        envtags.FromPairs(envtags.RDSKey(), tagPairs),
-			NodeTagValue:       envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			EnvTagValue:        envtags.FromPairs(envtags.RDSKey(), merged),
+			NodeTagValue:       envtags.FromPairs(envtags.NodeTagKey(), merged),
 		})
 	}
 

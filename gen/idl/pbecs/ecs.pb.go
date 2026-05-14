@@ -84,6 +84,10 @@ type EcsInstance struct {
 	UtilizationAudit *pbutilization.ComputeUtilizationAudit `protobuf:"bytes,27,opt,name=utilization_audit,json=utilizationAudit,proto3" json:"utilization_audit,omitempty"`
 	// 关联安全组（可读名称；云 API 可能返回名称或 UUID）
 	SecurityGroupNames []string `protobuf:"bytes,28,rep,name=security_group_names,json=securityGroupNames,proto3" json:"security_group_names,omitempty"`
+	// 系统标签展示：来自华为 ListServersDetails.sys_tags（key=value; 拼接）；无系统标签时为空
+	SystemTagsDisplay string `protobuf:"bytes,29,opt,name=system_tags_display,json=systemTagsDisplay,proto3" json:"system_tags_display,omitempty"`
+	// 用户自定义标签展示：来自华为 ShowServerTags（key=value; 拼接）；无用户标签时为空
+	UserTagsDisplay string `protobuf:"bytes,30,opt,name=user_tags_display,json=userTagsDisplay,proto3" json:"user_tags_display,omitempty"`
 }
 
 func (x *EcsInstance) Reset() {
@@ -312,6 +316,20 @@ func (x *EcsInstance) GetSecurityGroupNames() []string {
 		return x.SecurityGroupNames
 	}
 	return nil
+}
+
+func (x *EcsInstance) GetSystemTagsDisplay() string {
+	if x != nil {
+		return x.SystemTagsDisplay
+	}
+	return ""
+}
+
+func (x *EcsInstance) GetUserTagsDisplay() string {
+	if x != nil {
+		return x.UserTagsDisplay
+	}
+	return ""
 }
 
 type ListDetailReq struct {

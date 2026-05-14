@@ -21,6 +21,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
@@ -444,8 +445,9 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 }
 
 // filterHuaweiECSBySystemTag 在按系统拉列表时按标签 system（见 envtags.SystemTagKey）与 CMDB system_id 过滤；标签值为空则保留。
-func filterHuaweiECSBySystemTag(ctx context.Context, insts []*pbecs.EcsInstance, servers []model.ServerDetail) []*pbecs.EcsInstance {
-	if len(insts) != len(servers) {
+// systemTagPerRow 与 insts 一一对应，优先来自 ShowServerTags，与 ListServersDetails 合并结果。
+func filterHuaweiECSBySystemTag(ctx context.Context, insts []*pbecs.EcsInstance, systemTagPerRow []string) []*pbecs.EcsInstance {
+	if len(insts) != len(systemTagPerRow) {
 		return insts
 	}
 	var out []*pbecs.EcsInstance
@@ -453,12 +455,45 @@ func filterHuaweiECSBySystemTag(ctx context.Context, insts []*pbecs.EcsInstance,
 		if inst == nil {
 			continue
 		}
-		st := envtags.HuaweiECSFromServerDetail(servers[i], envtags.SystemTagKey())
+		st := systemTagPerRow[i]
 		if scope.SystemListTagFilterMatches(ctx, st) {
 			out = append(out, inst)
 		}
 	}
 	return out
+}
+
+// huaweiECSMergedTag 优先使用 ShowServerTags 返回的键值，与华为云文档一致；若该键在专用标签接口中无值，再回退 ListServersDetails 中的 sys_tags/tags。
+func huaweiECSMergedTag(v model.ServerDetail, showPairs [][2]string, wantKey string) string {
+	if s := envtags.FromPairs(wantKey, showPairs); s != "" {
+		return s
+	}
+	return envtags.HuaweiECSFromServerDetail(v, wantKey)
+}
+
+func huaweiFormatTagPairsForLog(pairs [][2]string) string {
+	if len(pairs) == 0 {
+		return ""
+	}
+	const max = 512
+	var b strings.Builder
+	n := 0
+	for _, p := range pairs {
+		if len(p) < 2 {
+			continue
+		}
+		if n > 0 {
+			b.WriteString(", ")
+		}
+		seg := p[0] + "=" + p[1]
+		if b.Len()+len(seg) > max {
+			b.WriteString("…")
+			break
+		}
+		b.WriteString(seg)
+		n++
+	}
+	return b.String()
 }
 
 func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*pbecs.ListDetailResp, error) {
@@ -518,6 +553,50 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	glog.Infof("Huawei ECS ListDetail block_device pull end account=%s region=%s ok=%d fail=%d (use -v=2 for per-instance disk lines)",
 		ecs.tenanter.AccountName(), ecs.region.GetName(), diskOK, diskFail)
 
+	// 用户标签在 ListServersDetails 中可能不完整或格式与解析逻辑不一致；按华为云官方「查询云服务器标签」ShowServerTags
+	//（GET /v1/{project_id}/cloudservers/{server_id}/tags）拉取并合并。IAM 需含 ecs:cloudServers:showServerTags（或含该接口的只读策略）。
+	type huaweiTagFetch struct {
+		pairs [][2]string
+		err   error
+	}
+	tagFetches := make([]huaweiTagFetch, n)
+	var tagOK, tagFail int32
+	glog.Infof("Huawei ECS ListDetail ShowServerTags pull begin account=%s region=%s servers_in_page=%d api=GET_/v1/{project_id}/cloudservers/{server_id}/tags",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), n)
+	for ti := 0; ti < n; ti++ {
+		ti := ti
+		sv := servers[ti]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			tagResp, tagErr := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ShowServerTagsResponse, error) {
+				return ecs.cli.ShowServerTags(&model.ShowServerTagsRequest{ServerId: sv.Id})
+			})
+			if tagErr != nil {
+				atomic.AddInt32(&tagFail, 1)
+				tagFetches[ti].err = tagErr
+				glog.Warningf("Huawei ShowServerTags failed server_id=%s server_name=%q account=%s region=%s list_detail_tags=%q err=%v (请确认 IAM 含 ecs:cloudServers:showServerTags 或 ECS 只读策略)",
+					sv.Id, sv.Name, ecs.tenanter.AccountName(), ecs.region.GetName(), envtags.HuaweiECSListDetailTagsSummary(sv), tagErr)
+				return
+			}
+			atomic.AddInt32(&tagOK, 1)
+			tagFetches[ti].pairs = envtags.HuaweiECSTagPairsFromShowServerTags(tagResp.Tags)
+			nt := 0
+			if tagResp.Tags != nil {
+				nt = len(*tagResp.Tags)
+			}
+			glog.V(2).Infof("Huawei ShowServerTags ok server_id=%s server_name=%q tag_count=%d pairs=%q list_detail_tags=%q",
+				sv.Id, sv.Name, nt, huaweiFormatTagPairsForLog(tagFetches[ti].pairs), envtags.HuaweiECSListDetailTagsSummary(sv))
+		}()
+	}
+	wg.Wait()
+	glog.Infof("Huawei ECS ListDetail ShowServerTags pull end account=%s region=%s ok=%d fail=%d (use -v=2 for per-server tag pairs)",
+		ecs.tenanter.AccountName(), ecs.region.GetName(), tagOK, tagFail)
+
+	var filledEnvFromAPI, filledNodeFromAPI int
+	systemTagPerRow := make([]string, n)
 	ecses := make([]*pbecs.EcsInstance, n)
 	for k, v := range servers {
 		desc := ""
@@ -530,6 +609,34 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			resourceGroup = *v.EnterpriseProjectId
 		}
 
+		showPairs := tagFetches[k].pairs
+		if tagFetches[k].err != nil {
+			showPairs = nil
+		}
+		envKey, nodeKey, sysKey := envtags.ECSKey(), envtags.NodeTagKey(), envtags.SystemTagKey()
+		listEnv := envtags.HuaweiECSFromServerDetail(v, envKey)
+		listNode := envtags.HuaweiECSFromServerDetail(v, nodeKey)
+		envVal := huaweiECSMergedTag(v, showPairs, envKey)
+		nodeVal := huaweiECSMergedTag(v, showPairs, nodeKey)
+		systemTagPerRow[k] = huaweiECSMergedTag(v, showPairs, sysKey)
+		if listEnv == "" && envVal != "" {
+			filledEnvFromAPI++
+		}
+		if listNode == "" && nodeVal != "" {
+			filledNodeFromAPI++
+		}
+		if glog.V(1) {
+			glog.Infof("Huawei ECS tag merge server_id=%s server_name=%q env_key=%q list_detail=%q show_api=%q merged=%q | node_key=%q list_detail=%q merged=%q | system_key=%q merged=%q | list_summary=%q show_err=%v",
+				v.Id, v.Name, envKey, listEnv, envtags.FromPairs(envKey, showPairs), envVal,
+				nodeKey, listNode, nodeVal,
+				sysKey, systemTagPerRow[k],
+				envtags.HuaweiECSListDetailTagsSummary(v), tagFetches[k].err)
+		}
+
+		userTagPairs := tagFetches[k].pairs
+		if tagFetches[k].err != nil {
+			userTagPairs = envtags.HuaweiECSUserTagPairsFromServerDetail(v)
+		}
 		ecses[k] = &pbecs.EcsInstance{
 			Provider:         pbtenant.CloudProvider_huawei,
 			AccountName:      ecs.tenanter.AccountName(),
@@ -556,9 +663,15 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			DataDiskTotalGb:  disks[k].data,
 			DiskSummary:          disks[k].summary,
 			SecurityGroupNames:   huaweiSecurityGroupDisplayNames(v.SecurityGroups),
-			EnvTagValue:          envtags.HuaweiECSFromServerDetail(v, envtags.ECSKey()),
-			NodeTagValue:         envtags.HuaweiECSFromServerDetail(v, envtags.NodeTagKey()),
+			EnvTagValue:          envVal,
+			NodeTagValue:         nodeVal,
+			SystemTagsDisplay:    huaweitags.FormatECSSystemTagsDisplay(v.SysTags),
+			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userTagPairs),
 		}
+	}
+	if filledEnvFromAPI > 0 || filledNodeFromAPI > 0 {
+		glog.Infof("Huawei ECS ListDetail tag diagnostics account=%s region=%s env_filled_from_ShowServerTags=%d node_filled_from_ShowServerTags=%d (list_detail 中对应键为空，已由 ShowServerTags 补全；环境标签值可为中文等任意合法值)",
+			ecs.tenanter.AccountName(), ecs.region.GetName(), filledEnvFromAPI, filledNodeFromAPI)
 	}
 
 	isFinished := false
@@ -567,7 +680,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	}
 
 	fillHuaweiECSUtilization(ctx, ecses, ecs.region.GetName(), ecs.tenanter, ecs.tenanter.AccountName())
-	ecses = filterHuaweiECSBySystemTag(ctx, ecses, servers)
+	ecses = filterHuaweiECSBySystemTag(ctx, ecses, systemTagPerRow)
 
 	return &pbecs.ListDetailResp{
 		Ecses:      ecses,

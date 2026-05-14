@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
@@ -36,6 +37,10 @@ type Instance struct {
 	OnlineTime        string `json:"onlineTime"`
 	Status            string `json:"status"`
 	VpcID             string `json:"vpcId"`
+	// 系统标签：ELB 列表接口未区分系统标签时为空
+	SystemTagsDisplay string `json:"systemTagsDisplay"`
+	// 用户自定义标签：来自 ListLoadBalancers 的 tags（key=value; 拼接）
+	UserTagsDisplay string `json:"userTagsDisplay"`
 }
 
 func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, error) {
@@ -180,6 +185,7 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 					glog.Warningf("elb list listeners failed account=%s region=%s lb_id=%s lb_name=%q err=%v",
 						tenant.AccountName(), rName, lb.Id, lb.Name, lerr)
 				}
+				tagPairs := huaweitags.PairsFromELBTags(lb.Tags)
 				out = append(out, &Instance{
 					Provider:          "huawei",
 					AccountName:       tenant.AccountName(),
@@ -194,6 +200,8 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 					OnlineTime:        lb.CreatedAt,
 					Status:            fmt.Sprint(lb.OperatingStatus),
 					VpcID:             lb.VpcId,
+					SystemTagsDisplay: "",
+					UserTagsDisplay:   huaweitags.FormatPairsDisplay(tagPairs),
 				})
 			}
 		}

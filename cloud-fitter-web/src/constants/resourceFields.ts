@@ -19,6 +19,8 @@ export const ECS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
   { dataIndex: 'envTagValue', title: '环境(标签)' },
   { dataIndex: 'nodeTagValue', title: '节点(标签)' },
+  { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
+  { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
   { dataIndex: 'accountName', title: '账号名称' },
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },
@@ -113,6 +115,7 @@ export const DCS_FIELDS: ResourceFieldDef[] = [
 /** pbkafka.KafkaInstance（DMS Kafka / CKafka 等） */
 export const DMS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'nodeTagValue', title: '节点(标签)' },
   { dataIndex: 'accoutName', title: '账号名称' },
   { dataIndex: 'instanceId', title: '实例 ID' },
   { dataIndex: 'instanceName', title: '实例名称' },
@@ -158,6 +161,8 @@ export const EIP_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'privateIpAddress', title: '私有IP地址' },
   { dataIndex: 'onlineTime', title: '上线时间' },
   { dataIndex: 'status', title: '状态' },
+  { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
+  { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
 ];
 
 /** ELB 网络资源（/apis/elb/by-account） */
@@ -174,6 +179,8 @@ export const ELB_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'ipv4BandwidthMbit', title: 'IPv4带宽(Mbit/s)' },
   { dataIndex: 'onlineTime', title: '上线时间' },
   { dataIndex: 'status', title: '状态' },
+  { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
+  { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
 ];
 
 /** 华为云 SSL 证书（CCM / SCM，POST /apis/certificates/by-account） */

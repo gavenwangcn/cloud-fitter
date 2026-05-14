@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,6 +20,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweices"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudhelper"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
@@ -390,10 +393,67 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 	}
 
 	instances := *resp.Instances
+	n := len(instances)
 	cpuBySpec := redis.buildFlavorCPUBySpec()
 
-	redises := make([]*pbredis.RedisInstance, 0, len(instances))
-	for _, v := range instances {
+	type dcsTagFetch struct {
+		apiPairs [][2]string
+		err      error
+	}
+	tagFetches := make([]dcsTagFetch, n)
+	var tagOK, tagFail int32
+	glog.Infof("Huawei DCS ListDetail ShowTags pull begin account=%s region=%s instances_in_page=%d",
+		redis.tenanter.AccountName(), redis.region.GetName(), n)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+	for ti := 0; ti < n; ti++ {
+		ti := ti
+		iv := instances[ti]
+		iid := derefString(iv.InstanceId)
+		if iid == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(ti int, iid string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			tr, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*model.ShowTagsResponse, error) {
+				return redis.cli.ShowTags(&model.ShowTagsRequest{InstanceId: iid})
+			})
+			if err != nil {
+				atomic.AddInt32(&tagFail, 1)
+				tagFetches[ti].err = err
+				glog.Warningf("Huawei DCS ShowTags failed instance_id=%s account=%s region=%s err=%v (需 IAM 含 dcs:instance:listTags 或等价只读)",
+					iid, redis.tenanter.AccountName(), redis.region.GetName(), err)
+				return
+			}
+			atomic.AddInt32(&tagOK, 1)
+			tagFetches[ti].apiPairs = huaweitags.PairsFromDCSResourceTags(tr.Tags)
+		}(ti, iid)
+	}
+	wg.Wait()
+	glog.Infof("Huawei DCS ListDetail ShowTags pull end account=%s region=%s ok=%d fail=%d",
+		redis.tenanter.AccountName(), redis.region.GetName(), tagOK, tagFail)
+
+	dcsListTagPairs := func(v *model.InstanceListInfo) [][2]string {
+		if v == nil || v.Tags == nil {
+			return nil
+		}
+		var out [][2]string
+		for _, tg := range *v.Tags {
+			val := ""
+			if tg.Value != nil {
+				val = *tg.Value
+			}
+			out = append(out, [2]string{tg.Key, val})
+		}
+		return out
+	}
+
+	var redises []*pbredis.RedisInstance
+	for i := range instances {
+		v := instances[i]
 		size := int32(0)
 		if v.MaxMemory != nil {
 			size = *v.MaxMemory
@@ -408,18 +468,14 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 		}
 		priv := splitDcsIPs(v.Ip)
 		spec := derefString(v.SpecCode)
-
-		var tagPairs [][2]string
-		if v.Tags != nil {
-			for _, tg := range *v.Tags {
-				val := ""
-				if tg.Value != nil {
-					val = *tg.Value
-				}
-				tagPairs = append(tagPairs, [2]string{tg.Key, val})
-			}
+		listPairs := dcsListTagPairs(&instances[i])
+		var merged [][2]string
+		if tagFetches[i].err == nil && len(tagFetches[i].apiPairs) > 0 {
+			merged = huaweitags.MergePairsPreferPrimary(tagFetches[i].apiPairs, listPairs)
+		} else {
+			merged = listPairs
 		}
-		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), tagPairs)) {
+		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
 			continue
 		}
 
@@ -440,8 +496,8 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			UsedMemoryMb: used,
 			ChargeType:   dcsChargingMode(v.ChargingMode),
 			Cpu:          resolveDcsCPU(spec, cpuBySpec),
-			EnvTagValue:          envtags.FromPairs(envtags.RedisKey(), tagPairs),
-			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), tagPairs),
+			EnvTagValue:          envtags.FromPairs(envtags.RedisKey(), merged),
+			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), merged),
 			SecurityGroupNames:   dcsSecurityGroupNames(&v),
 		})
 	}

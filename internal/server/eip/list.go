@@ -3,7 +3,9 @@ package eip
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
@@ -14,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
@@ -34,6 +37,10 @@ type Instance struct {
 	OnlineTime        string `json:"onlineTime"`
 	Status            string `json:"status"`
 	EnterpriseProject string `json:"enterpriseProjectId"`
+	// 系统标签：EIP 当前 OpenAPI 无单独系统标签列，保留为空
+	SystemTagsDisplay string `json:"systemTagsDisplay"`
+	// 用户自定义标签：ShowPublicipTags（key=value; 拼接）
+	UserTagsDisplay string `json:"userTagsDisplay"`
 }
 
 func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, error) {
@@ -156,6 +163,38 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 			EnterpriseProject: deref(it.EnterpriseProjectId),
 		}
 		out = append(out, row)
+	}
+	// 华为云官方「查询弹性公网IP的标签」ShowPublicipTags
+	var tagWG sync.WaitGroup
+	tsem := make(chan struct{}, 10)
+	var tagFail int32
+	for i := range out {
+		i := i
+		pid := strings.TrimSpace(out[i].EipId)
+		if pid == "" {
+			continue
+		}
+		tagWG.Add(1)
+		go func() {
+			defer tagWG.Done()
+			tsem <- struct{}{}
+			defer func() { <-tsem }()
+			tw, terr := huaweicloudregion.DoWithTransientNetworkRetry(func() (*eipmodel.ShowPublicipTagsResponse, error) {
+				return eipCli.ShowPublicipTags(&eipmodel.ShowPublicipTagsRequest{PublicipId: pid})
+			})
+			if terr != nil {
+				atomic.AddInt32(&tagFail, 1)
+				glog.Warningf("Huawei EIP ShowPublicipTags failed publicip_id=%s account=%s region=%s err=%v (需 vpc:publicIp:get 或含查询 EIP 标签的只读)",
+					pid, tenant.AccountName(), rName, terr)
+				return
+			}
+			out[i].UserTagsDisplay = huaweitags.FormatPairsDisplay(huaweitags.PairsFromEIPShowPublicipTags(tw.Tags))
+		}()
+	}
+	tagWG.Wait()
+	if tagFail > 0 {
+		glog.Infof("Huawei EIP ShowPublicipTags partial failures account=%s region=%s fail=%d",
+			tenant.AccountName(), rName, tagFail)
 	}
 	glog.Infof("eip list region done account=%s region=%s rows=%d elapsed=%v",
 		tenant.AccountName(), rName, len(out), time.Since(begin))
