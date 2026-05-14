@@ -42,6 +42,10 @@ type Instance struct {
 	SystemTagsDisplay string `json:"systemTagsDisplay"`
 	// 用户自定义标签：ShowPublicipTags（key=value; 拼接）
 	UserTagsDisplay string `json:"userTagsDisplay"`
+	// 环境(标签)：与 ECS/RDS 相同键名合并标签后 + 名字规则（alias/带宽名 等作名字线索）
+	EnvTagValue string `json:"envTagValue"`
+	// 节点(标签)：「华为云-地域-节点语义」展示串
+	NodeTagValue string `json:"nodeTagValue"`
 }
 
 func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, error) {
@@ -145,8 +149,10 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 			tenant.AccountName(), rName, time.Since(begin))
 		return nil, nil
 	}
-	out := make([]*Instance, 0, len(*resp.Publicips))
-	for _, it := range *resp.Publicips {
+	pubList := *resp.Publicips
+	out := make([]*Instance, 0, len(pubList))
+	nameHints := make([]string, len(pubList))
+	for i, it := range pubList {
 		row := &Instance{
 			Provider:          "huawei",
 			AccountName:       tenant.AccountName(),
@@ -163,6 +169,11 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 			Status:            enumText(it.Status),
 			EnterpriseProject: deref(it.EnterpriseProjectId),
 		}
+		hint := strings.TrimSpace(deref(it.Alias))
+		if hint == "" {
+			hint = strings.TrimSpace(deref(it.BandwidthName))
+		}
+		nameHints[i] = hint
 		out = append(out, row)
 	}
 	// 华为云官方「查询弹性公网IP的标签」ShowPublicipTags
@@ -187,12 +198,28 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 				atomic.AddInt32(&tagFail, 1)
 				glog.Warningf("Huawei EIP ShowPublicipTags failed publicip_id=%s account=%s region=%s err=%v (需 vpc:publicIp:get 或含查询 EIP 标签的只读)",
 					pid, tenant.AccountName(), rName, terr)
+				nameHint := ""
+				if i < len(nameHints) {
+					nameHint = nameHints[i]
+				}
+				out[i].EnvTagValue = envtags.EnvTagOrNameFallback("", nameHint)
+				nvSem := envtags.NodeTagOrNameFallback("", nameHint)
+				out[i].NodeTagValue = envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), rName, nvSem)
 				return
 			}
 			pairs := huaweitags.PairsFromEIPShowPublicipTags(tw.Tags)
 			userPairs := huaweitags.FilterPairsExcludingHuaweiSysPrefix(pairs)
 			out[i].UserTagsDisplay = huaweitags.FormatPairsDisplay(userPairs)
 			out[i].SystemTagsDisplay = strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), pairs))
+			envK, nodeK := envtags.ECSKey(), envtags.NodeTagKey()
+			nameHint := ""
+			if i < len(nameHints) {
+				nameHint = nameHints[i]
+			}
+			ev := envtags.EnvTagOrNameFallback(envtags.FromPairs(envK, pairs), nameHint)
+			nvSem := envtags.NodeTagOrNameFallback(envtags.FromPairs(nodeK, pairs), nameHint)
+			out[i].EnvTagValue = ev
+			out[i].NodeTagValue = envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), rName, nvSem)
 		}()
 	}
 	tagWG.Wait()

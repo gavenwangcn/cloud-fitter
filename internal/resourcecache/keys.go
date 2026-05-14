@@ -51,14 +51,25 @@ func cloudTypeLabel(p pbtenant.CloudProvider) string {
 }
 
 func effectiveSysNodeName(p pbtenant.CloudProvider, region, nodeTagValue string) string {
-	if s := strings.TrimSpace(nodeTagValue); s != "" {
+	baseCloud := cloudTypeLabel(p)
+	region = strings.TrimSpace(region)
+	s := strings.TrimSpace(nodeTagValue)
+	base := ""
+	if region != "" {
+		base = baseCloud + "-" + region
+	} else if baseCloud != "" {
+		base = baseCloud
+	}
+	if s != "" && base != "" && strings.HasPrefix(s, base) {
 		return s
 	}
-	region = strings.TrimSpace(region)
-	if region == "" {
-		return ""
+	if s != "" && base != "" {
+		return base + "-" + s
 	}
-	return cloudTypeLabel(p) + "-" + region
+	if s != "" {
+		return s
+	}
+	return base
 }
 
 // MiddlewareResourceKey 与 CMDB middlewareCMDBUUID 一致。

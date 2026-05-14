@@ -154,9 +154,13 @@ export const CCE_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'memoryTotalMb', title: '节点内存合计(MB)' },
 ];
 
-/** EIP 网络资源（/apis/eip/by-account） */
+/** EIP 网络资源（/apis/eip/by-account）；标签类列顺序与 ECS 一致 */
 export const EIP_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'envTagValue', title: '环境(标签)' },
+  { dataIndex: 'nodeTagValue', title: '节点(标签)' },
+  { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
+  { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
   { dataIndex: 'accountName', title: '云账号' },
   { dataIndex: 'regionName', title: '地域' },
   { dataIndex: 'eipId', title: '弹性公网IP实例ID' },
@@ -169,13 +173,15 @@ export const EIP_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'privateIpAddress', title: '私有IP地址' },
   { dataIndex: 'onlineTime', title: '上线时间' },
   { dataIndex: 'status', title: '状态' },
-  { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
-  { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
 ];
 
-/** ELB 网络资源（/apis/elb/by-account） */
+/** ELB 网络资源（/apis/elb/by-account）；标签类列顺序与 ECS 一致 */
 export const ELB_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'envTagValue', title: '环境(标签)' },
+  { dataIndex: 'nodeTagValue', title: '节点(标签)' },
+  { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
+  { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
   { dataIndex: 'accountName', title: '云账号' },
   { dataIndex: 'regionName', title: '地域' },
   { dataIndex: 'id', title: 'ID' },
@@ -187,8 +193,6 @@ export const ELB_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'ipv4BandwidthMbit', title: 'IPv4带宽(Mbit/s)' },
   { dataIndex: 'onlineTime', title: '上线时间' },
   { dataIndex: 'status', title: '状态' },
-  { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
-  { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
 ];
 
 /** 华为云 SSL 证书（CCM / SCM，POST /apis/certificates/by-account） */

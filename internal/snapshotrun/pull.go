@@ -227,7 +227,7 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 			}
 			rows = append(rows, resourcecache.SnapshotRow{
 				ResourceKey: k,
-				SysNodeKey:  resourcecache.SysNodeKey(pbtenant.CloudProvider_huawei, e.RegionName, ""),
+				SysNodeKey:  resourcecache.SysNodeKey(pbtenant.CloudProvider_huawei, e.RegionName, e.NodeTagValue),
 				PayloadJSON: string(b),
 			})
 		}
@@ -264,7 +264,7 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 			}
 			rows = append(rows, resourcecache.SnapshotRow{
 				ResourceKey: k,
-				SysNodeKey:  resourcecache.SysNodeKey(pbtenant.CloudProvider_huawei, e.RegionName, ""),
+				SysNodeKey:  resourcecache.SysNodeKey(pbtenant.CloudProvider_huawei, e.RegionName, e.NodeTagValue),
 				PayloadJSON: string(b),
 			})
 		}

@@ -479,6 +479,9 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			continue
 		}
 		userDisp := huaweitags.FilterPairsExcludingHuaweiSysPrefix(merged)
+		nv := envtags.NodeTagOrNameFallback(
+			envtags.FromPairs(envtags.NodeTagKey(), merged), derefString(v.Name))
+		nodeDisplay := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), redis.region.GetName(), nv)
 		redises = append(redises, &pbredis.RedisInstance{
 			Provider:     pbtenant.CloudProvider_huawei,
 			AccoutName:   redis.tenanter.AccountName(),
@@ -498,8 +501,7 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			Cpu:          resolveDcsCPU(spec, cpuBySpec),
 			EnvTagValue: envtags.EnvTagOrNameFallback(
 				envtags.FromPairs(envtags.RedisKey(), merged), derefString(v.Name)),
-			NodeTagValue: envtags.NodeTagOrNameFallback(
-				envtags.FromPairs(envtags.NodeTagKey(), merged), derefString(v.Name)),
+			NodeTagValue:         nodeDisplay,
 			SecurityGroupNames:   dcsSecurityGroupNames(&v),
 			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
 			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userDisp),

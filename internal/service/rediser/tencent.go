@@ -137,7 +137,7 @@ func (rds *TencentRedis) ListDetail(ctx context.Context, req *pbredis.ListDetail
 			CreationTime: *v.Createtime,
 			ExpireTime:   *v.DeadlineTime,
 			EnvTagValue:  envtags.EnvTagOrNameFallback("", instName),
-			NodeTagValue: envtags.NodeTagOrNameFallback("", instName),
+			NodeTagValue: envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_tencent), rds.region.GetName(), envtags.NodeTagOrNameFallback("", instName)),
 		}
 	}
 

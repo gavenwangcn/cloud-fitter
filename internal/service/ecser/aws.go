@@ -192,6 +192,7 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			ruleName := envtags.ResourceNameForTagFallback("", *v2.InstanceId, tagPairs)
 			ev := envtags.EnvTagOrNameFallback("", ruleName)
 			nv := envtags.NodeTagOrNameFallback("", ruleName)
+			nodeDisplay := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_aws), ecs.region.GetName(), nv)
 			ecses = append(ecses, &pbecs.EcsInstance{
 				Provider:         pbtenant.CloudProvider_aws,
 				AccountName:      ecs.tenanter.AccountName(),
@@ -214,7 +215,7 @@ func (ecs *AwsEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 				DataDiskTotalGb:  dataGB,
 				DiskSummary:      dsum,
 				EnvTagValue:      ev,
-				NodeTagValue:     nv,
+				NodeTagValue:     nodeDisplay,
 			})
 		}
 	}

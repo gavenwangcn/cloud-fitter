@@ -45,6 +45,10 @@ type Instance struct {
 	SystemTagsDisplay string `json:"systemTagsDisplay"`
 	// 用户自定义标签：ELB v2 ShowLoadbalancerTags 与 v3 ListLoadBalancers.tags 合并（专用接口优先）
 	UserTagsDisplay string `json:"userTagsDisplay"`
+	// 环境(标签)：与 ECS/RDS 相同键名，合并标签后 + 负载均衡名称上的名字规则
+	EnvTagValue string `json:"envTagValue"`
+	// 节点(标签)：「华为云-地域-节点语义」展示串
+	NodeTagValue string `json:"nodeTagValue"`
 }
 
 func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, error) {
@@ -263,6 +267,10 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 			merged = listPairs
 		}
 		userPairs := huaweitags.FilterPairsExcludingHuaweiSysPrefix(merged)
+		lbName := strings.TrimSpace(row.lb.Name)
+		ev := envtags.EnvTagOrNameFallback(envtags.FromPairs(envtags.ECSKey(), merged), lbName)
+		nvSem := envtags.NodeTagOrNameFallback(envtags.FromPairs(envtags.NodeTagKey(), merged), lbName)
+		nodeDisp := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), rName, nvSem)
 		out = append(out, &Instance{
 			Provider:          "huawei",
 			AccountName:       tenant.AccountName(),
@@ -279,6 +287,8 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 			VpcID:             row.lb.VpcId,
 			SystemTagsDisplay: strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
 			UserTagsDisplay:   huaweitags.FormatPairsDisplay(userPairs),
+			EnvTagValue:       ev,
+			NodeTagValue:      nodeDisp,
 		})
 	}
 	glog.Infof("elb list region done account=%s region=%s pages=%d lbs=%d out=%d listener_err=%d elapsed=%v",

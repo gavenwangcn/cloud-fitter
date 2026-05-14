@@ -154,6 +154,9 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 			continue
 		}
 		userDisp := huaweitags.FilterPairsExcludingHuaweiSysPrefix(merged)
+		nv := envtags.NodeTagOrNameFallback(
+			envtags.FromPairs(envtags.NodeTagKey(), merged), *v.Name)
+		nodeDisplay := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), kafka.region.GetName(), nv)
 		kafkas = append(kafkas, &pbkafka.KafkaInstance{
 			Provider:             pbtenant.CloudProvider_huawei,
 			AccoutName:           kafka.tenanter.AccountName(),
@@ -166,8 +169,7 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 			Status:               *v.Status,
 			CreateTime:           *v.CreatedAt,
 			ExpiredTime:          "",
-			NodeTagValue: envtags.NodeTagOrNameFallback(
-				envtags.FromPairs(envtags.NodeTagKey(), merged), *v.Name),
+			NodeTagValue:         nodeDisplay,
 			SecurityGroupNames:   huaweiKafkaSecurityGroupNames(&v),
 			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
 			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userDisp),

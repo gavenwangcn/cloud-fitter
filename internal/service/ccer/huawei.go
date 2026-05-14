@@ -351,8 +351,9 @@ func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*
 		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
 			continue
 		}
-		nodeTag := envtags.NodeTagOrNameFallback(
+		nodeSem := envtags.NodeTagOrNameFallback(
 			envtags.FromPairs(envtags.NodeTagKey(), merged), r.name)
+		nodeTag := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), c.region.GetName(), nodeSem)
 		agg := c.clusterNodeAgg(r.uid, flavorByID)
 		userDisp := huaweitags.FilterPairsExcludingHuaweiSysPrefix(merged)
 		clusters = append(clusters, &pbcce.CceCluster{

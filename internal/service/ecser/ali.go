@@ -188,7 +188,8 @@ func (ecs *AliEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) (*p
 			DataDiskTotalGb:   dataGB,
 			DiskSummary:       dsum,
 			EnvTagValue:  envtags.EnvTagOrNameFallback("", v.InstanceName),
-			NodeTagValue: envtags.NodeTagOrNameFallback("", v.InstanceName),
+			NodeTagValue: envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_ali), ecs.region.GetName(),
+				envtags.NodeTagOrNameFallback("", v.InstanceName)),
 		})
 	}
 

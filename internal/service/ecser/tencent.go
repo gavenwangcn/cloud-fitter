@@ -123,7 +123,8 @@ func (ecs *TencentCvm) ListDetail(ctx context.Context, req *pbecs.ListDetailReq)
 			DataDiskTotalGb:  dataGB,
 			DiskSummary:      dsum,
 			EnvTagValue:  envtags.EnvTagOrNameFallback("", *v.InstanceName),
-			NodeTagValue: envtags.NodeTagOrNameFallback("", *v.InstanceName),
+			NodeTagValue: envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_tencent), ecs.region.GetName(),
+				envtags.NodeTagOrNameFallback("", *v.InstanceName)),
 		}
 		for k1, v1 := range v.PublicIpAddresses {
 			inst.PublicIps[k1] = *v1

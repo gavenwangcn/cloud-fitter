@@ -60,6 +60,21 @@ func TestNodeTagOrNameFallback(t *testing.T) {
 	if got := NodeTagOrNameFallback("", "LC_测试_应用"); got != "宇海" {
 		t.Fatalf("LC first segment: got %q", got)
 	}
+	if got := NodeTagOrNameFallback("ALL", "ignored"); got != "全部" {
+		t.Fatalf("tag ALL: got %q", got)
+	}
+	if got := NodeTagOrNameFallback("all", "ignored"); got != "全部" {
+		t.Fatalf("tag all: got %q", got)
+	}
+	if got := NodeTagOrNameFallback("", "app_ALL_prod"); got != "全部" {
+		t.Fatalf("segment ALL: got %q", got)
+	}
+	if got := NodeTagOrNameFallback("", "DFT-ALL"); got != "德非图" {
+		t.Fatalf("DFT before ALL segment: got %q", got)
+	}
+	if got := NodeTagOrNameFallback("", "ALL-LC"); got != "全部" {
+		t.Fatalf("ALL before LC segment: got %q", got)
+	}
 }
 
 func TestResourceNameForTagFallback(t *testing.T) {

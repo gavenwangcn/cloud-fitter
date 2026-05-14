@@ -85,6 +85,7 @@ func (rds *AwsRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 		ruleName := envtags.ResourceNameForTagFallback("", aws.ToString(v.DBInstanceIdentifier), tagPairs)
 		ev := envtags.EnvTagOrNameFallback("", ruleName)
 		nv := envtags.NodeTagOrNameFallback("", ruleName)
+		nodeDisplay := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_aws), rds.region.GetName(), nv)
 		rdses[k] = &pbrds.RdsInstance{
 			Provider:           pbtenant.CloudProvider_aws,
 			AccoutName:         rds.tenanter.AccountName(),
@@ -100,7 +101,7 @@ func (rds *AwsRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			ExpireTime:         "",
 			SecurityGroupNames: awsRDSSecurityGroupIDs(v.VpcSecurityGroups),
 			EnvTagValue:        ev,
-			NodeTagValue:       nv,
+			NodeTagValue:       nodeDisplay,
 		}
 	}
 

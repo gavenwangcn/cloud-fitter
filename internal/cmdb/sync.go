@@ -337,14 +337,15 @@ func collectSystemNodeKeys(
 	redisResp *pbredis.ListResp,
 	kafkaResp *pbkafka.ListResp,
 	cceResp *pbcce.ListResp,
-) map[string]struct{} {
-	out := make(map[string]struct{})
+) map[string]string {
+	out := make(map[string]string)
 	add := func(p pbtenant.CloudProvider, region, nodeTag string) {
+		region = strings.TrimSpace(region)
 		k := effectiveSysNodeName(p, region, nodeTag)
 		if k == "" {
 			return
 		}
-		out[k] = struct{}{}
+		out[k] = region
 	}
 	if ecsResp != nil {
 		for _, e := range ecsResp.Ecses {
@@ -528,20 +529,33 @@ func (s *Syncer) reconcileCMDBCIsNotInAPI(ciType, systemID string, keep map[stri
 	return st
 }
 
-// effectiveSysNodeName 有「节点」标签时用车载标签值作为 CMDB 系统节点名；否则为「云中文名-地域」。
+// effectiveSysNodeName 生成 CMDB 系统节点名：「云中文名-地域」或「云中文名-地域-节点语义」。
+// nodeTagValue 一般来自列表 NodeTagValue：可为「云-地域-语义」整段（与前端展示一致），或仅为语义/旧版自定义整段。
 func effectiveSysNodeName(p pbtenant.CloudProvider, region, nodeTagValue string) string {
-	if s := strings.TrimSpace(nodeTagValue); s != "" {
+	baseCloud := cloudTypeLabel(p)
+	region = strings.TrimSpace(region)
+	s := strings.TrimSpace(nodeTagValue)
+	base := ""
+	if region != "" {
+		base = baseCloud + "-" + region
+	} else if baseCloud != "" {
+		base = baseCloud
+	}
+	if s != "" && base != "" && strings.HasPrefix(s, base) {
 		return s
 	}
-	region = strings.TrimSpace(region)
-	if region == "" {
-		return ""
+	if s != "" && base != "" {
+		return base + "-" + s
 	}
-	return cloudTypeLabel(p) + "-" + region
+	if s != "" {
+		return s
+	}
+	return base
 }
 
-// splitSysNodeNameForCMDB 解析默认格式「{云名}-{地域}」为 cloud_type + location；自定义标签时整段作为 cloud_type，location 为空。
-func splitSysNodeNameForCMDB(node string) (cloudType, location string) {
+// splitSysNodeNameForCMDB 解析系统节点名：「云名-地域」或「云名-地域-节点」。
+// regionHint 非空且与名称中地域段一致时，location 仅为地域（不含节点尾缀）；否则退化为首段「云名-」后的整段 remainder。
+func splitSysNodeNameForCMDB(node, regionHint string) (cloudType, location string) {
 	node = strings.TrimSpace(node)
 	if node == "" {
 		return "", ""
@@ -551,15 +565,26 @@ func splitSysNodeNameForCMDB(node string) (cloudType, location string) {
 		return node, ""
 	}
 	for _, p := range []string{"华为云", "阿里云", "腾讯云", "AWS", "云"} {
-		if parts[0] == p {
-			return parts[0], parts[1]
+		if parts[0] != p {
+			continue
 		}
+		cloud := p
+		rem := strings.TrimSpace(parts[1])
+		if rh := strings.TrimSpace(regionHint); rh != "" {
+			if rem == rh {
+				return cloud, rh
+			}
+			if strings.HasPrefix(rem, rh+"-") {
+				return cloud, rh
+			}
+		}
+		return cloud, rem
 	}
 	return node, ""
 }
 
 func cmdbCloudLocationFromSysNodeName(sysNodeName, fallbackCloud, fallbackLoc string) (cloudType, location string) {
-	ct, loc := splitSysNodeNameForCMDB(sysNodeName)
+	ct, loc := splitSysNodeNameForCMDB(sysNodeName, strings.TrimSpace(fallbackLoc))
 	if loc != "" {
 		return ct, loc
 	}
@@ -894,10 +919,10 @@ func cmdbCIAdminName() string {
 	return v
 }
 
-func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[string]struct{}) componentSyncStats {
+func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[string]string) componentSyncStats {
 	st := componentSyncStats{}
 	adminName := cmdbCIAdminName()
-	for node := range nodes {
+	for node, regionHint := range nodes {
 		q := map[string]any{
 			"q": fmt.Sprintf("_type:system_node,sys_node_name:%s,system_id:%s", node, systemID),
 		}
@@ -979,7 +1004,7 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 			st.Errors++
 			continue
 		}
-		cloud, loc := splitSysNodeNameForCMDB(node)
+		cloud, loc := splitSysNodeNameForCMDB(node, regionHint)
 		payload := map[string]any{
 			"uuid":              uuid.NewString(),
 			"ci_type":           "system_node",
@@ -1338,27 +1363,29 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 	return st
 }
 
-func mergeEIPSystemNodeKeys(nodes map[string]struct{}, eips []*eip.Instance) {
+func mergeEIPSystemNodeKeys(nodes map[string]string, eips []*eip.Instance) {
 	for _, e := range eips {
 		if e == nil {
 			continue
 		}
-		k := effectiveSysNodeName(eipTenantProvider(e), strings.TrimSpace(e.RegionName), "")
+		region := strings.TrimSpace(e.RegionName)
+		k := effectiveSysNodeName(eipTenantProvider(e), region, e.NodeTagValue)
 		if k != "" {
-			nodes[k] = struct{}{}
+			nodes[k] = region
 		}
 	}
 }
 
-// mergeELBSystemNodeKeys 与 EIP 一致：节点名为 effectiveSysNodeName(云, 地域, "")，与 ECS 默认节点命名规则对齐。
-func mergeELBSystemNodeKeys(nodes map[string]struct{}, elbs []*elb.Instance) {
+// mergeELBSystemNodeKeys 与 EIP 一致：节点名为 effectiveSysNodeName(云, 地域, NodeTagValue)。
+func mergeELBSystemNodeKeys(nodes map[string]string, elbs []*elb.Instance) {
 	for _, e := range elbs {
 		if e == nil {
 			continue
 		}
-		k := effectiveSysNodeName(elbTenantProvider(e), strings.TrimSpace(e.RegionName), "")
+		region := strings.TrimSpace(e.RegionName)
+		k := effectiveSysNodeName(elbTenantProvider(e), region, e.NodeTagValue)
 		if k != "" {
-			nodes[k] = struct{}{}
+			nodes[k] = region
 		}
 	}
 }
@@ -1467,7 +1494,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			st.Errors++
 			continue
 		}
-		sysNode := effectiveSysNodeName(eipTenantProvider(e), strings.TrimSpace(e.RegionName), "")
+		sysNode := effectiveSysNodeName(eipTenantProvider(e), strings.TrimSpace(e.RegionName), e.NodeTagValue)
 		if sysNode == "" {
 			glog.Warningf("cmdb sync eip(skip no sys_node): system_id=%s eip_id=%s", systemID, e.EipId)
 			st.Errors++
@@ -1544,7 +1571,7 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 			continue
 		}
 		elbName := strings.TrimSpace(e.Name)
-		sysNode := effectiveSysNodeName(elbTenantProvider(e), strings.TrimSpace(e.RegionName), "")
+		sysNode := effectiveSysNodeName(elbTenantProvider(e), strings.TrimSpace(e.RegionName), e.NodeTagValue)
 		if sysNode == "" {
 			glog.Warningf("cmdb sync elb(skip no sys_node): system_id=%s elb_id=%s", systemID, e.ID)
 			st.Errors++

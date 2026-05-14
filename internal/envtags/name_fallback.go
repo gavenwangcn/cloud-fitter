@@ -14,10 +14,14 @@ func EnvTagOrNameFallback(tagValue, resourceName string) string {
 }
 
 // NodeTagOrNameFallback 在节点标签值为空时，按资源名推断。
-// 同样先按 -、_ 分段后在各段内匹配 DFT→德非图、LC→宇海（英文不区分大小写）；
+// 同样先按 -、_ 分段后在各段内匹配：整段为 ALL（不区分大小写）→全部，DFT→德非图，LC→宇海（后两者英文不区分大小写）；
 // 多个命中时：先按段从左到右，再按段内位置取最先命中者。
+// 若标签值本身为 ALL，亦表示全部（与名字规则一致）。
 func NodeTagOrNameFallback(tagValue, resourceName string) string {
 	if s := strings.TrimSpace(tagValue); s != "" {
+		if strings.EqualFold(s, "ALL") {
+			return "全部"
+		}
 		return s
 	}
 	return inferNodeFromName(resourceName)
@@ -112,6 +116,14 @@ func inferNodeFromName(name string) string {
 	}
 	var best *hit
 	for si, seg := range segs {
+		t := strings.TrimSpace(seg)
+		if strings.EqualFold(t, "ALL") {
+			const posALL = 0
+			if best == nil || si < best.si || (si == best.si && posALL < best.pos) {
+				best = &hit{si, posALL, "全部"}
+			}
+			continue
+		}
 		u := strings.ToUpper(seg)
 		for _, x := range []struct {
 			sub, disp string

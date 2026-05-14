@@ -148,7 +148,7 @@ const FullResourceTable: React.FC<FullResourceTableProps> = ({
   return (
     <Table
       rowKey={(record, index) =>
-        `${record.clusterUid ?? record.instanceId ?? 'row'}-${
+        `${record.clusterUid ?? record.instanceId ?? record.eipId ?? record.id ?? 'row'}-${
           record.regionName ?? ''
         }-${index}`
       }

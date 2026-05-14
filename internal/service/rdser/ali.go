@@ -117,7 +117,7 @@ func (rds *AliRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*p
 			VpcId:         v.VpcId,
 			ChargeType:    v.PayType,
 			EnvTagValue:   envtags.EnvTagOrNameFallback("", instName),
-			NodeTagValue:  envtags.NodeTagOrNameFallback("", instName),
+			NodeTagValue:  envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_ali), rds.region.GetName(), envtags.NodeTagOrNameFallback("", instName)),
 		})
 	}
 

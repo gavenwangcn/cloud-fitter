@@ -620,6 +620,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 		nodeVal := huaweiECSMergedTag(v, showPairs, nodeKey)
 		envVal = envtags.EnvTagOrNameFallback(envVal, v.Name)
 		nodeVal = envtags.NodeTagOrNameFallback(nodeVal, v.Name)
+		nodeDisplay := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), ecs.region.GetName(), nodeVal)
 		systemTagPerRow[k] = huaweiECSMergedTag(v, showPairs, sysKey)
 		if listEnv == "" && envVal != "" {
 			filledEnvFromAPI++
@@ -666,7 +667,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			DiskSummary:          disks[k].summary,
 			SecurityGroupNames:   huaweiSecurityGroupDisplayNames(v.SecurityGroups),
 			EnvTagValue:          envVal,
-			NodeTagValue:         nodeVal,
+			NodeTagValue:         nodeDisplay,
 			SystemTagsDisplay:    strings.TrimSpace(systemTagPerRow[k]),
 			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userTagPairs),
 		}

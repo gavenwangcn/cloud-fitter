@@ -419,6 +419,9 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		if s := strings.TrimSpace(v.SecurityGroupId); s != "" {
 			sgNames = []string{s}
 		}
+		nv := envtags.NodeTagOrNameFallback(
+			envtags.FromPairs(envtags.NodeTagKey(), merged), v.Name)
+		nodeDisplay := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), regionName, nv)
 		rdses = append(rdses, &pbrds.RdsInstance{
 			Provider:           pbtenant.CloudProvider_huawei,
 			AccoutName:         r.tenanter.AccountName(),
@@ -442,8 +445,7 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			SecurityGroupNames: sgNames,
 			EnvTagValue: envtags.EnvTagOrNameFallback(
 				envtags.FromPairs(envtags.RDSKey(), merged), v.Name),
-			NodeTagValue: envtags.NodeTagOrNameFallback(
-				envtags.FromPairs(envtags.NodeTagKey(), merged), v.Name),
+			NodeTagValue:         nodeDisplay,
 			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
 			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userPairsDisp),
 		})
