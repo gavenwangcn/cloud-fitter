@@ -478,7 +478,7 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
 			continue
 		}
-
+		userDisp := huaweitags.FilterPairsExcludingHuaweiSysPrefix(merged)
 		redises = append(redises, &pbredis.RedisInstance{
 			Provider:     pbtenant.CloudProvider_huawei,
 			AccoutName:   redis.tenanter.AccountName(),
@@ -499,6 +499,8 @@ func (redis *HuaweiDcs) ListDetail(ctx context.Context, req *pbredis.ListDetailR
 			EnvTagValue:          envtags.FromPairs(envtags.RedisKey(), merged),
 			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), merged),
 			SecurityGroupNames:   dcsSecurityGroupNames(&v),
+			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
+			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userDisp),
 		})
 	}
 

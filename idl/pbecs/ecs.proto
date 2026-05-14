@@ -64,7 +64,7 @@ message EcsInstance {
   pbutilization.ComputeUtilizationAudit utilization_audit = 27;
   // 关联安全组（可读名称；云 API 可能返回名称或 UUID）
   repeated string security_group_names = 28;
-  // 系统标签展示：来自华为 ListServersDetails.sys_tags（key=value; 拼接）；无系统标签时为空
+  // 系统标签(展示)：与「系统」筛选一致，取用户自定义标签键的值（CLOUD_FITTER_SYSTEM_TAG_KEY，默认 system）；非华为 sys_tags
   string system_tags_display = 29;
   // 用户自定义标签展示：来自华为 ShowServerTags（key=value; 拼接）；无用户标签时为空
   string user_tags_display = 30;

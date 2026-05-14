@@ -665,7 +665,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 			SecurityGroupNames:   huaweiSecurityGroupDisplayNames(v.SecurityGroups),
 			EnvTagValue:          envVal,
 			NodeTagValue:         nodeVal,
-			SystemTagsDisplay:    huaweitags.FormatECSSystemTagsDisplay(v.SysTags),
+			SystemTagsDisplay:    strings.TrimSpace(systemTagPerRow[k]),
 			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userTagPairs),
 		}
 	}

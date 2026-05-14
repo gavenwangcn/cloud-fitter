@@ -4,10 +4,12 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
-	ccemodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
 	hwcc "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3"
+	ccemodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
 	ecsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
 	hwecs "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
@@ -17,6 +19,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
+	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
@@ -256,46 +259,118 @@ func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*
 	}
 
 	var clusters []*pbcce.CceCluster
-	if resp.Items != nil {
-		for _, cl := range *resp.Items {
-			var name, uid, flavor, version, phase string
-			if cl.Metadata != nil {
-				name = cl.Metadata.Name
-				uid = derefStr(cl.Metadata.Uid)
-			}
-			if cl.Spec != nil {
-				flavor = cl.Spec.Flavor
-				version = derefStr(cl.Spec.Version)
-			}
-			if cl.Status != nil {
-				phase = derefStr(cl.Status.Phase)
-			}
-			var nodeTag string
-			var labels map[string]string
-			if cl.Metadata != nil && cl.Metadata.Labels != nil {
-				labels = cl.Metadata.Labels
-				nodeTag = envtags.FromMap(envtags.NodeTagKey(), labels)
-			}
-			if !scope.SystemListTagFilterMatches(ctx, envtags.FromMap(envtags.SystemTagKey(), labels)) {
-				continue
-			}
-			agg := c.clusterNodeAgg(uid, flavorByID)
-			clusters = append(clusters, &pbcce.CceCluster{
-				Provider:       pbtenant.CloudProvider_huawei,
-				AccoutName:     c.tenanter.AccountName(),
-				RegionName:     c.region.GetName(),
-				ClusterName:    name,
-				ClusterUid:     uid,
-				Flavor:         flavor,
-				K8SVersion:     version,
-				Phase:          phase,
-				NodeTotal:      agg.total,
-				NodeNormal:     agg.normal,
-				CpuTotal:       agg.cpuTotal,
-				MemoryTotalMb:  agg.memTotalMB,
-				NodeTagValue:   nodeTag,
-			})
+	if resp.Items == nil {
+		return &pbcce.ListDetailResp{
+			Clusters:   clusters,
+			Finished:   true,
+			PageNumber: req.PageNumber + 1,
+			PageSize:   req.PageSize,
+			NextToken:  "",
+			RequestId:  "",
+		}, nil
+	}
+
+	items := *resp.Items
+	type cceRow struct {
+		name, uid, flavor, version, phase string
+		labelPairs                          [][2]string
+	}
+	rows := make([]cceRow, 0, len(items))
+	for i := range items {
+		cl := &items[i]
+		var name, uid, flavor, version, phase string
+		if cl.Metadata != nil {
+			name = cl.Metadata.Name
+			uid = derefStr(cl.Metadata.Uid)
 		}
+		if cl.Spec != nil {
+			flavor = cl.Spec.Flavor
+			version = derefStr(cl.Spec.Version)
+		}
+		if cl.Status != nil {
+			phase = derefStr(cl.Status.Phase)
+		}
+		var labelPairs [][2]string
+		if cl.Metadata != nil && cl.Metadata.Labels != nil {
+			labelPairs = huaweitags.PairsFromStringMap(cl.Metadata.Labels)
+		}
+		rows = append(rows, cceRow{name: name, uid: uid, flavor: flavor, version: version, phase: phase, labelPairs: labelPairs})
+	}
+
+	type cceTagFetch struct {
+		pairs [][2]string
+		err   error
+	}
+	tagFetches := make([]cceTagFetch, len(rows))
+	var tagOK, tagFail int32
+	glog.Infof("Huawei CCE ListDetail GetResourceTags pull begin account=%s region=%s clusters=%d",
+		c.tenanter.AccountName(), c.region.GetName(), len(rows))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+	rt := ccemodel.GetGetResourceTagsRequestResourceTypeEnum().CCE_CLUSTER
+	for ti := range rows {
+		uid := strings.TrimSpace(rows[ti].uid)
+		if uid == "" {
+			continue
+		}
+		ti := ti
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			tr, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*ccemodel.GetResourceTagsResponse, error) {
+				return c.cceCli.GetResourceTags(&ccemodel.GetResourceTagsRequest{
+					ResourceType: rt,
+					ResourceId:   uid,
+				})
+			})
+			if err != nil {
+				atomic.AddInt32(&tagFail, 1)
+				tagFetches[ti].err = err
+				glog.Warningf("Huawei CCE GetResourceTags failed cluster_uid=%s cluster_name=%q account=%s region=%s err=%v (需 CCE 查询资源标签只读权限)",
+					uid, rows[ti].name, c.tenanter.AccountName(), c.region.GetName(), err)
+				return
+			}
+			atomic.AddInt32(&tagOK, 1)
+			tagFetches[ti].pairs = huaweitags.PairsFromCCEResourceTags(tr.Tags)
+		}()
+	}
+	wg.Wait()
+	glog.Infof("Huawei CCE ListDetail GetResourceTags pull end account=%s region=%s ok=%d fail=%d",
+		c.tenanter.AccountName(), c.region.GetName(), tagOK, tagFail)
+
+	for i := range rows {
+		r := rows[i]
+		var merged [][2]string
+		if tagFetches[i].err == nil && len(tagFetches[i].pairs) > 0 {
+			merged = huaweitags.MergePairsPreferPrimary(tagFetches[i].pairs, r.labelPairs)
+		} else {
+			merged = r.labelPairs
+		}
+		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
+			continue
+		}
+		nodeTag := envtags.FromPairs(envtags.NodeTagKey(), merged)
+		agg := c.clusterNodeAgg(r.uid, flavorByID)
+		userDisp := huaweitags.FilterPairsExcludingHuaweiSysPrefix(merged)
+		clusters = append(clusters, &pbcce.CceCluster{
+			Provider:            pbtenant.CloudProvider_huawei,
+			AccoutName:          c.tenanter.AccountName(),
+			RegionName:          c.region.GetName(),
+			ClusterName:         r.name,
+			ClusterUid:          r.uid,
+			Flavor:              r.flavor,
+			K8SVersion:          r.version,
+			Phase:               r.phase,
+			NodeTotal:           agg.total,
+			NodeNormal:          agg.normal,
+			CpuTotal:            agg.cpuTotal,
+			MemoryTotalMb:       agg.memTotalMB,
+			NodeTagValue:        nodeTag,
+			SystemTagsDisplay:   strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
+			UserTagsDisplay:     huaweitags.FormatPairsDisplay(userDisp),
+		})
 	}
 
 	return &pbcce.ListDetailResp{

@@ -153,6 +153,7 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
 			continue
 		}
+		userDisp := huaweitags.FilterPairsExcludingHuaweiSysPrefix(merged)
 		kafkas = append(kafkas, &pbkafka.KafkaInstance{
 			Provider:             pbtenant.CloudProvider_huawei,
 			AccoutName:           kafka.tenanter.AccountName(),
@@ -167,6 +168,8 @@ func (kafka *HuaweiKafka) ListDetail(ctx context.Context, req *pbkafka.ListDetai
 			ExpiredTime:          "",
 			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), merged),
 			SecurityGroupNames:   huaweiKafkaSecurityGroupNames(&v),
+			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
+			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userDisp),
 		})
 	}
 

@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
@@ -37,7 +38,7 @@ type Instance struct {
 	OnlineTime        string `json:"onlineTime"`
 	Status            string `json:"status"`
 	EnterpriseProject string `json:"enterpriseProjectId"`
-	// 系统标签：EIP 当前 OpenAPI 无单独系统标签列，保留为空
+	// 系统标签(展示)：用户自定义「系统」标签键的值（CLOUD_FITTER_SYSTEM_TAG_KEY / 默认 system），来自 ShowPublicipTags
 	SystemTagsDisplay string `json:"systemTagsDisplay"`
 	// 用户自定义标签：ShowPublicipTags（key=value; 拼接）
 	UserTagsDisplay string `json:"userTagsDisplay"`
@@ -188,7 +189,10 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 					pid, tenant.AccountName(), rName, terr)
 				return
 			}
-			out[i].UserTagsDisplay = huaweitags.FormatPairsDisplay(huaweitags.PairsFromEIPShowPublicipTags(tw.Tags))
+			pairs := huaweitags.PairsFromEIPShowPublicipTags(tw.Tags)
+			userPairs := huaweitags.FilterPairsExcludingHuaweiSysPrefix(pairs)
+			out[i].UserTagsDisplay = huaweitags.FormatPairsDisplay(userPairs)
+			out[i].SystemTagsDisplay = strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), pairs))
 		}()
 	}
 	tagWG.Wait()

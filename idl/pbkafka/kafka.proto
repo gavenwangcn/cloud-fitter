@@ -33,6 +33,10 @@ message KafkaInstance {
   string node_tag_value = 12;
   // 关联安全组（名称优先，否则 ID；腾讯 CKafka 列表接口暂无字段时为空）
   repeated string security_group_names = 13;
+  // 用户自定义「系统」标签键的值（CLOUD_FITTER_SYSTEM_TAG_KEY / 默认 system）；ShowKafkaTags 与列表合并
+  string system_tags_display = 14;
+  // 用户自定义标签展示：DMS Kafka ShowKafkaTags（key=value; 拼接）；失败时用列表 tags
+  string user_tags_display = 15;
 }
 
 message ListDetailReq {

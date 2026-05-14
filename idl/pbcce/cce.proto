@@ -31,6 +31,10 @@ message CceCluster {
   int32 memory_total_mb = 12;
   // 节点标签值：取自集群 metadata.labels 中配置的键（见 CLOUD_FITTER_NODE_TAG_KEY，默认键名 node）
   string node_tag_value = 13;
+  // 用户自定义「系统」标签键的值（CLOUD_FITTER_SYSTEM_TAG_KEY / 默认 system）；GetResourceTags(tags) 与 metadata.labels 合并
+  string system_tags_display = 14;
+  // 用户自定义标签展示：CCE GetResourceTags 自定义 tags（key=value; 拼接），与 labels 合并；失败时仅 labels
+  string user_tags_display = 15;
 }
 
 message ListDetailReq {

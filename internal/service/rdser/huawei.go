@@ -404,6 +404,10 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 		} else {
 			merged = listPairs
 		}
+		userPairsDisp := huaweitags.MergeRDSUserDisplayPairs(tagFetches[i].sysPairs, tagFetches[i].usrPairs, listPairs)
+		if tagFetches[i].err != nil {
+			userPairsDisp = huaweitags.MergeRDSUserDisplayPairs(nil, nil, listPairs)
+		}
 		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
 			continue
 		}
@@ -436,8 +440,10 @@ func (r *HuaweiRds) ListDetail(ctx context.Context, req *pbrds.ListDetailReq) (*
 			Port:               v.Port,
 			ChargeType:         charge,
 			SecurityGroupNames: sgNames,
-			EnvTagValue:        envtags.FromPairs(envtags.RDSKey(), merged),
-			NodeTagValue:       envtags.FromPairs(envtags.NodeTagKey(), merged),
+			EnvTagValue:          envtags.FromPairs(envtags.RDSKey(), merged),
+			NodeTagValue:         envtags.FromPairs(envtags.NodeTagKey(), merged),
+			SystemTagsDisplay:    strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
+			UserTagsDisplay:      huaweitags.FormatPairsDisplay(userPairsDisp),
 		})
 	}
 

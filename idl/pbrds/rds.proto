@@ -50,6 +50,10 @@ message RdsInstance {
   pbutilization.ComputeUtilizationAudit utilization_audit = 22;
   // 关联安全组（可读名称优先；部分 API 仅返回 ID）
   repeated string security_group_names = 23;
+  // 与「系统」筛选一致：用户自定义标签键的值（CLOUD_FITTER_SYSTEM_TAG_KEY，默认 system）；来自 ListInstanceTags 等与列表合并
+  string system_tags_display = 24;
+  // 用户自定义标签展示：RDS ListInstanceTags 中 tag_type 非 system 的键值（key=value; 拼接）；失败时退化为列表接口 tags
+  string user_tags_display = 25;
 }
 
 message ListDetailReq {

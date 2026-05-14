@@ -5,18 +5,22 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	hweip "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2"
 	eipmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/model"
+	hwelbv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/elb/v2"
+	elbv2model "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/elb/v2/model"
 	hwelb "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/elb/v3"
 	elbmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/elb/v3/model"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
@@ -39,7 +43,7 @@ type Instance struct {
 	VpcID             string `json:"vpcId"`
 	// 系统标签：ELB 列表接口未区分系统标签时为空
 	SystemTagsDisplay string `json:"systemTagsDisplay"`
-	// 用户自定义标签：来自 ListLoadBalancers 的 tags（key=value; 拼接）
+	// 用户自定义标签：ELB v2 ShowLoadbalancerTags 与 v3 ListLoadBalancers.tags 合并（专用接口优先）
 	UserTagsDisplay string `json:"userTagsDisplay"`
 }
 
@@ -128,6 +132,11 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 		WithCredential(auth).
 		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
 		Build())
+	elbV2Cli := hwelbv2.NewElbClient(hwelbv2.ElbClientBuilder().
+		WithRegion(huaweicloudregion.EndpointForService("elb", rName)).
+		WithCredential(auth).
+		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
+		Build())
 	eipCli := hweip.NewEipClient(hweip.EipClientBuilder().
 		// 华为云 EIP(v2) 走 vpc.<region>.myhuaweicloud.com
 		WithRegion(huaweicloudregion.EndpointForService("vpc", rName)).
@@ -161,7 +170,12 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 	}
 	glog.Infof("elb list eip preload account=%s region=%s eips=%d lookup_keys=%d", tenant.AccountName(), rName, eipCount, len(eipBandwidth))
 
-	var out []*Instance
+	var pending []struct {
+		lb          elbmodel.LoadBalancer
+		listeners   string
+		publicIP    string
+		bandwidth   int32
+	}
 	req := new(elbmodel.ListLoadBalancersRequest)
 	limit := int32(200)
 	req.Limit = &limit
@@ -185,30 +199,87 @@ func listHuaweiElbByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 					glog.Warningf("elb list listeners failed account=%s region=%s lb_id=%s lb_name=%q err=%v",
 						tenant.AccountName(), rName, lb.Id, lb.Name, lerr)
 				}
-				tagPairs := huaweitags.PairsFromELBTags(lb.Tags)
-				out = append(out, &Instance{
-					Provider:          "huawei",
-					AccountName:       tenant.AccountName(),
-					RegionName:        rName,
-					ID:                lb.Id,
-					Name:              lb.Name,
-					InstanceType:      elbTypeText(lb),
-					IPv4Private:       lb.VipAddress,
-					IPv4Public:        publicIP,
-					Listeners:         strings.Join(listeners, "，"),
-					IPv4BandwidthMbit: bandwidth,
-					OnlineTime:        lb.CreatedAt,
-					Status:            fmt.Sprint(lb.OperatingStatus),
-					VpcID:             lb.VpcId,
-					SystemTagsDisplay: "",
-					UserTagsDisplay:   huaweitags.FormatPairsDisplay(tagPairs),
-				})
+				pending = append(pending, struct {
+					lb          elbmodel.LoadBalancer
+					listeners   string
+					publicIP    string
+					bandwidth   int32
+				}{lb: lb, listeners: strings.Join(listeners, "，"), publicIP: publicIP, bandwidth: bandwidth})
 			}
 		}
 		if resp == nil || resp.PageInfo == nil || resp.PageInfo.NextMarker == nil || strings.TrimSpace(*resp.PageInfo.NextMarker) == "" {
 			break
 		}
 		req.Marker = resp.PageInfo.NextMarker
+	}
+
+	type elbTagFetch struct {
+		pairs [][2]string
+		err   error
+	}
+	tagFetches := make([]elbTagFetch, len(pending))
+	var tagOK, tagFail int32
+	glog.Infof("Huawei ELB ShowLoadbalancerTags pull begin account=%s region=%s lbs=%d",
+		tenant.AccountName(), rName, len(pending))
+	var tagWG sync.WaitGroup
+	tsem := make(chan struct{}, 10)
+	for i := range pending {
+		lid := strings.TrimSpace(pending[i].lb.Id)
+		if lid == "" {
+			continue
+		}
+		i := i
+		tagWG.Add(1)
+		go func() {
+			defer tagWG.Done()
+			tsem <- struct{}{}
+			defer func() { <-tsem }()
+			tr, terr := huaweicloudregion.DoWithTransientNetworkRetry(func() (*elbv2model.ShowLoadbalancerTagsResponse, error) {
+				return elbV2Cli.ShowLoadbalancerTags(&elbv2model.ShowLoadbalancerTagsRequest{LoadbalancerId: lid})
+			})
+			if terr != nil {
+				atomic.AddInt32(&tagFail, 1)
+				tagFetches[i].err = terr
+				glog.Warningf("Huawei ELB ShowLoadbalancerTags failed loadbalancer_id=%s account=%s region=%s err=%v (需 elb:loadbalancer:get 或含查询 LB 标签的只读)",
+					lid, tenant.AccountName(), rName, terr)
+				return
+			}
+			atomic.AddInt32(&tagOK, 1)
+			tagFetches[i].pairs = huaweitags.PairsFromELBShowLoadbalancerTags(tr.Tags)
+		}()
+	}
+	tagWG.Wait()
+	glog.Infof("Huawei ELB ShowLoadbalancerTags pull end account=%s region=%s ok=%d fail=%d",
+		tenant.AccountName(), rName, tagOK, tagFail)
+
+	out := make([]*Instance, 0, len(pending))
+	for i := range pending {
+		row := pending[i]
+		listPairs := huaweitags.PairsFromELBTags(row.lb.Tags)
+		var merged [][2]string
+		if tagFetches[i].err == nil && len(tagFetches[i].pairs) > 0 {
+			merged = huaweitags.MergePairsPreferPrimary(tagFetches[i].pairs, listPairs)
+		} else {
+			merged = listPairs
+		}
+		userPairs := huaweitags.FilterPairsExcludingHuaweiSysPrefix(merged)
+		out = append(out, &Instance{
+			Provider:          "huawei",
+			AccountName:       tenant.AccountName(),
+			RegionName:        rName,
+			ID:                row.lb.Id,
+			Name:              row.lb.Name,
+			InstanceType:      elbTypeText(row.lb),
+			IPv4Private:       row.lb.VipAddress,
+			IPv4Public:        row.publicIP,
+			Listeners:         row.listeners,
+			IPv4BandwidthMbit: row.bandwidth,
+			OnlineTime:        row.lb.CreatedAt,
+			Status:            fmt.Sprint(row.lb.OperatingStatus),
+			VpcID:             row.lb.VpcId,
+			SystemTagsDisplay: strings.TrimSpace(envtags.FromPairs(envtags.SystemTagKey(), merged)),
+			UserTagsDisplay:   huaweitags.FormatPairsDisplay(userPairs),
+		})
 	}
 	glog.Infof("elb list region done account=%s region=%s pages=%d lbs=%d out=%d listener_err=%d elapsed=%v",
 		tenant.AccountName(), rName, page, lbCount, len(out), listenerErrCount, time.Since(begin))
