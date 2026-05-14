@@ -781,6 +781,7 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 type mwRec struct {
 	InstanceID                                                         string // 云实例 ID（可能为非标准字符串；CMDB 写入 instance_id 属性，uuid 见 middlewareCMDBUUID）
 	Name, MwType, IP, CPU, Mem, CloudLabel, Region, SysNodeName, DiskStr string
+	Environment                                                        string // 环境(标签)值，与列表 env_tag_value 一致；同步至 CMDB environment
 	MiddlewareVersion                                                  string // RDS：引擎+引擎版本；DCS：spec_code；同步至 CMDB middleware_version
 	// 以下为利用率百分比字符串（两位小数或空），写入 CMDB 浮点属性时用 cmdbFloatMetricJSON。
 	CpuPeak30, CpuAvg30, CpuPeak180, CpuAvg180                         string
@@ -818,6 +819,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CloudLabel:        cloudTypeLabel(r.GetProvider()),
 				Region:            r.GetRegionName(),
 				SysNodeName:       effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
+				Environment:       strings.TrimSpace(r.GetEnvTagValue()),
 				DiskStr:           "", // 列表 API 无独立磁盘字段
 				MiddlewareVersion: middlewareVersionFromRDS(r.GetEngine(), r.GetEngineVersion()),
 				CpuPeak30:         utilWindowPeakPercentDecimal(util.GetCpuLast_30D()),
@@ -846,6 +848,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CloudLabel:        cloudTypeLabel(r.GetProvider()),
 				Region:            r.GetRegionName(),
 				SysNodeName:       effectiveSysNodeName(r.GetProvider(), r.GetRegionName(), r.GetNodeTagValue()),
+				Environment:       strings.TrimSpace(r.GetEnvTagValue()),
 				DiskStr:           itoa32(r.GetSize()) + "MB", // 容量规格（与内存 GB 独立对比）
 				MiddlewareVersion: strings.TrimSpace(r.GetSpecCode()),
 				CpuPeak30:         "",
@@ -872,6 +875,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CloudLabel:    cloudTypeLabel(k.GetProvider()),
 				Region:        k.GetRegionName(),
 				SysNodeName:   effectiveSysNodeName(k.GetProvider(), k.GetRegionName(), k.GetNodeTagValue()),
+				Environment:   "", // KafkaInstance 暂无 env_tag_value 字段，后续接入列表再填
 				DiskStr:       itoa32(k.GetDistSize()) + "GB",
 				CpuPeak30:     "",
 				CpuAvg30:      "",
@@ -1321,6 +1325,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 				"private_ip":         m.IP,
 				"middleware_version": m.MiddlewareVersion,
 				"security_group":     m.SecurityGroup,
+				"environment":        strings.TrimSpace(m.Environment),
 			})
 			if err != nil {
 				glog.Errorf("cmdb sync middleware(update): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
@@ -1356,6 +1361,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 			"men_avg_180":        cmdbFloatMetricJSON(m.MenAvg180),
 			"middleware_version": m.MiddlewareVersion,
 			"security_group":     m.SecurityGroup,
+			"environment":        strings.TrimSpace(m.Environment),
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
@@ -1523,6 +1529,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			"eip_status":          cmdbSyncEIPStatus(e.Status),
 			"bound_resource_type": strings.TrimSpace(e.BindInstanceType),
 			"sys_node_name":       sysNode,
+			"environment":         strings.TrimSpace(e.EnvTagValue),
 		}
 		if exists != "" {
 			row, err := s.Client.GetCIFirst(q)
@@ -1600,6 +1607,7 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 			"ipv4_public_address":    strings.TrimSpace(e.IPv4Public),
 			"ipv4_bandwidth":         strconv.FormatInt(int64(e.IPv4BandwidthMbit), 10),
 			"sys_node_name":          sysNode,
+			"environment":            strings.TrimSpace(e.EnvTagValue),
 		}
 		if exists != "" {
 			row, err := s.Client.GetCIFirst(q)

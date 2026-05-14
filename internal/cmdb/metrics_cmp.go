@@ -173,6 +173,9 @@ func middlewareResourceChanged(row map[string]any, m mwRec) bool {
 	if strings.TrimSpace(anyToCompareStr(row["sys_node_name"])) != strings.TrimSpace(m.SysNodeName) {
 		return true
 	}
+	if strings.TrimSpace(anyToCompareStr(row["environment"])) != strings.TrimSpace(m.Environment) {
+		return true
+	}
 	if strings.TrimSpace(anyToCompareStr(row["resource_name"])) != strings.TrimSpace(m.Name) {
 		return true
 	}
