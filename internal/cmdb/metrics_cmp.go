@@ -93,6 +93,25 @@ func cmdbSecurityGroupStr(row map[string]any) string {
 }
 
 func serverResourceChanged(row map[string]any, h hostRec) bool {
+	ct, locn := cmdbCloudLocationFromSysNodeName(strings.TrimSpace(h.SysNodeName), strings.TrimSpace(h.CloudLabel), strings.TrimSpace(h.Region))
+	if strings.TrimSpace(anyToCompareStr(row["sys_node_name"])) != strings.TrimSpace(h.SysNodeName) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["server_name"])) != strings.TrimSpace(h.Name) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["private_ip"])) != strings.TrimSpace(h.IP) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["os_version"])) != strings.TrimSpace(h.OS) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["location"])) != strings.TrimSpace(locn) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["cloud_type"])) != strings.TrimSpace(ct) {
+		return true
+	}
 	oCPU := anyToCompareStr(row["cpu_count"])
 	nCPU := anyToCompareStr(int(h.CPU))
 	oMem := anyToCompareStr(row["ram_size"])
@@ -149,6 +168,24 @@ func serverResourceChanged(row map[string]any, h hostRec) bool {
 
 func middlewareResourceChanged(row map[string]any, m mwRec) bool {
 	if strings.TrimSpace(anyToCompareStr(row["instance_id"])) != strings.TrimSpace(m.InstanceID) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["sys_node_name"])) != strings.TrimSpace(m.SysNodeName) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["resource_name"])) != strings.TrimSpace(m.Name) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["resource_type"])) != strings.TrimSpace(m.MwType) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["private_ip"])) != strings.TrimSpace(m.IP) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["location"])) != strings.TrimSpace(m.CloudLabel) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["cloud_type"])) != strings.TrimSpace(m.Region) {
 		return true
 	}
 	oCPU := anyToCompareStr(row["cpu_count"])

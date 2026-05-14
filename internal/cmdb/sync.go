@@ -1128,6 +1128,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 			st.Errors++
 			continue
 		}
+		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, h.CloudLabel, h.Region)
 		q := map[string]any{
 			"q": fmt.Sprintf("_type:server,uuid:%s,system_id:%s", instUUID, systemID),
 		}
@@ -1159,6 +1160,12 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 			}
 			_, err = s.Client.UpdateCI(exists, map[string]any{
 				"ci_type":        ciType,
+				"sys_node_name":  sysNode,
+				"server_name":    h.Name,
+				"private_ip":     h.IP,
+				"os_version":     h.OS,
+				"location":       locn,
+				"cloud_type":     ct,
 				"cpu_count":      int(h.CPU),
 				"ram_size":       h.MemGBStr,
 				"disk_size":      h.DiskStr,
@@ -1184,7 +1191,6 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 			st.Updated++
 			continue
 		}
-		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, h.CloudLabel, h.Region)
 		payload := map[string]any{
 			"uuid":           instUUID,
 			"ci_type":        "server",
