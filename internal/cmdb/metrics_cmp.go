@@ -112,6 +112,9 @@ func serverResourceChanged(row map[string]any, h hostRec) bool {
 	if strings.TrimSpace(anyToCompareStr(row["cloud_type"])) != strings.TrimSpace(ct) {
 		return true
 	}
+	if strings.TrimSpace(anyToCompareStr(row["environment"])) != strings.TrimSpace(h.EnvTagValue) {
+		return true
+	}
 	oCPU := anyToCompareStr(row["cpu_count"])
 	nCPU := anyToCompareStr(int(h.CPU))
 	oMem := anyToCompareStr(row["ram_size"])
