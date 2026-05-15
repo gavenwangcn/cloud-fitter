@@ -119,6 +119,7 @@ export const DCS_FIELDS: ResourceFieldDef[] = [
 /** pbkafka.KafkaInstance（DMS Kafka / CKafka 等） */
 export const DMS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'envTagValue', title: '环境(标签)' },
   { dataIndex: 'nodeTagValue', title: '节点(标签)' },
   { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
   { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
@@ -144,7 +145,7 @@ export const CCE_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
   { dataIndex: 'accoutName', title: '账号名称' },
   { dataIndex: 'regionName', title: '地域' },
-  { dataIndex: 'clusterName', title: '集群名称 (metadata.name)' },
+  { dataIndex: 'clusterName', title: '集群名称' },
   { dataIndex: 'clusterUid', title: '集群 ID (metadata.uid)' },
   { dataIndex: 'flavor', title: '集群规格 (spec.flavor)' },
   { dataIndex: 'k8sVersion', title: 'K8s 版本 (spec.version)' },

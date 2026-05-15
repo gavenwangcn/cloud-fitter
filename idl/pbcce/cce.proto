@@ -11,7 +11,7 @@ message CceCluster {
   pbtenant.CloudProvider provider = 1;
   string accout_name = 2;
   string region_name = 3;
-  // metadata.name
+  // 集群展示名：华为 CCE metadata.alias（控制台「名称」，可修改）；未配置时 API 返回与 metadata.name 相同
   string cluster_name = 4;
   // metadata.uid
   string cluster_uid = 5;

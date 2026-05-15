@@ -37,6 +37,8 @@ message KafkaInstance {
   string system_tags_display = 14;
   // 用户自定义标签展示：DMS Kafka ShowKafkaTags（key=value; 拼接）；失败时用列表 tags
   string user_tags_display = 15;
+  // 环境标识：指定标签键的值（CLOUD_FITTER_ENV_TAG_KEY / CLOUD_FITTER_ECS_ENV_TAG_KEY，默认 environment）；无标签时按实例名推断
+  string env_tag_value = 16;
 }
 
 message ListDetailReq {
