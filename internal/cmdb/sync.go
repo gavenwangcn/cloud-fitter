@@ -875,7 +875,7 @@ func buildMiddlewares(rdsResp *pbrds.ListResp, redisResp *pbredis.ListResp, kafk
 				CloudLabel:    cloudTypeLabel(k.GetProvider()),
 				Region:        k.GetRegionName(),
 				SysNodeName:   effectiveSysNodeName(k.GetProvider(), k.GetRegionName(), k.GetNodeTagValue()),
-				Environment:   "", // KafkaInstance 暂无 env_tag_value 字段，后续接入列表再填
+				Environment:   strings.TrimSpace(k.GetEnvTagValue()),
 				DiskStr:       itoa32(k.GetDistSize()) + "GB",
 				CpuPeak30:     "",
 				CpuAvg30:      "",
