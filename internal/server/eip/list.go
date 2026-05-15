@@ -13,6 +13,10 @@ import (
 	hweip "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2"
 	eipmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/model"
 	hwiam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
+	hwnat "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/nat/v2"
+	natmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/nat/v2/model"
+	hwvpc "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2"
+	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 	"github.com/pkg/errors"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
@@ -179,6 +183,19 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 		nameHints[i] = hint
 		out = append(out, row)
 	}
+	vpcHc := hwvpc.VpcClientBuilder().
+		WithRegion(huaweicloudregion.EndpointForService("vpc", rName)).
+		WithCredential(auth).
+		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
+		Build()
+	vpcCli := hwvpc.NewVpcClient(vpcHc)
+	natHc := hwnat.NatClientBuilder().
+		WithRegion(huaweicloudregion.EndpointForService("nat", rName)).
+		WithCredential(auth).
+		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
+		Build()
+	natCli := hwnat.NewNatClient(natHc)
+	enrichHuaweiEIPBindInstances(vpcCli, natCli, tenant.AccountName(), rName, out)
 	// 华为云官方「查询弹性公网IP的标签」ShowPublicipTags
 	var tagWG sync.WaitGroup
 	tsem := make(chan struct{}, 10)
@@ -233,6 +250,73 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 	glog.Infof("eip list region done account=%s region=%s rows=%d elapsed=%v",
 		tenant.AccountName(), rName, len(out), time.Since(begin))
 	return out, nil
+}
+
+// enrichHuaweiEIPBindInstances 用 EIP 对应的 port_id 查询 VPC ShowPort，将绑定侧资源 ID 写入 BindInstanceId；
+// 若设备为 NAT 网关再调 ShowNatGateway 取名称写入 BindInstanceName，并将实例类型标为「NAT网关」（与控制台「已绑定实例」一致）。
+// 权限：VPC 端口查询、NAT 网关查询；失败时保留 ListPublicips 的 port_id（若 ShowPort 失败）且不填名称。
+func enrichHuaweiEIPBindInstances(vpcCli *hwvpc.VpcClient, natCli *hwnat.NatClient, accountName, rName string, out []*Instance) {
+	if vpcCli == nil || len(out) == 0 {
+		return
+	}
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+	var enrichFail int32
+	for i := range out {
+		i := i
+		portID := strings.TrimSpace(out[i].BindInstanceId)
+		if portID == "" {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			pr, err := huaweicloudregion.DoWithTransientNetworkRetry(func() (*vpcmodel.ShowPortResponse, error) {
+				return vpcCli.ShowPort(&vpcmodel.ShowPortRequest{PortId: portID})
+			})
+			if err != nil || pr == nil || pr.Port == nil {
+				atomic.AddInt32(&enrichFail, 1)
+				glog.Warningf("Huawei EIP ShowPort failed account=%s region=%s eip=%s port_id=%s err=%v (需 VPC 端口查询权限)",
+					accountName, rName, out[i].Eip, portID, err)
+				return
+			}
+			port := pr.Port
+			devID := strings.TrimSpace(port.DeviceId)
+			if devID != "" {
+				out[i].BindInstanceId = devID
+			}
+			ownerLower := strings.ToLower(port.DeviceOwner.Value())
+			// 公网 NAT、私网 NAT 等设备 owner 通常含 nat；再查网关详情取 name
+			isNAT := strings.Contains(ownerLower, "nat")
+			if isNAT && natCli != nil && devID != "" {
+				ngResp, nerr := huaweicloudregion.DoWithTransientNetworkRetry(func() (*natmodel.ShowNatGatewayResponse, error) {
+					return natCli.ShowNatGateway(&natmodel.ShowNatGatewayRequest{NatGatewayId: devID})
+				})
+				out[i].BindInstanceType = "NAT网关"
+				if nerr != nil {
+					atomic.AddInt32(&enrichFail, 1)
+					glog.Warningf("Huawei EIP ShowNatGateway failed account=%s region=%s nat_id=%s err=%v",
+						accountName, rName, devID, nerr)
+					return
+				}
+				if ngResp != nil && ngResp.NatGateway != nil && ngResp.NatGateway.Name != nil {
+					out[i].BindInstanceName = strings.TrimSpace(*ngResp.NatGateway.Name)
+				}
+				return
+			}
+			// 非 NAT：云上端口 name 多为网卡标识，易与实例名混淆，不自动填充 BindInstanceName。
+			if tn := strings.TrimSpace(port.InstanceType); tn != "" {
+				out[i].BindInstanceType = tn
+			}
+		}()
+	}
+	wg.Wait()
+	if enrichFail > 0 {
+		glog.Infof("Huawei EIP bind-instance enrich partial failures account=%s region=%s fail=%d",
+			accountName, rName, enrichFail)
+	}
 }
 
 func deref(s *string) string {

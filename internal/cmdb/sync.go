@@ -1531,6 +1531,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			"private_ip":          strings.TrimSpace(e.PrivateIpAddress),
 			"eip_status":          cmdbSyncEIPStatus(e.Status),
 			"bound_resource_type": strings.TrimSpace(e.BindInstanceType),
+			"bound_instance":      strings.TrimSpace(e.BindInstanceName),
 			"sys_node_name":       sysNode,
 			"environment":         strings.TrimSpace(e.EnvTagValue),
 		}
