@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
@@ -13,6 +14,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbrds"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/clusterenvscratch"
 	ccesvc "github.com/cloud-fitter/cloud-fitter/internal/server/cce"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/cert"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/ecs"
@@ -154,13 +156,13 @@ func CceByAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.SystemName != "" {
-		resp, err := cceBySystemName(r.Context(), body.SystemName)
-		writeProtoJSON(w, resp, err)
+		resp, cceCtx, err := cceBySystemName(r.Context(), body.SystemName)
+		writeCCEListProtoJSON(w, resp, cceCtx, err)
 		return
 	}
-	ctx := scope.WithAccountName(r.Context(), body.AccountName)
+	ctx := clusterenvscratch.Ensure(scope.WithAccountName(r.Context(), body.AccountName))
 	resp, err := ccesvc.List(ctx, &pbcce.ListReq{Provider: pbtenant.CloudProvider(body.Provider)})
-	writeProtoJSON(w, resp, err)
+	writeCCEListProtoJSON(w, resp, ctx, err)
 }
 
 // EipByAccount POST /apis/eip/by-account（当前：华为云 EIP）
@@ -310,23 +312,25 @@ func kafkaBySystemName(ctx0 context.Context, systemName string) (*pbkafka.ListRe
 	return out, nil
 }
 
-func cceBySystemName(ctx0 context.Context, systemName string) (*pbcce.ListResp, error) {
+// cceBySystemName 返回的 scratchCtx 用于 HTTP 写入 envTagValue；非 HTTP 调用方可忽略 scratchCtx。
+func cceBySystemName(ctx0 context.Context, systemName string) (*pbcce.ListResp, context.Context, error) {
 	out := &pbcce.ListResp{}
 	baseCtx, sc, err := withSystemListCtx(ctx0, systemName)
 	if err != nil {
-		return nil, err
+		return nil, ctx0, err
 	}
+	baseCtx = clusterenvscratch.Ensure(baseCtx)
 	for _, acc := range sc.Accounts {
 		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := ccesvc.List(ctx, &pbcce.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})
 		if err != nil {
-			return nil, err
+			return nil, baseCtx, err
 		}
 		if resp != nil {
 			out.Clusters = append(out.Clusters, resp.Clusters...)
 		}
 	}
-	return out, nil
+	return out, baseCtx, nil
 }
 
 func eipBySystemName(ctx0 context.Context, systemName string) ([]*eip.Instance, error) {
@@ -402,7 +406,8 @@ func ListKafkaBySystemName(ctx context.Context, systemName string) (*pbkafka.Lis
 
 // ListCceBySystemName 同 ListEcsBySystemName，对应 CCE 集群。
 func ListCceBySystemName(ctx context.Context, systemName string) (*pbcce.ListResp, error) {
-	return cceBySystemName(ctx, systemName)
+	resp, _, err := cceBySystemName(ctx, systemName)
+	return resp, err
 }
 
 // ListEipBySystemName 供 CMDB 同步等按系统名称拉取 EIP（与 POST /apis/eip/by-account 且带 systemName 一致）。
@@ -413,6 +418,57 @@ func ListEipBySystemName(ctx context.Context, systemName string) ([]*eip.Instanc
 // ListElbBySystemName 供 CMDB 同步等按系统名称拉取 ELB（与 POST /apis/elb/by-account 且带 systemName 一致）。
 func ListElbBySystemName(ctx context.Context, systemName string) ([]*elb.Instance, error) {
 	return elbBySystemName(ctx, systemName)
+}
+
+// writeCCEListProtoJSON 在 protojson 结果上合并 envTagValue（与 ECS/EIP 同源：EnvTagOrNameFallback + ECS 环境键），供 CCE 列表 HTTP 展示。
+func writeCCEListProtoJSON(w http.ResponseWriter, resp *pbcce.ListResp, ctx context.Context, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	if resp == nil {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	envMap := clusterenvscratch.GetMap(ctx)
+	b, mErr := protojson.Marshal(resp)
+	if mErr != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": mErr.Error()})
+		return
+	}
+	var outer map[string]any
+	if uErr := json.Unmarshal(b, &outer); uErr != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": uErr.Error()})
+		return
+	}
+	if clusters, ok := outer["clusters"].([]any); ok {
+		for _, ci := range clusters {
+			cm, ok := ci.(map[string]any)
+			if !ok {
+				continue
+			}
+			uid, _ := cm["clusterUid"].(string)
+			uid = strings.TrimSpace(uid)
+			ev := ""
+			if envMap != nil && uid != "" {
+				if v, ok := envMap[uid]; ok {
+					ev = v
+				}
+			}
+			cm["envTagValue"] = ev
+		}
+	}
+	outB, err := json.Marshal(outer)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	_, _ = w.Write(outB)
 }
 
 func writeProtoJSON(w http.ResponseWriter, msg proto.Message, err error) {

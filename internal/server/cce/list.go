@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
+	"github.com/cloud-fitter/cloud-fitter/internal/clusterenvscratch"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/service/ccer"
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
@@ -42,6 +43,7 @@ func ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*pbcce.ListDetai
 }
 
 func List(ctx context.Context, req *pbcce.ListReq) (*pbcce.ListResp, error) {
+	ctx = clusterenvscratch.Ensure(ctx)
 	var (
 		wg       sync.WaitGroup
 		mutex    sync.Mutex

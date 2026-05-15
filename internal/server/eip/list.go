@@ -38,7 +38,9 @@ type Instance struct {
 	BandwidthType     string `json:"bandwidthType"`
 	BandwidthSizeMbit int32  `json:"bandwidthSizeMbit"`
 	BindInstanceType  string `json:"bindInstanceType"`
+	// BindInstanceName 绑定侧资源名称（如 NAT ShowNatGateway.name）；非 EIP 自身名称
 	BindInstanceName  string `json:"bindInstanceName"`
+	// BindInstanceId 绑定侧资源 ID（ShowPort device_id，如 NAT 网关 ID）；未解析成功时为 port_id
 	BindInstanceId    string `json:"bindInstanceId"`
 	PrivateIpAddress  string `json:"privateIpAddress"`
 	OnlineTime        string `json:"onlineTime"`

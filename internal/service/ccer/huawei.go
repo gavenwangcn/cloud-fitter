@@ -18,6 +18,7 @@ import (
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/clusterenvscratch"
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweitags"
 	"github.com/cloud-fitter/cloud-fitter/internal/huaweicloudregion"
@@ -351,6 +352,8 @@ func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*
 		if !scope.SystemListTagFilterMatches(ctx, envtags.FromPairs(envtags.SystemTagKey(), merged)) {
 			continue
 		}
+		envSem := envtags.EnvTagOrNameFallback(envtags.FromPairs(envtags.ECSKey(), merged), r.name)
+		clusterenvscratch.Set(ctx, r.uid, envSem)
 		nodeSem := envtags.NodeTagOrNameFallback(
 			envtags.FromPairs(envtags.NodeTagKey(), merged), r.name)
 		nodeTag := envtags.FormatNodeTagDisplay(envtags.CloudTypeLabelZH(pbtenant.CloudProvider_huawei), c.region.GetName(), nodeSem)
