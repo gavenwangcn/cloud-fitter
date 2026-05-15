@@ -48,13 +48,13 @@ func TestNodeTagOrNameFallback(t *testing.T) {
 	if got := NodeTagOrNameFallback("", "LC-web"); got != "宇海" {
 		t.Fatalf("lc: got %q", got)
 	}
-	if got := NodeTagOrNameFallback("", "LC-DFT"); got != "（德非图&宇海）" {
+	if got := NodeTagOrNameFallback("", "LC-DFT"); got != "德非图&宇海" {
 		t.Fatalf("LC and DFT in name: got %q", got)
 	}
-	if got := NodeTagOrNameFallback("", "DFT-LC"); got != "（德非图&宇海）" {
+	if got := NodeTagOrNameFallback("", "DFT-LC"); got != "德非图&宇海" {
 		t.Fatalf("DFT and LC in name: got %q", got)
 	}
-	if got := NodeTagOrNameFallback("", "DFT-ALL-LC"); got != "（德非图&宇海）" {
+	if got := NodeTagOrNameFallback("", "DFT-ALL-LC"); got != "德非图&宇海" {
 		t.Fatalf("DFT+LC with ALL segment: got %q", got)
 	}
 	if got := NodeTagOrNameFallback("", "DFT工时系统-PROD-应用-0002"); got != "德非图" {
