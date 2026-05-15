@@ -56,6 +56,7 @@ type systemSyncStats struct {
 
 // Run 与 Python main.cmdb 一致：分页拉取 CMDB 中全部 system，再对每个 system_id 同步。
 // 云资源默认来自本服务 List*BySystemName；若设置 CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT=true 且使用 MySQL，则从 cloud_snap_* 快照表读取（与定时快照任务配合）。
+// 单次手动同步（SyncOneBySystemName）不受该开关影响，始终拉实时云 API，见 syncSystem 的 preferLiveResources。
 func (s *Syncer) Run(ctx context.Context) error {
 	if s == nil || s.Client == nil || s.Store == nil {
 		return errors.New("cmdb syncer: nil client or store")
@@ -67,7 +68,7 @@ func (s *Syncer) Run(ctx context.Context) error {
 	}
 	glog.Infof("cmdb sync: found %d system(s) in CMDB", len(ids))
 	for _, systemID := range ids {
-		if err := s.syncSystem(ctx, systemID); err != nil {
+		if err := s.syncSystem(ctx, systemID, false); err != nil {
 			glog.Warningf("cmdb sync system_id=%s: %v", systemID, err)
 		}
 	}
@@ -106,7 +107,10 @@ func (s *Syncer) listCMDBSystemIDs() ([]string, error) {
 	return out, nil
 }
 
-func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
+// syncSystem 将单个 system_id 的云资源写入 CMDB。
+// preferLiveResources 为 true 时（单次手动同步）始终调 jsonapi 拉取实时云数据，忽略 CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT，
+// 避免快照未刷新导致实例名、环境标签等无法更新到 CMDB。
+func (s *Syncer) syncSystem(ctx context.Context, systemID string, preferLiveResources bool) error {
 	sysRow, err := s.Store.SystemBySystemID(systemID)
 	if err != nil {
 		glog.Infof("cmdb sync: skip system_id=%s (no local system row: %v)", systemID, err)
@@ -124,7 +128,10 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		cmdbSystemName = strings.TrimSpace(n)
 	}
 
-	useSnap := resourcecache.CMDBUseResourceSnapshotFromEnv() && configstore.UseMySQLFromEnv()
+	useSnap := !preferLiveResources && resourcecache.CMDBUseResourceSnapshotFromEnv() && configstore.UseMySQLFromEnv()
+	if preferLiveResources {
+		glog.Infof("cmdb sync system_id=%s: manual sync uses live cloud API (resource snapshot bypassed)", systemID)
+	}
 	dbSnap := s.Store.SQLDB()
 
 	var ecsResp *pbecs.ListResp
@@ -303,7 +310,8 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	return nil
 }
 
-// SyncOneBySystemName 按本库系统名称对 CMDB 做该系统的全量同步，逻辑与 Run 中针对单系统的处理一致（syncSystem）。
+// SyncOneBySystemName 按本库系统名称对 CMDB 做该系统的全量同步，写入逻辑与 Run 中 syncSystem 一致，
+// 但云资源始终从实时 API 拉取（不走 MySQL 资源快照），以便改名、环境标签等变更能立即反映到 CMDB。
 // 先校验 CMDB 中存在与本地相同的 system_id，否则返回「CMDB中没有相同系统信息」。
 func (s *Syncer) SyncOneBySystemName(ctx context.Context, systemName string) error {
 	if s == nil || s.Client == nil || s.Store == nil {
@@ -328,7 +336,7 @@ func (s *Syncer) SyncOneBySystemName(ctx context.Context, systemName string) err
 		return errors.New("CMDB中没有相同系统信息")
 	}
 	glog.Infof("cmdb sync run(start): manual single sync system_name=%q system_id=%s", sysRow.Name, sysRow.SystemID)
-	return s.syncSystem(ctx, sysRow.SystemID)
+	return s.syncSystem(ctx, sysRow.SystemID, true)
 }
 
 func collectSystemNodeKeys(
