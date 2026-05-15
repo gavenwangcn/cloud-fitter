@@ -80,6 +80,19 @@ func derefStr(p *string) string {
 	return *p
 }
 
+// huaweiCCEDisplayName 返回 CCE 控制台当前展示名。
+// 华为 ListClusters/ShowCluster：metadata.name 为创建时集群名（不可改）；metadata.alias 为界面显示名（可改）。
+// 查询响应中 alias 必返，未单独配置时与 name 相同（见 ClusterMetadata 官方说明）。
+func huaweiCCEDisplayName(meta *ccemodel.ClusterMetadata) string {
+	if meta == nil {
+		return ""
+	}
+	if s := strings.TrimSpace(derefStr(meta.Alias)); s != "" {
+		return s
+	}
+	return strings.TrimSpace(meta.Name)
+}
+
 func ecsFlavorVCPU(f *ecsmodel.ServerFlavor) int32 {
 	if f == nil {
 		return 0
@@ -281,7 +294,7 @@ func (c *HuaweiCce) ListDetail(ctx context.Context, req *pbcce.ListDetailReq) (*
 		cl := &items[i]
 		var name, uid, flavor, version, phase string
 		if cl.Metadata != nil {
-			name = cl.Metadata.Name
+			name = huaweiCCEDisplayName(cl.Metadata)
 			uid = derefStr(cl.Metadata.Uid)
 		}
 		if cl.Spec != nil {
