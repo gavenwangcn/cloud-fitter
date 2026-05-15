@@ -14,7 +14,9 @@ func EnvTagOrNameFallback(tagValue, resourceName string) string {
 }
 
 // NodeTagOrNameFallback 在节点标签值为空时，按资源名推断。
-// 同样先按 -、_ 分段后在各段内匹配：整段为 ALL（不区分大小写）→全部，DFT→德非图，LC→宇海（后两者英文不区分大小写）；
+// 同样先按 -、_ 分段后在各段内匹配：若全名中同时出现 DFT 与 LC（段内子串、英文不区分大小写），
+// 则节点语义为「（德非图&宇海）」，且优先于单侧 DFT/LC 的先后规则及整段 ALL→全部。
+// 否则：整段为 ALL（不区分大小写）→全部；DFT→德非图，LC→宇海（后两者英文不区分大小写）；
 // 多个命中时：先按段从左到右，再按段内位置取最先命中者。
 // 若标签值本身为 ALL，亦表示全部（与名字规则一致）。
 func NodeTagOrNameFallback(tagValue, resourceName string) string {
@@ -105,10 +107,23 @@ func inferEnvFromName(name string) string {
 	return best.val
 }
 
+// nameContainsNodeToken 与 inferNodeFromName 中段内匹配方式一致：各段转大写后子串查找。
+func nameContainsNodeToken(name, asciiToken string) bool {
+	for _, seg := range nameSegments(name) {
+		if strings.Contains(strings.ToUpper(strings.TrimSpace(seg)), asciiToken) {
+			return true
+		}
+	}
+	return false
+}
+
 func inferNodeFromName(name string) string {
 	segs := nameSegments(name)
 	if len(segs) == 0 {
 		return ""
+	}
+	if nameContainsNodeToken(name, "DFT") && nameContainsNodeToken(name, "LC") {
+		return "（德非图&宇海）"
 	}
 	type hit struct {
 		si, pos int
