@@ -29,6 +29,8 @@ type Instance struct {
 	RegionName        string `json:"regionName"`
 	EipId             string `json:"eipId"`
 	Eip               string `json:"eip"`
+	// EipName 弹性公网名称：华为 ListPublicips.alias，空则退回 bandwidth_name（与控制台「名称」一致）
+	EipName           string `json:"eipName"`
 	BandwidthType     string `json:"bandwidthType"`
 	BandwidthSizeMbit int32  `json:"bandwidthSizeMbit"`
 	BindInstanceType  string `json:"bindInstanceType"`
@@ -173,6 +175,7 @@ func listHuaweiEipByRegion(tenant tenanter.Tenanter, region tenanter.Region) ([]
 		if hint == "" {
 			hint = strings.TrimSpace(deref(it.BandwidthName))
 		}
+		row.EipName = hint
 		nameHints[i] = hint
 		out = append(out, row)
 	}
