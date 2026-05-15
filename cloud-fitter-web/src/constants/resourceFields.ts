@@ -135,9 +135,10 @@ export const DMS_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'expiredTime', title: '过期时间' },
 ];
 
-/** pbcce.CceCluster（华为云 CCE 等；对应 metadata/spec/status） */
+/** pbcce.CceCluster（华为云 CCE 等；对应 metadata/spec/status）；列表 JSON 由服务端合并 envTagValue */
 export const CCE_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'envTagValue', title: '环境(标签)' },
   { dataIndex: 'nodeTagValue', title: '节点(标签)' },
   { dataIndex: 'systemTagsDisplay', title: '系统标签(展示)' },
   { dataIndex: 'userTagsDisplay', title: '用户标签(展示)' },
@@ -165,10 +166,13 @@ export const EIP_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'regionName', title: '地域' },
   { dataIndex: 'eipId', title: '弹性公网IP实例ID' },
   { dataIndex: 'eip', title: '弹性公网IP' },
+  // 控制台「名称」：华为 alias / 退回带宽名（与 CMDB eip_name 一致）
+  { dataIndex: 'eipName', title: '实例名称' },
   { dataIndex: 'bandwidthType', title: '带宽类型' },
   { dataIndex: 'bandwidthSizeMbit', title: '带宽大小(Mbit/s)' },
   { dataIndex: 'bindInstanceType', title: '实例类型' },
-  { dataIndex: 'bindInstanceName', title: '实例名称' },
+  // 绑定侧资源名称（如 NAT 网关名；与 CMDB bound_instance 一致）
+  { dataIndex: 'bindInstanceName', title: '绑定实例' },
   { dataIndex: 'bindInstanceId', title: '实例ID' },
   { dataIndex: 'privateIpAddress', title: '私有IP地址' },
   { dataIndex: 'onlineTime', title: '上线时间' },
