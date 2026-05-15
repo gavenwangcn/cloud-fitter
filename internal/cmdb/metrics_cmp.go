@@ -106,6 +106,12 @@ func serverResourceChanged(row map[string]any, h hostRec) bool {
 	if strings.TrimSpace(anyToCompareStr(row["os_version"])) != strings.TrimSpace(h.OS) {
 		return true
 	}
+	if strings.TrimSpace(anyToCompareStr(row["host_type"])) != strings.TrimSpace(h.HostType) {
+		return true
+	}
+	if strings.TrimSpace(anyToCompareStr(row["os_architecture"])) != strings.TrimSpace(h.OsArchitecture) {
+		return true
+	}
 	if strings.TrimSpace(anyToCompareStr(row["location"])) != strings.TrimSpace(locn) {
 		return true
 	}

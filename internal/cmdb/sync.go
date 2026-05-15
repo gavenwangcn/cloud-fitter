@@ -680,6 +680,8 @@ type hostRec struct {
 	DiskStr                                   string // 磁盘：系统盘/数据盘GB 有任一则为「a+b」；仅两者皆无(0)时用 disk_summary，再无则空
 	StorageAttr                               string // CMDB storage：系统盘/数据盘合计（与控制台列一致）
 	OS                                        string
+	HostType                                  string // CMDB host_type：与列表 osType（操作系统类型）一致
+	OsArchitecture                            string // CMDB os_architecture：与列表 osBit（系统位数）一致
 	CceClusterID                              string
 	EnvTagValue                               string // 环境标签（与 ECS 一致）；用于推导同集群 K8s CI 的 environment
 	CpuPeak30, CpuPeak180                     string
@@ -759,7 +761,9 @@ func buildHosts(resp *pbecs.ListResp, huaweiEcsIDToCceUID map[string]string) []h
 			MemGBStr:     memGB,
 			DiskStr:      diskStr,
 			StorageAttr:  storageAttr,
-			OS:           firstNonEmpty(e.GetImageName(), e.GetOsType()),
+			OS:             firstNonEmpty(e.GetImageName(), e.GetOsType()),
+			HostType:       strings.TrimSpace(e.GetOsType()),
+			OsArchitecture: strings.TrimSpace(e.GetOsBit()),
 			CceClusterID: cceID, // 华为：由 CCE ListNodes 的 status.serverId 与集群 metadata.uid 映射得到，与 CceCluster.cluster_uid 一致
 			EnvTagValue:  strings.TrimSpace(e.GetEnvTagValue()),
 			CpuPeak30:     utilWindowPeakPercentDecimal(util.GetCpuLast_30D()),
@@ -1168,6 +1172,8 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 				"server_name":    h.Name,
 				"private_ip":     h.IP,
 				"os_version":     h.OS,
+				"host_type":      h.HostType,
+				"os_architecture": h.OsArchitecture,
 				"location":       locn,
 				"cloud_type":     ct,
 				"environment":    strings.TrimSpace(h.EnvTagValue),
@@ -1207,21 +1213,23 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 			"ram_size":       h.MemGBStr,
 			"disk_size":      h.DiskStr,
 			"storage":        h.StorageAttr,
-			"os_version":     h.OS,
-			"location":       locn,
-			"cloud_type":     ct,
-			"environment":    strings.TrimSpace(h.EnvTagValue),
-			"cpu_peak_30":    cmdbFloatMetricJSON(h.CpuPeak30),
-			"cpu_peak_180":   cmdbFloatMetricJSON(h.CpuPeak180),
-			"cpu_avg_30":     cmdbFloatMetricJSON(h.CpuAvg30),
-			"cpu_avg_180":    cmdbFloatMetricJSON(h.CpuAvg180),
-			"mem_peak_30":    cmdbFloatMetricJSON(h.MemPeak30),
-			"men_peak_180":   cmdbFloatMetricJSON(h.MenPeak180),
-			"men_avg_30":     cmdbFloatMetricJSON(h.MemAvg30),
-			"men_avg_180":    cmdbFloatMetricJSON(h.MenAvg180),
-			"disk_usage_30":  cmdbFloatMetricJSON(h.DiskUsage30),
-			"disk_usage_180": cmdbFloatMetricJSON(h.DiskUsage180),
-			"security_group": h.SecurityGroup,
+			"os_version":      h.OS,
+			"host_type":       h.HostType,
+			"os_architecture": h.OsArchitecture,
+			"location":        locn,
+			"cloud_type":      ct,
+			"environment":     strings.TrimSpace(h.EnvTagValue),
+			"cpu_peak_30":     cmdbFloatMetricJSON(h.CpuPeak30),
+			"cpu_peak_180":    cmdbFloatMetricJSON(h.CpuPeak180),
+			"cpu_avg_30":      cmdbFloatMetricJSON(h.CpuAvg30),
+			"cpu_avg_180":     cmdbFloatMetricJSON(h.CpuAvg180),
+			"mem_peak_30":     cmdbFloatMetricJSON(h.MemPeak30),
+			"men_peak_180":    cmdbFloatMetricJSON(h.MenPeak180),
+			"men_avg_30":      cmdbFloatMetricJSON(h.MemAvg30),
+			"men_avg_180":     cmdbFloatMetricJSON(h.MenAvg180),
+			"disk_usage_30":   cmdbFloatMetricJSON(h.DiskUsage30),
+			"disk_usage_180":  cmdbFloatMetricJSON(h.DiskUsage180),
+			"security_group":  h.SecurityGroup,
 		}
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
