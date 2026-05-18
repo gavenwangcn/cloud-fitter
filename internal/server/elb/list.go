@@ -102,6 +102,17 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 		}
 	}
 	wg.Wait()
+	before := len(all)
+	all = scope.FilterSliceBySystemListTag(ctx, all, func(it *Instance) string {
+		if it == nil {
+			return ""
+		}
+		return it.SystemTagsDisplay
+	})
+	if before != len(all) {
+		glog.Infof("elb list system_tag filter provider=%s account_filter=%q before=%d after=%d",
+			provider.String(), scope.AccountName(ctx), before, len(all))
+	}
 	glog.Infof("elb list done provider=%s total=%d elapsed=%v",
 		provider.String(), len(all), time.Since(begin))
 	return all, nil
