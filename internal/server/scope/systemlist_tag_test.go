@@ -21,6 +21,16 @@ func TestSystemListTagFilterMatches(t *testing.T) {
 	}
 }
 
+func TestSystemListTagFilterID(t *testing.T) {
+	if _, ok := SystemListTagFilterID(context.Background()); ok {
+		t.Fatal("expected inactive without ctx value")
+	}
+	sid, ok := SystemListTagFilterID(WithSystemListTagFilter(context.Background(), "D-000030"))
+	if !ok || sid != "D-000030" {
+		t.Fatalf("want D-000030 active, got %q ok=%v", sid, ok)
+	}
+}
+
 func TestFilterSliceBySystemListTag(t *testing.T) {
 	type row struct {
 		tag string

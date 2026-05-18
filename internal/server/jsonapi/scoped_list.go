@@ -15,6 +15,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbredis"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/internal/clusterenvscratch"
+	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	ccesvc "github.com/cloud-fitter/cloud-fitter/internal/server/cce"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/cert"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/ecs"
@@ -242,6 +243,8 @@ func ecsBySystemName(ctx0 context.Context, systemName string) (*pbecs.ListResp, 
 	if err != nil {
 		return nil, err
 	}
+	glog.Infof("ecs by-system scope: system_name=%q system_id=%q tag_key=%s linked_accounts=%d",
+		systemName, strings.TrimSpace(sc.SystemID), envtags.SystemTagKey(), len(sc.Accounts))
 	for _, acc := range sc.Accounts {
 		ctx := scope.WithAccountName(baseCtx, acc.AccountName)
 		resp, err := ecs.List(ctx, &pbecs.ListReq{Provider: pbtenant.CloudProvider(acc.Provider)})

@@ -444,21 +444,74 @@ func fillHuaweiECSUtilization(ctx context.Context, ecsList []*pbecs.EcsInstance,
 	}
 }
 
+const ecsSystemTagFilterExcludedSampleMax = 12
+
+// ecsSystemTagForFilter 用于系统标签过滤的值，与页面 systemTagsDisplay 一致。
+func ecsSystemTagForFilter(inst *pbecs.EcsInstance, rowTag string) string {
+	if inst != nil {
+		if s := strings.TrimSpace(inst.GetSystemTagsDisplay()); s != "" {
+			return s
+		}
+	}
+	return strings.TrimSpace(rowTag)
+}
+
 // filterHuaweiECSBySystemTag 在按系统拉列表时按标签 system（见 envtags.SystemTagKey）与 CMDB system_id 过滤；标签值为空则保留。
 // systemTagPerRow 与 insts 一一对应，优先来自 ShowServerTags，与 ListServersDetails 合并结果。
-func filterHuaweiECSBySystemTag(ctx context.Context, insts []*pbecs.EcsInstance, systemTagPerRow []string) []*pbecs.EcsInstance {
-	if len(insts) != len(systemTagPerRow) {
+func filterHuaweiECSBySystemTag(ctx context.Context, insts []*pbecs.EcsInstance, systemTagPerRow []string, accountName, regionName string) []*pbecs.EcsInstance {
+	wantSID, active := scope.SystemListTagFilterID(ctx)
+	if !active {
+		glog.V(2).Infof("Huawei ECS system_tag filter skip: no system_id in ctx account=%s region=%s instances=%d (按云账号或未注入过滤)",
+			accountName, regionName, len(insts))
 		return insts
 	}
-	var out []*pbecs.EcsInstance
+	if len(insts) != len(systemTagPerRow) {
+		glog.Warningf("Huawei ECS system_tag filter: systemTagPerRow len=%d != instances=%d account=%s region=%s want_system_id=%q (按实例 SystemTagsDisplay 过滤)",
+			len(systemTagPerRow), len(insts), accountName, regionName, wantSID)
+	}
+	tagKey := envtags.SystemTagKey()
+	var (
+		out              []*pbecs.EcsInstance
+		keptMatch        int
+		keptEmptyTag     int
+		excludedMismatch int
+		excludedSamples  int
+	)
 	for i, inst := range insts {
 		if inst == nil {
 			continue
 		}
-		st := systemTagPerRow[i]
-		if scope.SystemListTagFilterMatches(ctx, st) {
-			out = append(out, inst)
+		rowTag := ""
+		if i < len(systemTagPerRow) {
+			rowTag = systemTagPerRow[i]
 		}
+		tagVal := ecsSystemTagForFilter(inst, rowTag)
+		if scope.SystemListTagFilterMatches(ctx, tagVal) {
+			out = append(out, inst)
+			if tagVal == "" {
+				keptEmptyTag++
+				glog.V(2).Infof("Huawei ECS system_tag filter keep(empty): want=%q account=%s region=%s instance_id=%s instance_name=%q",
+					wantSID, accountName, regionName, inst.GetInstanceId(), inst.GetInstanceName())
+			} else {
+				keptMatch++
+				glog.V(2).Infof("Huawei ECS system_tag filter keep(match): want=%q tag=%q account=%s region=%s instance_id=%s instance_name=%q",
+					wantSID, tagVal, accountName, regionName, inst.GetInstanceId(), inst.GetInstanceName())
+			}
+			continue
+		}
+		excludedMismatch++
+		if excludedSamples < ecsSystemTagFilterExcludedSampleMax {
+			excludedSamples++
+			glog.Infof("Huawei ECS system_tag filter excluded(mismatch): want=%q tag=%q tag_key=%q account=%s region=%s instance_id=%s instance_name=%q row_tag=%q display=%q",
+				wantSID, tagVal, tagKey, accountName, regionName, inst.GetInstanceId(), inst.GetInstanceName(),
+				strings.TrimSpace(rowTag), strings.TrimSpace(inst.GetSystemTagsDisplay()))
+		}
+	}
+	glog.Infof("Huawei ECS system_tag filter done: want_system_id=%q tag_key=%q account=%s region=%s before=%d after=%d kept_match=%d kept_empty_tag=%d excluded_mismatch=%d excluded_logged=%d",
+		wantSID, tagKey, accountName, regionName, len(insts), len(out), keptMatch, keptEmptyTag, excludedMismatch, excludedSamples)
+	if excludedMismatch > excludedSamples {
+		glog.Infof("Huawei ECS system_tag filter: %d more excluded(mismatch) rows omitted from log (cap=%d); use -v=2 for per-row keep lines",
+			excludedMismatch-excludedSamples, ecsSystemTagFilterExcludedSampleMax)
 	}
 	return out
 }
@@ -683,7 +736,7 @@ func (ecs *HuaweiEcs) ListDetail(ctx context.Context, req *pbecs.ListDetailReq) 
 	}
 
 	fillHuaweiECSUtilization(ctx, ecses, ecs.region.GetName(), ecs.tenanter, ecs.tenanter.AccountName())
-	ecses = filterHuaweiECSBySystemTag(ctx, ecses, systemTagPerRow)
+	ecses = filterHuaweiECSBySystemTag(ctx, ecses, systemTagPerRow, ecs.tenanter.AccountName(), ecs.region.GetName())
 
 	return &pbecs.ListDetailResp{
 		Ecses:      ecses,
