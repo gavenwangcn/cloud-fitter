@@ -1,3 +1,4 @@
+import { API_REQUEST_TIMEOUT_MS } from '@/constants/requestTimeout';
 import { request } from 'umi';
 
 /** 按 CMDB systemId 拉取本系统各关联云账号的账单汇总（与 CMDB 写入维度一致，含 account_name） */
@@ -18,6 +19,6 @@ export async function queryBillingBySystemId(systemId: string, billingMonth?: st
   }>('/apis/billing/by-system-id', {
     method: 'POST',
     data: { systemId, billingMonth: billingMonth ?? '' },
-    timeout: 120000,
+    timeout: API_REQUEST_TIMEOUT_MS,
   });
 }

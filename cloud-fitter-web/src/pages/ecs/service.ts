@@ -1,3 +1,4 @@
+import { API_REQUEST_TIMEOUT_MS } from '@/constants/requestTimeout';
 import { request } from 'umi';
 
 export async function queryAllEcs() {
@@ -5,7 +6,7 @@ export async function queryAllEcs() {
     method: 'POST',
     data: {},
     /** 华为等多区域聚合 + 每实例查块设备，后端常需 20s+ */
-    timeout: 120000,
+    timeout: API_REQUEST_TIMEOUT_MS,
   });
 }
 
@@ -14,7 +15,7 @@ export async function queryEcsByAccount(provider: number, accountName: string) {
   return request('/apis/ecs/by-account', {
     method: 'POST',
     data: { provider, accountName },
-    timeout: 120000,
+    timeout: API_REQUEST_TIMEOUT_MS,
   });
 }
 
@@ -22,6 +23,6 @@ export async function queryEcsBySystem(systemName: string) {
   return request('/apis/ecs/by-account', {
     method: 'POST',
     data: { systemName },
-    timeout: 120000,
+    timeout: API_REQUEST_TIMEOUT_MS,
   });
 }

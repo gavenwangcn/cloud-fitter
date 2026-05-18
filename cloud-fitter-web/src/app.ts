@@ -1,8 +1,9 @@
 import { RequestConfig } from 'umi';
+import { API_REQUEST_TIMEOUT_MS } from '@/constants/requestTimeout';
 import { errorHandler } from '@/utils/errorHandle';
 
 export const request: RequestConfig = {
-  timeout: 120000,
+  timeout: API_REQUEST_TIMEOUT_MS,
   // errorConfig: {
   //   adaptor: (res) => {
   //     return {
