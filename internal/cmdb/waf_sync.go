@@ -315,8 +315,50 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 	return st
 }
 
-// upsertCMDBCertificate 写入/更新证书 CI。唯一键为 CMDB uuid + system_id：
-// uuid 填华为 SCM 证书资源 ID（如 scs1768986141935），非 RFC4122，不做 parseCloudInstanceUUID 校验。
+// certificateCMDBUUID CMDB 证书 uuid：华为 SCM 资源 ID + 系统 ID（格式 scmID|systemID），每系统一条 CI。
+func certificateCMDBUUID(scmID, systemID string) string {
+	scmID = strings.TrimSpace(scmID)
+	systemID = strings.TrimSpace(systemID)
+	if scmID == "" || systemID == "" {
+		return ""
+	}
+	return scmID + "|" + systemID
+}
+
+type certificateCIRef struct {
+	ciID     string
+	cmdbUUID string
+	row      map[string]any
+}
+
+// resolveCertificateCI 按 uuid=scmID|systemID 与 system_id 定位证书 CI。
+func (s *Syncer) resolveCertificateCI(systemID, scmID string) (certificateCIRef, error) {
+	var ref certificateCIRef
+	cmdbUUID := certificateCMDBUUID(scmID, systemID)
+	if cmdbUUID == "" {
+		return ref, nil
+	}
+	ref.cmdbUUID = cmdbUUID
+	q := map[string]any{
+		"q": fmt.Sprintf("_type:certificate,uuid:%s,system_id:%s", cmdbUUID, strings.TrimSpace(systemID)),
+	}
+	id, err := s.Client.GetCIID(q)
+	if err != nil {
+		return ref, err
+	}
+	if id == "" {
+		return ref, nil
+	}
+	row, err := s.Client.GetCIFirst(q)
+	if err != nil {
+		return ref, err
+	}
+	ref.ciID = id
+	ref.row = row
+	return ref, nil
+}
+
+// upsertCMDBCertificate 写入/更新证书 CI；uuid 固定为 SCM ID|systemID。
 func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundDomains []string) componentSyncStats {
 	st := componentSyncStats{}
 	if c == nil || strings.TrimSpace(c.ID) == "" {
@@ -324,12 +366,15 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 		return st
 	}
 	certCloudID := strings.TrimSpace(c.ID) // SCM ListCertificates.Id
-	q := map[string]any{
-		"q": fmt.Sprintf("_type:certificate,uuid:%s,system_id:%s", certCloudID, systemID),
+	cmdbUUID := certificateCMDBUUID(certCloudID, systemID)
+	if cmdbUUID == "" {
+		glog.Warningf("cmdb sync certificate(skip): empty scm_id or system_id scm=%q system=%q", certCloudID, systemID)
+		st.Errors++
+		return st
 	}
-	exists, err := s.Client.GetCIID(q)
+	ref, err := s.resolveCertificateCI(systemID, certCloudID)
 	if err != nil {
-		glog.Errorf("cmdb sync certificate(get): system_id=%s uuid=%s err=%v", systemID, certCloudID, err)
+		glog.Errorf("cmdb sync certificate(resolve): system_id=%s uuid=%s err=%v", systemID, cmdbUUID, err)
 		st.Errors++
 		return st
 	}
@@ -342,7 +387,7 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 	validTo := certValidToForCMDB(c)
 	if validTo == "" {
 		glog.Warningf("cmdb sync certificate(empty valid_to): system_id=%s uuid=%s name=%q expire_time=%q not_after=%q",
-			systemID, certCloudID, c.Name, c.ExpireTime, c.NotAfter)
+			systemID, cmdbUUID, c.Name, c.ExpireTime, c.NotAfter)
 	}
 	fields := map[string]any{
 		"certificate_name":    strings.TrimSpace(c.Name),
@@ -352,42 +397,38 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 		"system_id":           systemID,
 		"domain_name":         domainField,
 	}
-	if exists != "" {
-		row, err := s.Client.GetCIFirst(q)
-		if err != nil {
-			glog.Errorf("cmdb sync certificate(get row): system_id=%s uuid=%s err=%v", systemID, certCloudID, err)
-			st.Errors++
-			return st
-		}
-		if row != nil && !certificateCIChanged(row, fields) {
+	if ref.ciID != "" {
+		if ref.row != nil && !certificateCIChanged(ref.row, fields) {
 			st.Skipped++
 			return st
 		}
-		_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{
+		_, err = s.Client.UpdateCI(ref.ciID, mergeAttrMaps(map[string]any{
 			"ci_type":   "certificate",
-			"uuid":      certCloudID,
+			"uuid":      cmdbUUID,
 			"system_id": systemID,
 		}, fields))
 		if err != nil {
-			glog.Errorf("cmdb sync certificate(update): system_id=%s uuid=%s id=%s err=%v", systemID, certCloudID, exists, err)
+			glog.Errorf("cmdb sync certificate(update): system_id=%s uuid=%s id=%s err=%v",
+				systemID, cmdbUUID, ref.ciID, err)
 			st.Errors++
 			return st
 		}
-		glog.Infof("cmdb sync certificate(update ok): system_id=%s uuid=%s id=%s", systemID, certCloudID, exists)
+		glog.Infof("cmdb sync certificate(update ok): system_id=%s uuid=%s id=%s",
+			systemID, cmdbUUID, ref.ciID)
 		st.Updated++
 		return st
 	}
 	payload := mergeAttrMaps(map[string]any{
-		"uuid":      certCloudID,
+		"uuid":      cmdbUUID,
 		"ci_type":   "certificate",
 		"system_id": systemID,
 	}, fields)
 	if _, err := s.Client.AddCI(payload); err != nil {
-		glog.Errorf("cmdb sync certificate(add): system_id=%s uuid=%s err=%v", systemID, certCloudID, err)
+		glog.Errorf("cmdb sync certificate(add): system_id=%s uuid=%s err=%v", systemID, cmdbUUID, err)
 		st.Errors++
 		return st
 	}
-	glog.Infof("cmdb sync certificate(add ok): system_id=%s uuid=%s name=%q", systemID, certCloudID, c.Name)
+	glog.Infof("cmdb sync certificate(add ok): system_id=%s uuid=%s name=%q", systemID, cmdbUUID, c.Name)
 	st.Added++
 	return st
 }

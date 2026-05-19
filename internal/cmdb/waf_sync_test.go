@@ -122,6 +122,17 @@ func TestFilterCertRowsByAccount(t *testing.T) {
 	}
 }
 
+func TestCertificateCMDBUUID(t *testing.T) {
+	got := certificateCMDBUUID("scs1768986141935", "D-000011")
+	want := "scs1768986141935|D-000011"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if certificateCMDBUUID("scs", "") != "" {
+		t.Fatal("missing system_id should yield empty uuid")
+	}
+}
+
 func TestBuildCrossAccountWAFToEIP(t *testing.T) {
 	wafRows := []*waf.Instance{{
 		AccountName:     "DFT_LC_infra",
