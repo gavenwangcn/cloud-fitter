@@ -44,6 +44,10 @@ export default [
         component: './certificates',
       },
       {
+        path: '/waf',
+        component: './waf',
+      },
+      {
         path: '/config',
         component: './config',
       },

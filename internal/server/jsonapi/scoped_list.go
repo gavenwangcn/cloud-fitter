@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbcce"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbecs"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbkafka"
@@ -18,6 +20,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/envtags"
 	ccesvc "github.com/cloud-fitter/cloud-fitter/internal/server/cce"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/cert"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/waf"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/ecs"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/elb"
@@ -211,6 +214,28 @@ func ElbByAccount(w http.ResponseWriter, r *http.Request) {
 	glog.Infof("elb api response(by-account) provider=%d account=%q rows=%d err=%v elapsed=%v",
 		body.Provider, body.AccountName, len(resp), err, time.Since(begin))
 	writeJSON(w, map[string]any{"elbs": resp}, err)
+}
+
+// WafByAccount POST /apis/waf/by-account（华为云 WAF 防护域名，仅支持按云账号查询）
+func WafByAccount(w http.ResponseWriter, r *http.Request) {
+	begin := time.Now()
+	body, err := decodeListByAccount(r)
+	if err != nil {
+		glog.Errorf("waf api decode body failed: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	glog.Infof("waf api request provider=%d account=%q system=%q", body.Provider, body.AccountName, body.SystemName)
+	if body.SystemName != "" {
+		writeJSON(w, map[string]any{"wafHosts": []*waf.Instance{}},
+			errors.New("WAF 资源仅支持按云账号查询，请勿使用系统名称筛选"))
+		return
+	}
+	ctx := scope.WithAccountName(r.Context(), body.AccountName)
+	resp, err := waf.List(ctx, pbtenant.CloudProvider(body.Provider))
+	glog.Infof("waf api response(by-account) provider=%d account=%q rows=%d err=%v elapsed=%v",
+		body.Provider, body.AccountName, len(resp), err, time.Since(begin))
+	writeJSON(w, map[string]any{"wafHosts": resp}, err)
 }
 
 // CertByAccount POST /apis/certificates/by-account（华为云 CCM / SCM 证书列表）

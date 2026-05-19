@@ -200,6 +200,27 @@ export const ELB_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'status', title: '状态' },
 ];
 
+/** 华为云 WAF 防护域名（POST /apis/waf/by-account，仅按云账号查询） */
+export const WAF_FIELDS: ResourceFieldDef[] = [
+  { dataIndex: 'provider', title: '云类型', filter: true },
+  { dataIndex: 'accountName', title: '云账号' },
+  { dataIndex: 'regionName', title: '地域' },
+  { dataIndex: 'hostname', title: '域名' },
+  { dataIndex: 'accessMode', title: '接入模式' },
+  { dataIndex: 'resourceId', title: '资源 ID' },
+  { dataIndex: 'accessStatus', title: '接入状态' },
+  { dataIndex: 'protectStatus', title: '运行状态' },
+  { dataIndex: 'certificateName', title: '证书套件' },
+  { dataIndex: 'policyName', title: '防护策略' },
+  { dataIndex: 'policyId', title: '策略 ID' },
+  { dataIndex: 'originServers', title: '源站 IP/端口' },
+  { dataIndex: 'createdAt', title: '创建时间' },
+  { dataIndex: 'enterpriseProjectId', title: '企业项目' },
+  { dataIndex: 'accessCode', title: 'CNAME 前缀' },
+  { dataIndex: 'webTag', title: '网站名称' },
+  { dataIndex: 'description', title: '描述' },
+];
+
 /** 华为云 SSL 证书（CCM / SCM，POST /apis/certificates/by-account） */
 export const CERTIFICATE_FIELDS: ResourceFieldDef[] = [
   { dataIndex: 'provider', title: '云类型', filter: true },

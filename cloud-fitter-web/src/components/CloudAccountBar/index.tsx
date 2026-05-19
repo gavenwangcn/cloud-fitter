@@ -10,6 +10,8 @@ import { listSystems, SystemRow } from '@/services/systemManage';
 export interface CloudAccountBarProps {
   onQuery: (provider: number, accountName: string) => void;
   onQueryBySystem?: (systemName: string) => void;
+  /** 仅展示云账号选择（隐藏系统名称筛选），用于 WAF 等仅按账号拉取的资源 */
+  accountOnly?: boolean;
   /** 清空下拉选择时回调 */
   onClear?: () => void;
 }
@@ -17,6 +19,7 @@ export interface CloudAccountBarProps {
 const CloudAccountBar: React.FC<CloudAccountBarProps> = ({
   onQuery,
   onQueryBySystem,
+  accountOnly = false,
   onClear,
 }) => {
   const [configs, setConfigs] = useState<CloudConfigRow[]>([]);
@@ -33,23 +36,27 @@ const CloudAccountBar: React.FC<CloudAccountBarProps> = ({
 
   return (
     <Space style={{ marginBottom: 16 }} align="center">
-      <span>系统名称：</span>
-      <Select<string>
-        style={{ minWidth: 240 }}
-        placeholder="按系统筛选资源"
-        allowClear
-        options={systems.map((s) => ({
-          label: s.name,
-          value: s.name,
-        }))}
-        onChange={(name) => {
-          if (!name) {
-            onClear?.();
-            return;
-          }
-          onQueryBySystem?.(name);
-        }}
-      />
+      {!accountOnly && (
+        <>
+          <span>系统名称：</span>
+          <Select<string>
+            style={{ minWidth: 240 }}
+            placeholder="按系统筛选资源"
+            allowClear
+            options={systems.map((s) => ({
+              label: s.name,
+              value: s.name,
+            }))}
+            onChange={(name) => {
+              if (!name) {
+                onClear?.();
+                return;
+              }
+              onQueryBySystem?.(name);
+            }}
+          />
+        </>
+      )}
       <span>云账号（配置名称）：</span>
       <Select<number>
         style={{ minWidth: 300 }}

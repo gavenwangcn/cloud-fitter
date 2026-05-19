@@ -59,4 +59,9 @@ export const menuList = [
     key: 'certificates',
     icon: 'icon-quanju1',
   },
+  {
+    title: 'WAF',
+    key: 'waf',
+    icon: 'icon-quanju1',
+  },
 ];

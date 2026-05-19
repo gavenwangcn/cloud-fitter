@@ -131,6 +131,8 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer, seqStore *systemidse
 			jsonapi.ElbByAccount(w, r)
 		case r.URL.Path == "/apis/certificates/by-account" && r.Method == http.MethodPost:
 			jsonapi.CertByAccount(w, r)
+		case r.URL.Path == "/apis/waf/by-account" && r.Method == http.MethodPost:
+			jsonapi.WafByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-account" && r.Method == http.MethodPost:
 			jsonapi.BillingSummaryByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-system-id" && r.Method == http.MethodPost:
