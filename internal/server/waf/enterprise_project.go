@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/global"
 	hweps "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eps/v1"
 	epsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eps/v1/model"
 	epsregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eps/v1/region"
@@ -99,7 +99,7 @@ func resolveEnterpriseProjectByName(tenant *tenanter.AccessKeyTenant, name, conf
 }
 
 func newEpsClient(tenant *tenanter.AccessKeyTenant) (*hweps.EpsClient, error) {
-	auth := basic.NewCredentialsBuilder().WithAk(tenant.GetId()).WithSk(tenant.GetSecret()).Build()
+	auth := global.NewCredentialsBuilder().WithAk(tenant.GetId()).WithSk(tenant.GetSecret()).Build()
 	return hweps.NewEpsClient(hweps.EpsClientBuilder().
 		WithRegion(epsregion.CN_NORTH_4).
 		WithCredential(auth).
