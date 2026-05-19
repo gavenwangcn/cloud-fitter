@@ -35,6 +35,9 @@ type Instance struct {
 	CertificateType       string `json:"certificateType"`
 	Brand                 string `json:"brand"`
 	ExpireTime            string `json:"expireTime"`
+	// NotBefore / NotAfter 来自 ShowCertificate（CMDB valid_from / valid_to）；列表接口仅有 expire_time。
+	NotBefore             string `json:"notBefore,omitempty"`
+	NotAfter              string `json:"notAfter,omitempty"`
 	DomainType            string `json:"domainType"`
 	ValidityPeriodMonths  int32  `json:"validityPeriodMonths"`
 	Status                string `json:"status"`

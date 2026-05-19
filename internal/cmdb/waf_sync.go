@@ -109,6 +109,7 @@ func (s *Syncer) syncWAFDerivedCMDB(ctx context.Context, systemID string, eips [
 	}
 
 	certIndexByAccount := make(map[string]map[string]*cert.Instance)
+	enrichedCert := make(map[string]struct{}) // account|certID
 	for ck, domains := range certToDomains {
 		parts := strings.SplitN(ck, "|", 2)
 		if len(parts) != 2 {
@@ -135,6 +136,13 @@ func (s *Syncer) syncWAFDerivedCMDB(ctx context.Context, systemID string, eips [
 			glog.Warningf("cmdb sync waf(cert miss): system_id=%s account=%s cert_name=%q", systemID, accName, certName)
 			certStats.Errors++
 			continue
+		}
+		ek := accName + "|" + strings.TrimSpace(c.ID)
+		if _, done := enrichedCert[ek]; !done {
+			if err := cert.EnrichValidityFromShow(ctx, c); err != nil {
+				glog.Warningf("cmdb sync waf(cert show): system_id=%s account=%s cert_id=%s err=%v", systemID, accName, c.ID, err)
+			}
+			enrichedCert[ek] = struct{}{}
 		}
 		st := s.upsertCMDBCertificate(systemID, c, domains)
 		certStats.Added += st.Added
@@ -366,19 +374,21 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 	return st
 }
 
+// upsertCMDBCertificate 写入/更新证书 CI。唯一键为 CMDB uuid + system_id：
+// uuid 填华为 SCM 证书资源 ID（如 scs1768986141935），非 RFC4122，不做 parseCloudInstanceUUID 校验。
 func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundDomains []string) componentSyncStats {
 	st := componentSyncStats{}
 	if c == nil || strings.TrimSpace(c.ID) == "" {
 		st.Errors++
 		return st
 	}
-	certUUID := strings.TrimSpace(c.ID)
+	certCloudID := strings.TrimSpace(c.ID) // SCM ListCertificates.Id
 	q := map[string]any{
-		"q": fmt.Sprintf("_type:certificate,uuid:%s,system_id:%s", certUUID, systemID),
+		"q": fmt.Sprintf("_type:certificate,uuid:%s,system_id:%s", certCloudID, systemID),
 	}
 	exists, err := s.Client.GetCIID(q)
 	if err != nil {
-		glog.Errorf("cmdb sync certificate(get): system_id=%s uuid=%s err=%v", systemID, certUUID, err)
+		glog.Errorf("cmdb sync certificate(get): system_id=%s uuid=%s err=%v", systemID, certCloudID, err)
 		st.Errors++
 		return st
 	}
@@ -386,10 +396,15 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 	if domainField == "" {
 		domainField = strings.TrimSpace(c.Domain)
 	}
+	validTo := certValidToForCMDB(c)
+	if validTo == "" {
+		glog.Warningf("cmdb sync certificate(empty valid_to): system_id=%s uuid=%s name=%q expire_time=%q not_after=%q",
+			systemID, certCloudID, c.Name, c.ExpireTime, c.NotAfter)
+	}
 	fields := map[string]any{
 		"certificate_name":    strings.TrimSpace(c.Name),
-		"valid_from":          certValidFromCMDB(c),
-		"valid_to":            cmdbDateFromHuaweiTime(c.ExpireTime),
+		"valid_from":          certValidFromForCMDB(c),
+		"valid_to":            validTo,
 		"signature_algorithm": strings.TrimSpace(c.SignatureAlgorithm),
 		"system_id":           systemID,
 		"domain_name":         domainField,
@@ -397,7 +412,7 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 	if exists != "" {
 		row, err := s.Client.GetCIFirst(q)
 		if err != nil {
-			glog.Errorf("cmdb sync certificate(get row): system_id=%s uuid=%s err=%v", systemID, certUUID, err)
+			glog.Errorf("cmdb sync certificate(get row): system_id=%s uuid=%s err=%v", systemID, certCloudID, err)
 			st.Errors++
 			return st
 		}
@@ -405,35 +420,45 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 			st.Skipped++
 			return st
 		}
-		_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{"ci_type": "certificate"}, fields))
+		_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{
+			"ci_type":   "certificate",
+			"uuid":      certCloudID,
+			"system_id": systemID,
+		}, fields))
 		if err != nil {
-			glog.Errorf("cmdb sync certificate(update): system_id=%s uuid=%s id=%s err=%v", systemID, certUUID, exists, err)
+			glog.Errorf("cmdb sync certificate(update): system_id=%s uuid=%s id=%s err=%v", systemID, certCloudID, exists, err)
 			st.Errors++
 			return st
 		}
-		glog.Infof("cmdb sync certificate(update ok): system_id=%s uuid=%s id=%s", systemID, certUUID, exists)
+		glog.Infof("cmdb sync certificate(update ok): system_id=%s uuid=%s id=%s", systemID, certCloudID, exists)
 		st.Updated++
 		return st
 	}
 	payload := mergeAttrMaps(map[string]any{
-		"uuid":      certUUID,
+		"uuid":      certCloudID,
 		"ci_type":   "certificate",
 		"system_id": systemID,
 	}, fields)
 	if _, err := s.Client.AddCI(payload); err != nil {
-		glog.Errorf("cmdb sync certificate(add): system_id=%s uuid=%s err=%v", systemID, certUUID, err)
+		glog.Errorf("cmdb sync certificate(add): system_id=%s uuid=%s err=%v", systemID, certCloudID, err)
 		st.Errors++
 		return st
 	}
-	glog.Infof("cmdb sync certificate(add ok): system_id=%s uuid=%s name=%q", systemID, certUUID, c.Name)
+	glog.Infof("cmdb sync certificate(add ok): system_id=%s uuid=%s name=%q", systemID, certCloudID, c.Name)
 	st.Added++
 	return st
 }
 
 func certificateCIChanged(row map[string]any, want map[string]any) bool {
 	for k, v := range want {
-		if cmdbDomainNameStr(row) != "" && k == "domain_name" {
+		if k == "domain_name" {
 			if cmdbDomainNameStr(row) != strings.TrimSpace(anyToCompareStr(v)) {
+				return true
+			}
+			continue
+		}
+		if k == "valid_from" || k == "valid_to" {
+			if cmdbDateFromHuaweiTime(anyToCompareStr(row[k])) != cmdbDateFromHuaweiTime(anyToCompareStr(v)) {
 				return true
 			}
 			continue
@@ -445,34 +470,67 @@ func certificateCIChanged(row map[string]any, want map[string]any) bool {
 	return false
 }
 
+// certValidToForCMDB 失效日期：优先 ShowCertificate.not_after，其次列表 expire_time。
+func certValidToForCMDB(c *cert.Instance) string {
+	if s := cmdbDateFromHuaweiTime(c.NotAfter); s != "" {
+		return s
+	}
+	return cmdbDateFromHuaweiTime(c.ExpireTime)
+}
+
+// certValidFromForCMDB 生效日期：优先 not_before，否则由失效日与有效期月数推算。
+func certValidFromForCMDB(c *cert.Instance) string {
+	if s := cmdbDateFromHuaweiTime(c.NotBefore); s != "" {
+		return s
+	}
+	return certValidFromCMDB(c)
+}
+
 func cmdbDateFromHuaweiTime(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
+	}
+	if len(s) >= 10 && s[4] == '-' && s[7] == '-' {
+		// 已是 yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss
+		if len(s) == 10 {
+			return s
+		}
+		if t, err := time.ParseInLocation("2006-01-02 15:04:05", s[:19], time.Local); err == nil {
+			return t.Format("2006-01-02")
+		}
+		if t, err := time.ParseInLocation("2006-01-02", s[:10], time.Local); err == nil {
+			return t.Format("2006-01-02")
+		}
 	}
 	if ms, err := strconv.ParseInt(s, 10, 64); err == nil {
 		sec := ms
 		if sec > 1_000_000_000_000 {
 			sec /= 1000
 		}
-		return time.Unix(sec, 0).Format("2006-01-02")
+		return time.Unix(sec, 0).In(time.Local).Format("2006-01-02")
 	}
 	layouts := []string{
 		time.RFC3339,
+		"2006-01-02T15:04:05.000Z",
 		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02T15:04:05Z",
 		"2006-01-02 15:04:05",
 		"2006-01-02",
 	}
 	for _, layout := range layouts {
-		if t, err := time.Parse(layout, s); err == nil {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
 			return t.Format("2006-01-02")
 		}
+	}
+	if t, err := time.ParseInLocation(layouts[0], s, time.UTC); err == nil {
+		return t.In(time.Local).Format("2006-01-02")
 	}
 	return s
 }
 
 func certValidFromCMDB(c *cert.Instance) string {
-	toStr := cmdbDateFromHuaweiTime(c.ExpireTime)
+	toStr := certValidToForCMDB(c)
 	if toStr == "" || c.ValidityPeriodMonths <= 0 {
 		return ""
 	}

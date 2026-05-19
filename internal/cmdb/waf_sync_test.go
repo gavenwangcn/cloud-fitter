@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/cert"
 )
 
 func TestParseWAFOriginIP(t *testing.T) {
@@ -37,6 +38,36 @@ func TestMergeDomainNames(t *testing.T) {
 	want := joinDomainNamesForCMDB([]string{"a.com", "b.com", "c.com"})
 	if joinDomainNamesForCMDB(merged) != want {
 		t.Fatalf("merge got %q want %q", joinDomainNamesForCMDB(merged), want)
+	}
+}
+
+func TestCmdbDateFromHuaweiTime(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"2026-05-19", "2026-05-19"},
+		{"2026-05-19 23:59:59", "2026-05-19"},
+		{"2026-05-19T23:59:59.000Z", "2026-05-19"},
+	}
+	for _, tc := range tests {
+		got := cmdbDateFromHuaweiTime(tc.in)
+		if got != tc.want {
+			t.Errorf("cmdbDateFromHuaweiTime(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestCertValidToForCMDB(t *testing.T) {
+	c := &cert.Instance{
+		ExpireTime: "2026-01-01",
+		NotAfter:   "2026-12-31",
+	}
+	if got := certValidToForCMDB(c); got != "2026-12-31" {
+		t.Fatalf("prefer not_after, got %q", got)
+	}
+	c.NotAfter = ""
+	if got := certValidToForCMDB(c); got != "2026-01-01" {
+		t.Fatalf("fallback expire_time, got %q", got)
 	}
 }
 
