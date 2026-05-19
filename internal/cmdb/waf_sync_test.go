@@ -3,8 +3,10 @@ package cmdb
 import (
 	"testing"
 
-	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/cert"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
+	"github.com/cloud-fitter/cloud-fitter/internal/server/waf"
+	"github.com/cloud-fitter/cloud-fitter/internal/wafbind"
 )
 
 func TestParseWAFOriginIP(t *testing.T) {
@@ -17,14 +19,14 @@ func TestParseWAFOriginIP(t *testing.T) {
 		{"", ""},
 	}
 	for _, tc := range tests {
-		if got := parseWAFOriginIP(tc.in); got != tc.want {
-			t.Errorf("parseWAFOriginIP(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := wafbind.ParseOriginIP(tc.in); got != tc.want {
+			t.Errorf("ParseOriginIP(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
 
 func TestParseWAFOriginIPs(t *testing.T) {
-	got := parseWAFOriginIPs("1.2.3.4:80, 5.6.7.8:443, 1.2.3.4:8080")
+	got := wafbind.ParseOriginIPs("1.2.3.4:80, 5.6.7.8:443, 1.2.3.4:8080")
 	if len(got) != 2 {
 		t.Fatalf("got %v, want 2 unique IPs", got)
 	}
@@ -34,10 +36,30 @@ func TestParseWAFOriginIPs(t *testing.T) {
 }
 
 func TestMergeDomainNames(t *testing.T) {
-	merged := mergeDomainNames("a.com、b.com", []string{"b.com", "c.com"})
-	want := joinDomainNamesForCMDB([]string{"a.com", "b.com", "c.com"})
-	if joinDomainNamesForCMDB(merged) != want {
-		t.Fatalf("merge got %q want %q", joinDomainNamesForCMDB(merged), want)
+	merged := mergeDomainNames([]string{"a.com", "b.com"}, []string{"b.com", "c.com"})
+	want := []string{"a.com", "b.com", "c.com"}
+	if !domainNamesEqual(merged, want) {
+		t.Fatalf("merge got %v want %v", merged, want)
+	}
+}
+
+func TestParseCMDBDomainNamesMultiValue(t *testing.T) {
+	row := map[string]any{"domain_name": []any{"a.com", "b.com"}}
+	got := parseCMDBDomainNames(row)
+	if !domainNamesEqual(got, []string{"a.com", "b.com"}) {
+		t.Fatalf("got %v", got)
+	}
+	row2 := map[string]any{"domain_name": "a.com、b.com"}
+	got2 := parseCMDBDomainNames(row2)
+	if !domainNamesEqual(got2, []string{"a.com", "b.com"}) {
+		t.Fatalf("got2 %v", got2)
+	}
+}
+
+func TestDomainNamesForCMDBIsSlice(t *testing.T) {
+	got := domainNamesForCMDB([]string{"x.com", "y.com"})
+	if len(got) != 2 || got[0] != "x.com" {
+		t.Fatalf("got %v", got)
 	}
 }
 
@@ -72,9 +94,57 @@ func TestCertValidToForCMDB(t *testing.T) {
 }
 
 func TestIntersectAccountNames(t *testing.T) {
-	linked := []configstore.Row{{Name: "Infra"}, {Name: "Other"}}
-	got := intersectAccountNames([]string{"Infra", "X"}, linked)
+	got := wafbind.IntersectAccountNames([]string{"Infra", "X"}, []string{"Infra", "Other"})
 	if len(got) != 1 || got[0] != "Infra" {
 		t.Fatalf("got %v", got)
+	}
+}
+
+func TestFilterWAFRowsByAccount(t *testing.T) {
+	rows := []*waf.Instance{
+		{AccountName: "DFT_LC_infra", Hostname: "a.com"},
+		{AccountName: "DFT_LC_BPM", Hostname: "b.com"},
+	}
+	got := wafbind.FilterWAFRows(rows, []string{"DFT_LC_infra"})
+	if len(got) != 1 || got[0].Hostname != "a.com" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestFilterCertRowsByAccount(t *testing.T) {
+	rows := []*cert.Instance{
+		{AccountName: "infra", Name: "c1"},
+		{AccountName: "bpm", Name: "c2"},
+	}
+	got := wafbind.FilterCertRows(rows, []string{"infra"})
+	if len(got) != 1 || got[0].Name != "c1" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestBuildCrossAccountWAFToEIP(t *testing.T) {
+	wafRows := []*waf.Instance{{
+		AccountName:     "DFT_LC_infra",
+		Hostname:        "app.example.com",
+		OriginServers:   "1.2.3.4:443",
+		CertificateName: "my-cert",
+	}}
+	eips := []*eip.Instance{{
+		AccountName:  "DFT_LC_BPM",
+		Eip:          "1.2.3.4",
+		EipId:        "eip-uuid-1",
+		RegionName:   "cn-east-4",
+		NodeTagValue: "node-a",
+		Provider:     "huawei",
+	}}
+	bind := wafbind.Build(eips, wafRows, []string{"DFT_LC_infra"})
+	if len(bind.EIPDomains) != 1 {
+		t.Fatalf("EIPDomains=%d want 1", len(bind.EIPDomains))
+	}
+	if bind.EIPDomains[0].Domains[0] != "app.example.com" {
+		t.Fatalf("domains=%v", bind.EIPDomains[0].Domains)
+	}
+	if len(bind.CertJobs) != 1 || bind.CertJobs[0].AccountName != "DFT_LC_infra" {
+		t.Fatalf("cert jobs=%v", bind.CertJobs)
 	}
 }

@@ -21,5 +21,5 @@ func main() {
 		log.Fatalf("open mysql: %v", err)
 	}
 	defer s.Close()
-	fmt.Println("MySQL 表结构已就绪（cloud_configs、systems、cloud_snap_* 含 cloud_snap_billing）。")
+	fmt.Println("MySQL 表结构已就绪（cloud_configs、systems、cloud_snap_* 含 billing/waf/certificate）。")
 }

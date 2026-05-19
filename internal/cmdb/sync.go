@@ -28,6 +28,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/elb"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/jsonapi"
+	"github.com/cloud-fitter/cloud-fitter/internal/wafbind"
 )
 
 // Syncer 将 cloud-fitter 拉取逻辑（与 jsonapi 按 systemName 一致）与 CMDB 开放 API 写入步骤对齐。
@@ -258,8 +259,25 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		stats.EIP.Deleted += r.Deleted
 		stats.EIP.Errors += r.Errors
 	}
-	if wafAccs := wafCMDBAccountNamesFromEnv(); len(wafAccs) > 0 {
-		stats.WAFDomain, stats.Certificate = s.syncWAFDerivedCMDB(ctx, systemID, eipList, acco, wafAccs)
+	if wafAccs := wafbind.AccountNamesFromEnv(); len(wafAccs) > 0 {
+		if useSnap && dbSnap != nil {
+			hasSnap, snapErr := resourcecache.HasWafCertSnapshot(ctx, dbSnap, systemID)
+			if snapErr != nil {
+				glog.Warningf("cmdb sync waf(snapshot check): system_id=%s err=%v, fallback to api", systemID, snapErr)
+			}
+			if hasSnap {
+				glog.Infof("cmdb sync waf(source): system_id=%s mysql snapshot (cloud_snap_waf/certificate)", systemID)
+				stats.WAFDomain, stats.Certificate = s.syncWAFDerivedCMDBFromSnapshot(ctx, systemID, dbSnap, eipList, acco, wafAccs)
+			} else {
+				glog.Infof("cmdb sync waf(source): system_id=%s no waf/cert snapshot rows, live huawei api", systemID)
+				stats.WAFDomain, stats.Certificate = s.syncWAFDerivedCMDB(ctx, systemID, eipList, acco, wafAccs)
+			}
+		} else {
+			glog.Infof("cmdb sync waf(source): system_id=%s live huawei api (snapshot mode off or no db)", systemID)
+			stats.WAFDomain, stats.Certificate = s.syncWAFDerivedCMDB(ctx, systemID, eipList, acco, wafAccs)
+		}
+	} else {
+		glog.Infof("cmdb sync waf(skip): system_id=%s env CLOUD_FITTER_HUAWEI_WAF_CMDB_ACCOUNT_NAMES not set", systemID)
 	}
 	stats.ELB = s.addCMDBELBs(systemID, elbList)
 	if len(elbList) > 0 {

@@ -112,12 +112,61 @@ CREATE TABLE IF NOT EXISTS cloud_snap_ecs_cce_map (
 	PRIMARY KEY (system_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
 
+const migrateMySQLSnapWAF = `
+CREATE TABLE IF NOT EXISTS cloud_snap_waf (
+	system_id VARCHAR(256) NOT NULL,
+	system_name VARCHAR(512) NOT NULL DEFAULT '',
+	resource_key VARCHAR(128) NOT NULL,
+	sys_node_key VARCHAR(512) NOT NULL DEFAULT '',
+	payload_json MEDIUMTEXT NOT NULL,
+	updated_at DATETIME(3) NOT NULL,
+	PRIMARY KEY (system_id, resource_key),
+	KEY idx_cloud_snap_waf_name (system_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+
+const migrateMySQLSnapCertificate = `
+CREATE TABLE IF NOT EXISTS cloud_snap_certificate (
+	system_id VARCHAR(256) NOT NULL,
+	system_name VARCHAR(512) NOT NULL DEFAULT '',
+	resource_key VARCHAR(128) NOT NULL,
+	sys_node_key VARCHAR(512) NOT NULL DEFAULT '',
+	payload_json MEDIUMTEXT NOT NULL,
+	updated_at DATETIME(3) NOT NULL,
+	PRIMARY KEY (system_id, resource_key),
+	KEY idx_cloud_snap_certificate_name (system_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+
+const migrateMySQLSnapWAFEIPDomain = `
+CREATE TABLE IF NOT EXISTS cloud_snap_waf_eip_domain (
+	system_id VARCHAR(256) NOT NULL,
+	system_name VARCHAR(512) NOT NULL DEFAULT '',
+	eip_resource_key VARCHAR(128) NOT NULL,
+	sys_node_key VARCHAR(512) NOT NULL DEFAULT '',
+	domain_names_json MEDIUMTEXT NOT NULL,
+	updated_at DATETIME(3) NOT NULL,
+	PRIMARY KEY (system_id, eip_resource_key),
+	KEY idx_cloud_snap_waf_eip_domain_name (system_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+
+const migrateMySQLSnapWAFNodeDomain = `
+CREATE TABLE IF NOT EXISTS cloud_snap_waf_node_domain (
+	system_id VARCHAR(256) NOT NULL,
+	system_name VARCHAR(512) NOT NULL DEFAULT '',
+	sys_node_key VARCHAR(512) NOT NULL,
+	domain_names_json MEDIUMTEXT NOT NULL,
+	updated_at DATETIME(3) NOT NULL,
+	PRIMARY KEY (system_id, sys_node_key),
+	KEY idx_cloud_snap_waf_node_domain_name (system_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+
 // MigrateMySQL 在已有业务库上执行建表（幂等）。
 func MigrateMySQL(db *sql.DB) error {
 	stmts := []string{
 		migrateMySQLSnapECS, migrateMySQLSnapRDS, migrateMySQLSnapDCS,
 		migrateMySQLSnapDMS, migrateMySQLSnapCCE, migrateMySQLSnapEIP, migrateMySQLSnapELB,
 		migrateMySQLSnapBilling, migrateMySQLSnapEcsCceMap,
+		migrateMySQLSnapWAF, migrateMySQLSnapCertificate,
+		migrateMySQLSnapWAFEIPDomain, migrateMySQLSnapWAFNodeDomain,
 	}
 	for _, q := range stmts {
 		if _, err := db.Exec(q); err != nil {

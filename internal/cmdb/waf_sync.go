@@ -3,7 +3,6 @@ package cmdb
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,48 +15,21 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/server/eip"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/scope"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/waf"
+	"github.com/cloud-fitter/cloud-fitter/internal/wafbind"
 )
 
-// wafCMDBAccountNamesFromEnv 返回参与 WAF→CMDB 域名/证书同步的云账号配置名（逗号分隔）；空则不同步。
-func wafCMDBAccountNamesFromEnv() []string {
-	raw := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_CMDB_ACCOUNT_NAMES"))
-	if raw == "" {
-		return nil
-	}
-	var out []string
-	seen := make(map[string]struct{})
-	for _, p := range strings.Split(raw, ",") {
-		n := strings.TrimSpace(p)
-		if n == "" {
-			continue
-		}
-		if _, ok := seen[n]; ok {
-			continue
-		}
-		seen[n] = struct{}{}
-		out = append(out, n)
-	}
-	return out
-}
-
-type wafEIPBinding struct {
-	domains []string
-}
-
-// syncWAFDerivedCMDB 在指定 WAF 账号上拉取防护域名，按源站 IP 匹配本系统 EIP，回写 domain_name 并同步证书 CI。
+// syncWAFDerivedCMDB 从 CLOUD_FITTER_HUAWEI_WAF_CMDB_ACCOUNT_NAMES 指定账号拉 WAF/证书（不用系统关联账号），
+// 再按 WAF 源站公网 IP 与本系统 EIP 的 e.Eip（CMDB eip_ip）匹配，回写 domain_name 并同步证书 CI。
 func (s *Syncer) syncWAFDerivedCMDB(ctx context.Context, systemID string, eips []*eip.Instance, linkedAccounts []configstore.Row, wafAccountNames []string) (domainSt, certStats componentSyncStats) {
-	allowed := intersectAccountNames(wafAccountNames, linkedAccounts)
-	if len(allowed) == 0 {
-		glog.Infof("cmdb sync waf(skip): system_id=%s no WAF account overlap configured=%v linked=%v",
-			systemID, wafAccountNames, accountNamesFromRows(linkedAccounts))
+	linked := accountNamesFromRows(linkedAccounts)
+	wafPull := wafbind.WAFAccountsForPull(wafAccountNames)
+	wafbind.LogCMDBWAFContext(systemID, wafAccountNames, linked, wafPull, len(eips), false)
+	if len(wafPull) == 0 {
 		return domainSt, certStats
 	}
 
-	byEIPUUID := make(map[string]*wafEIPBinding)
-	bySysNode := make(map[string][]string)
-	certToDomains := make(map[string][]string) // account|certName -> domains
-
-	for _, accName := range allowed {
+	var allWaf []*waf.Instance
+	for _, accName := range wafPull {
 		accCtx := scope.WithAccountName(ctx, accName)
 		wafRows, err := waf.List(accCtx, pbtenant.CloudProvider_huawei)
 		if err != nil {
@@ -65,131 +37,115 @@ func (s *Syncer) syncWAFDerivedCMDB(ctx context.Context, systemID string, eips [
 			domainSt.Errors++
 			continue
 		}
-
-		for _, row := range wafRows {
-			if row == nil || strings.TrimSpace(row.Hostname) == "" {
-				continue
-			}
-			domain := strings.TrimSpace(row.Hostname)
-			originIPs := parseWAFOriginIPs(row.OriginServers)
-			if len(originIPs) == 0 {
-				continue
-			}
-			for _, e := range eips {
-				if e == nil || e.AccountName != accName {
-					continue
-				}
-				pub := strings.TrimSpace(e.Eip)
-				if pub == "" || !sliceContains(originIPs, pub) {
-					continue
-				}
-				eipUUID, ok := parseCloudInstanceUUID(e.EipId)
-				if !ok {
-					continue
-				}
-				sysNode := effectiveSysNodeName(eipTenantProvider(e), strings.TrimSpace(e.RegionName), e.NodeTagValue)
-				if sysNode == "" {
-					continue
-				}
-				b, ok := byEIPUUID[eipUUID]
-				if !ok {
-					b = &wafEIPBinding{}
-					byEIPUUID[eipUUID] = b
-				}
-				b.domains = appendUniqueStrings(b.domains, domain)
-				bySysNode[sysNode] = appendUniqueStrings(bySysNode[sysNode], domain)
-
-				certName := strings.TrimSpace(row.CertificateName)
-				if certName != "" {
-					ck := accName + "|" + certName
-					certToDomains[ck] = appendUniqueStrings(certToDomains[ck], domain)
-				}
+		glog.Infof("cmdb sync waf(list ok): system_id=%s account=%s rows=%d", systemID, accName, len(wafRows))
+		allWaf = append(allWaf, wafRows...)
+	}
+	bind := wafbind.Build(eips, allWaf, wafPull)
+	wafbind.LogBuildResult(systemID, len(allWaf), len(eips), bind)
+	if len(eips) > 0 {
+		var eipIPs []string
+		for _, e := range eips {
+			if e != nil {
+				eipIPs = append(eipIPs, e.Eip)
 			}
 		}
+		glog.Infof("cmdb sync waf(eip_sample): system_id=%s public_ips=%v", systemID, wafbind.SampleEIPPublicIPs(eipIPs, 8))
 	}
 
-	certIndexByAccount := make(map[string]map[string]*cert.Instance)
-	enrichedCert := make(map[string]struct{}) // account|certID
-	for ck, domains := range certToDomains {
-		parts := strings.SplitN(ck, "|", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		accName, certName := parts[0], parts[1]
-		idx, ok := certIndexByAccount[accName]
-		if !ok {
-			accCtx := scope.WithAccountName(ctx, accName)
-			certRows, err := cert.List(accCtx, pbtenant.CloudProvider_huawei)
-			if err != nil {
-				glog.Warningf("cmdb sync waf(cert list): system_id=%s account=%s err=%v", systemID, accName, err)
-				certStats.Errors++
-				continue
-			}
-			idx = indexCertificatesByName(certRows)
-			certIndexByAccount[accName] = idx
-		}
-		c := idx[certName]
-		if c == nil {
-			c = idx[strings.ToLower(certName)]
-		}
-		if c == nil {
-			glog.Warningf("cmdb sync waf(cert miss): system_id=%s account=%s cert_name=%q", systemID, accName, certName)
-			certStats.Errors++
-			continue
-		}
-		ek := accName + "|" + strings.TrimSpace(c.ID)
-		if _, done := enrichedCert[ek]; !done {
-			if err := cert.EnrichValidityFromShow(ctx, c); err != nil {
-				glog.Warningf("cmdb sync waf(cert show): system_id=%s account=%s cert_id=%s err=%v", systemID, accName, c.ID, err)
-			}
-			enrichedCert[ek] = struct{}{}
-		}
-		st := s.upsertCMDBCertificate(systemID, c, domains)
-		certStats.Added += st.Added
-		certStats.Updated += st.Updated
-		certStats.Skipped += st.Skipped
-		certStats.Errors += st.Errors
-	}
-
-	for eipUUID, b := range byEIPUUID {
-		if len(b.domains) == 0 {
-			continue
-		}
-		st := s.patchCMDBCIDomainName("_type:EIP", fmt.Sprintf("uuid:%s,system_id:%s", eipUUID, systemID), systemID, "eip", eipUUID, b.domains)
+	for _, r := range bind.EIPDomains {
+		st := s.patchCMDBCIDomainName("_type:EIP", fmt.Sprintf("uuid:%s,system_id:%s", r.EIPResourceKey, systemID), systemID, "eip", r.EIPResourceKey, r.Domains)
 		domainSt.Added += st.Added
 		domainSt.Updated += st.Updated
 		domainSt.Skipped += st.Skipped
 		domainSt.Errors += st.Errors
 	}
-	for sysNode, domains := range bySysNode {
-		st := s.patchCMDBCIDomainName("_type:system_node", fmt.Sprintf("sys_node_name:%s,system_id:%s", sysNode, systemID), systemID, "system_node", sysNode, domains)
+	for _, r := range bind.NodeDomains {
+		st := s.patchCMDBCIDomainName("_type:system_node", fmt.Sprintf("sys_node_name:%s,system_id:%s", r.SysNodeKey, systemID), systemID, "system_node", r.SysNodeKey, r.Domains)
 		domainSt.Added += st.Added
 		domainSt.Updated += st.Updated
 		domainSt.Skipped += st.Skipped
 		domainSt.Errors += st.Errors
 	}
+
+	certIndexByAccount := loadCertIndexFromWAFAccounts(ctx, systemID, wafPull)
+	certStats = s.upsertCertificatesFromJobs(ctx, systemID, bind.CertJobs, certIndexByAccount)
 
 	glog.Infof("cmdb sync waf(done): system_id=%s eip_domain_bindings=%d node_bindings=%d domain(add=%d,upd=%d,skip=%d,err=%d) cert(add=%d,upd=%d,skip=%d,err=%d)",
-		systemID, len(byEIPUUID), len(bySysNode),
+		systemID, len(bind.EIPDomains), len(bind.NodeDomains),
 		domainSt.Added, domainSt.Updated, domainSt.Skipped, domainSt.Errors,
 		certStats.Added, certStats.Updated, certStats.Skipped, certStats.Errors)
 	return domainSt, certStats
 }
 
-func intersectAccountNames(configured []string, linked []configstore.Row) []string {
-	linkedSet := make(map[string]struct{}, len(linked))
-	for _, r := range linked {
-		if n := strings.TrimSpace(r.Name); n != "" {
-			linkedSet[n] = struct{}{}
+// loadCertIndexFromWAFAccounts 从 CLOUD_FITTER_HUAWEI_WAF_CMDB_ACCOUNT_NAMES 指定账号拉 SCM 全量证书（不用系统关联账号）。
+func loadCertIndexFromWAFAccounts(ctx context.Context, systemID string, wafPull []string) map[string]map[string]*cert.Instance {
+	out := make(map[string]map[string]*cert.Instance, len(wafPull))
+	for _, accName := range wafPull {
+		accCtx := scope.WithAccountName(ctx, accName)
+		certRows, err := cert.List(accCtx, pbtenant.CloudProvider_huawei)
+		if err != nil {
+			glog.Warningf("cmdb sync certificate(list): system_id=%s account=%s err=%v", systemID, accName, err)
+			continue
 		}
-	}
-	var out []string
-	for _, n := range configured {
-		if _, ok := linkedSet[n]; ok {
-			out = append(out, n)
-		}
+		glog.Infof("cmdb sync certificate(list ok): system_id=%s account=%s rows=%d (waf env account, not system linked)",
+			systemID, accName, len(certRows))
+		out[accName] = indexCertificatesByName(certRows)
 	}
 	return out
+}
+
+// certIndexFromSnapshot 将已按 WAF 账号过滤后的镜像证书按账号建索引（LoadCertificates 已过滤，此处幂等）。
+func certIndexFromSnapshot(certRows []*cert.Instance, wafPull []string) map[string]map[string]*cert.Instance {
+	filtered := wafbind.FilterCertRows(certRows, wafPull)
+	byAccount := make(map[string][]*cert.Instance)
+	for _, c := range filtered {
+		if c == nil {
+			continue
+		}
+		byAccount[c.AccountName] = append(byAccount[c.AccountName], c)
+	}
+	out := make(map[string]map[string]*cert.Instance, len(byAccount))
+	for acc, rows := range byAccount {
+		out[acc] = indexCertificatesByName(rows)
+	}
+	return out
+}
+
+func (s *Syncer) upsertCertificatesFromJobs(ctx context.Context, systemID string, jobs []wafbind.CertDomainJob, certIndexByAccount map[string]map[string]*cert.Instance) componentSyncStats {
+	var certStats componentSyncStats
+	enrichedCert := make(map[string]struct{})
+	for _, job := range jobs {
+		idx := certIndexByAccount[job.AccountName]
+		if idx == nil {
+			glog.Warningf("cmdb sync certificate(miss account index): system_id=%s account=%s cert_name=%q (cert list only from CLOUD_FITTER_HUAWEI_WAF_CMDB_ACCOUNT_NAMES)",
+				systemID, job.AccountName, job.CertName)
+			certStats.Errors++
+			continue
+		}
+		c := idx[job.CertName]
+		if c == nil {
+			c = idx[strings.ToLower(job.CertName)]
+		}
+		if c == nil {
+			glog.Warningf("cmdb sync certificate(miss name): system_id=%s account=%s cert_name=%q", systemID, job.AccountName, job.CertName)
+			certStats.Errors++
+			continue
+		}
+		ek := job.AccountName + "|" + strings.TrimSpace(c.ID)
+		if _, done := enrichedCert[ek]; !done {
+			accCtx := scope.WithAccountName(ctx, job.AccountName)
+			if err := cert.EnrichValidityFromShow(accCtx, c); err != nil {
+				glog.Warningf("cmdb sync certificate(show): system_id=%s account=%s cert_id=%s err=%v", systemID, job.AccountName, c.ID, err)
+			}
+			enrichedCert[ek] = struct{}{}
+		}
+		st := s.upsertCMDBCertificate(systemID, c, job.Domains)
+		certStats.Added += st.Added
+		certStats.Updated += st.Updated
+		certStats.Skipped += st.Skipped
+		certStats.Errors += st.Errors
+	}
+	return certStats
 }
 
 func accountNamesFromRows(rows []configstore.Row) []string {
@@ -221,57 +177,11 @@ func indexCertificatesByName(rows []*cert.Instance) map[string]*cert.Instance {
 	return out
 }
 
-// parseWAFOriginIPs 从 WAF 源站字段（逗号分隔的 ip:port）解析源站 IP 列表。
-func parseWAFOriginIPs(originServers string) []string {
-	var ips []string
-	seen := make(map[string]struct{})
-	for _, part := range strings.Split(originServers, ",") {
-		ip := parseWAFOriginIP(strings.TrimSpace(part))
-		if ip == "" {
-			continue
-		}
-		if _, ok := seen[ip]; ok {
-			continue
-		}
-		seen[ip] = struct{}{}
-		ips = append(ips, ip)
-	}
-	return ips
-}
-
-func parseWAFOriginIP(hostPort string) string {
-	hostPort = strings.TrimSpace(hostPort)
-	if hostPort == "" {
-		return ""
-	}
-	if i := strings.LastIndex(hostPort, ":"); i > 0 {
-		portPart := hostPort[i+1:]
-		if _, err := strconv.Atoi(portPart); err == nil {
-			return strings.TrimSpace(hostPort[:i])
-		}
-	}
-	return hostPort
-}
-
-func sliceContains(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
-func appendUniqueStrings(base []string, add ...string) []string {
-	seen := make(map[string]struct{}, len(base)+len(add))
-	for _, s := range base {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		seen[s] = struct{}{}
-	}
-	for _, s := range add {
+// domainNamesForCMDB 写入 CMDB「长文本 + 多值」domain_name：须为 []string，不可用顿号拼成单字符串（API is_list）。
+func domainNamesForCMDB(domains []string) []string {
+	seen := make(map[string]struct{}, len(domains))
+	out := make([]string, 0, len(domains))
+	for _, s := range domains {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
@@ -280,48 +190,78 @@ func appendUniqueStrings(base []string, add ...string) []string {
 			continue
 		}
 		seen[s] = struct{}{}
-		base = append(base, s)
+		out = append(out, s)
 	}
-	return base
+	return out
 }
 
-func joinDomainNamesForCMDB(domains []string) string {
-	return joinSecurityGroupsForCMDB(domains)
-}
-
-func cmdbDomainNameStr(row map[string]any) string {
+// parseCMDBDomainNames 从 CMDB 读回的 domain_name（多值数组或历史顿号/逗号分隔字符串）解析为域名列表。
+func parseCMDBDomainNames(row map[string]any) []string {
+	if row == nil {
+		return nil
+	}
 	v := row["domain_name"]
 	if v == nil {
-		return ""
+		return nil
 	}
 	switch t := v.(type) {
-	case string:
-		return strings.TrimSpace(t)
+	case []string:
+		return domainNamesForCMDB(t)
 	case []any:
 		var parts []string
 		for _, x := range t {
-			s := strings.TrimSpace(anyToCompareStr(x))
-			if s != "" {
+			if s := strings.TrimSpace(anyToCompareStr(x)); s != "" {
 				parts = append(parts, s)
 			}
 		}
-		return strings.Join(parts, "、")
+		return domainNamesForCMDB(parts)
+	case string:
+		return splitDomainNameString(t)
 	default:
-		return strings.TrimSpace(anyToCompareStr(v))
+		return splitDomainNameString(strings.TrimSpace(anyToCompareStr(v)))
 	}
 }
 
-func mergeDomainNames(existing string, add []string) []string {
-	var all []string
-	if existing != "" {
-		for _, p := range strings.Split(existing, "、") {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				all = append(all, p)
+func splitDomainNameString(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var parts []string
+	if strings.Contains(s, "、") {
+		for _, p := range strings.Split(s, "、") {
+			if t := strings.TrimSpace(p); t != "" {
+				parts = append(parts, t)
 			}
 		}
+	} else if strings.Contains(s, ",") {
+		for _, p := range strings.Split(s, ",") {
+			if t := strings.TrimSpace(p); t != "" {
+				parts = append(parts, t)
+			}
+		}
+	} else {
+		parts = []string{s}
 	}
-	return appendUniqueStrings(all, add...)
+	return domainNamesForCMDB(parts)
+}
+
+func domainNamesEqual(a, b []string) bool {
+	a = domainNamesForCMDB(a)
+	b = domainNamesForCMDB(b)
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func mergeDomainNames(existing []string, add []string) []string {
+	return domainNamesForCMDB(append(append([]string{}, existing...), add...))
 }
 
 func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref string, domains []string) componentSyncStats {
@@ -346,9 +286,9 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 		st.Errors++
 		return st
 	}
-	merged := mergeDomainNames(cmdbDomainNameStr(row), domains)
-	want := joinDomainNamesForCMDB(merged)
-	if row != nil && cmdbDomainNameStr(row) == want {
+	existing := parseCMDBDomainNames(row)
+	want := domainNamesForCMDB(mergeDomainNames(existing, domains))
+	if row != nil && domainNamesEqual(existing, want) {
 		st.Skipped++
 		return st
 	}
@@ -369,7 +309,7 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 		st.Errors++
 		return st
 	}
-	glog.Infof("cmdb sync waf %s(update domain_name ok): system_id=%s ref=%q id=%s domains=%q", kind, systemID, ref, ciID, want)
+	glog.Infof("cmdb sync waf %s(update domain_name ok): system_id=%s ref=%q id=%s domains=%v", kind, systemID, ref, ciID, want)
 	st.Updated++
 	return st
 }
@@ -392,9 +332,11 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 		st.Errors++
 		return st
 	}
-	domainField := joinDomainNamesForCMDB(boundDomains)
-	if domainField == "" {
-		domainField = strings.TrimSpace(c.Domain)
+	domainField := domainNamesForCMDB(boundDomains)
+	if len(domainField) == 0 {
+		if d := strings.TrimSpace(c.Domain); d != "" {
+			domainField = domainNamesForCMDB([]string{d})
+		}
 	}
 	validTo := certValidToForCMDB(c)
 	if validTo == "" {
@@ -452,7 +394,20 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 func certificateCIChanged(row map[string]any, want map[string]any) bool {
 	for k, v := range want {
 		if k == "domain_name" {
-			if cmdbDomainNameStr(row) != strings.TrimSpace(anyToCompareStr(v)) {
+			var wantSlice []string
+			switch tv := v.(type) {
+			case []string:
+				wantSlice = tv
+			case []any:
+				for _, x := range tv {
+					if s := strings.TrimSpace(anyToCompareStr(x)); s != "" {
+						wantSlice = append(wantSlice, s)
+					}
+				}
+			default:
+				wantSlice = splitDomainNameString(anyToCompareStr(v))
+			}
+			if !domainNamesEqual(parseCMDBDomainNames(row), wantSlice) {
 				return true
 			}
 			continue

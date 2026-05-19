@@ -239,6 +239,11 @@ func PullOneSystem(ctx context.Context, db *sql.DB, store *configstore.Store, sy
 		} else {
 			glog.Infof("resource snapshot: eip empty list, keep existing snapshot system_id=%s name=%q", systemID, systemName)
 		}
+		if store != nil {
+			if err := pullWafCertAndDomainSnapshots(ctx, db, store, systemName, systemID, eipList); err != nil {
+				glog.Warningf("resource snapshot: waf/cert/domain skip system_id=%s name=%q: %v", systemID, systemName, err)
+			}
+		}
 	}
 
 	if elbList, err := listTwiceIfErr(ctx, systemID, systemName, "elb", func(c context.Context) ([]*elb.Instance, error) {
