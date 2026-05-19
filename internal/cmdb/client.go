@@ -36,7 +36,7 @@ func NewClient(baseURL, key, secret string) *Client {
 
 func isScalarForSign(v any) bool {
 	switch v.(type) {
-	case map[string]any, []any:
+	case map[string]any, []any, []string:
 		return false
 	default:
 		return true
@@ -200,6 +200,58 @@ func (c *Client) AddCI(body map[string]any) (map[string]any, error) {
 	return c.postCIBody(body)
 }
 
+// encodeCIFieldValue 将字段编码为 CMDB request.values 标量；is_list 长文本多值用逗号分隔（服务端 handle_arg_list 解析）。
+func encodeCIFieldValue(v any) any {
+	switch val := v.(type) {
+	case []string:
+		var parts []string
+		for _, s := range val {
+			if t := strings.TrimSpace(s); t != "" {
+				parts = append(parts, t)
+			}
+		}
+		return strings.Join(parts, ",")
+	case []any:
+		var parts []string
+		for _, x := range val {
+			if t := strings.TrimSpace(fmt.Sprint(x)); t != "" {
+				parts = append(parts, t)
+			}
+		}
+		return strings.Join(parts, ",")
+	default:
+		return v
+	}
+}
+
+func ciParamsFromFields(fields map[string]any) map[string]any {
+	p := make(map[string]any, len(fields))
+	for k, v := range fields {
+		if k == "_id" {
+			continue
+		}
+		p[k] = encodeCIFieldValue(v)
+	}
+	return p
+}
+
+// doCIWithJSONAuth POST/PUT CI：业务字段与 _key/_secret 放在 JSON body。
+// CMDB auth_required 在 Content-Type 为 JSON 时将 request.json 赋给 request.values，_wrap_ci_dict 同源读取。
+// 多值属性（如 domain_name）须为逗号分隔字符串，不可传 JSON 数组，否则签名字段与服务端 req_args 不一致导致 401。
+func (c *Client) doCIWithJSONAuth(method, path string, fields map[string]any) (map[string]any, error) {
+	u, err := url.Parse(c.BaseURL + path)
+	if err != nil {
+		return nil, err
+	}
+	p := ciParamsFromFields(fields)
+	c.BuildAPIKey(u.Path, p)
+	b, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	return c.doJSON(method, u.String(), "application/json", b)
+}
+
 // UpdateCI 对已存在 CI 做属性更新：PUT /api/v0.1/ci/<ci_id>，与 CMDB api.views.cmdb.ci.CIView.put 一致。
 // 创建须用 AddCI（POST /api/v0.1/ci）；勿再用 POST 携带 _id 模拟更新，否则会走 CIManager.add 并触发「CI already exists!」。
 func (c *Client) UpdateCI(_id string, fields map[string]any) (map[string]any, error) {
@@ -207,24 +259,7 @@ func (c *Client) UpdateCI(_id string, fields map[string]any) (map[string]any, er
 	if id == "" {
 		return nil, fmt.Errorf("update ci: empty _id")
 	}
-	path := "/api/v0.1/ci/" + id
-	u, err := url.Parse(c.BaseURL + path)
-	if err != nil {
-		return nil, err
-	}
-	p := make(map[string]any, len(fields)+2)
-	for k, v := range fields {
-		if k == "_id" {
-			continue
-		}
-		p[k] = v
-	}
-	c.BuildAPIKey(u.Path, p)
-	b, err := json.Marshal(p)
-	if err != nil {
-		return nil, err
-	}
-	return c.doJSON("PUT", u.String(), "application/json", b)
+	return c.doCIWithJSONAuth("PUT", "/api/v0.1/ci/"+id, fields)
 }
 
 // DeleteCI 硬删除 CI：DELETE /api/v0.1/ci/<ci_id>。
@@ -252,16 +287,7 @@ func (c *Client) DeleteCI(ciID string) (map[string]any, error) {
 }
 
 func (c *Client) postCIBody(p map[string]any) (map[string]any, error) {
-	u, err := url.Parse(c.BaseURL + "/api/v0.1/ci")
-	if err != nil {
-		return nil, err
-	}
-	c.BuildAPIKey(u.Path, p)
-	b, err := json.Marshal(p)
-	if err != nil {
-		return nil, err
-	}
-	return c.doJSON("POST", u.String(), "application/json", b)
+	return c.doCIWithJSONAuth("POST", "/api/v0.1/ci", p)
 }
 
 func (c *Client) doJSON(method, fullURL, contentType string, body []byte) (map[string]any, error) {
@@ -286,7 +312,12 @@ func (c *Client) doJSON(method, fullURL, contentType string, body []byte) (map[s
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("cmdb %s %s: status %d: %s", method, fullURL, resp.StatusCode, string(raw))
+		errURL := redactCMDBURLSecrets(fullURL)
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("cmdb %s %s: status 401 unauthorized (check CLOUD_FITTER_CMDB_KEY/SECRET; multi-value fields must be comma-separated strings in JSON, not arrays): %s",
+				method, errURL, string(raw))
+		}
+		return nil, fmt.Errorf("cmdb %s %s: status %d: %s", method, errURL, resp.StatusCode, string(raw))
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return map[string]any{}, nil
@@ -296,6 +327,19 @@ func (c *Client) doJSON(method, fullURL, contentType string, body []byte) (map[s
 		return nil, fmt.Errorf("cmdb json: %w body=%q", err, string(raw))
 	}
 	return m, nil
+}
+
+func redactCMDBURLSecrets(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	if q.Has("_secret") {
+		q.Set("_secret", "***")
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func sortedKeys(m map[string]any) []string {

@@ -300,6 +300,7 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 			ciType = t
 		}
 	}
+	// domain_name 在 client 内编码为逗号分隔字符串再写入 JSON（CMDB is_list 多值长文本）
 	_, err = s.Client.UpdateCI(ciID, map[string]any{
 		"ci_type":     ciType,
 		"domain_name": want,
