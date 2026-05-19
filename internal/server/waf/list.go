@@ -149,13 +149,10 @@ func wafRegionsFromEnvOverride() []string {
 			return out
 		}
 	}
-	if single := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_REGION")); single != "" {
-		return []string{single}
-	}
 	return nil
 }
 
-// huaweiWAFRegionsForTenant 默认华东-上海一（cn-east-3）；可用环境变量覆盖。
+// huaweiWAFRegionsForTenant 默认华东-上海一（cn-east-3）；可用 CLOUD_FITTER_HUAWEI_WAF_REGIONS（逗号分隔）覆盖。
 func huaweiWAFRegionsForTenant(tenant tenanter.Tenanter) []string {
 	if o := wafRegionsFromEnvOverride(); o != nil {
 		return o

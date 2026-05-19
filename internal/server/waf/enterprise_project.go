@@ -3,7 +3,6 @@ package waf
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/golang/glog"
@@ -17,8 +16,6 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/internal/tenanter"
 )
 
-var enterpriseProjectUUIDRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
 // enterpriseProjectSpec 供 WAF OpenAPI 使用的 enterprise_project_id（官方仅接受 0 / all_granted_eps / 36 位 UUID）。
 type enterpriseProjectSpec struct {
 	QueryID   string // 传给 WAF API 的 enterprise_project_id
@@ -28,14 +25,6 @@ type enterpriseProjectSpec struct {
 
 func wafEnterpriseProjectNameFromEnv() string {
 	return strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_ENTERPRISE_PROJECT_NAME"))
-}
-
-func wafEnterpriseProjectIDFromEnv() string {
-	if v := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_ENTERPRISE_PROJECT_ID")); v != "" {
-		return v
-	}
-	// 华为云默认企业项目 default，OpenAPI enterprise_project_id 固定为 "0"
-	return "0"
 }
 
 func wafEnterpriseProjectFallbackAll() bool {
@@ -52,24 +41,12 @@ func wafEnterpriseProjectFallbackAll() bool {
 }
 
 func resolveWafEnterpriseProject(tenant *tenanter.AccessKeyTenant) (enterpriseProjectSpec, error) {
-	idCfg := wafEnterpriseProjectIDFromEnv()
 	nameCfg := wafEnterpriseProjectNameFromEnv()
-
-	switch {
-	case idCfg == "0":
-		return enterpriseProjectSpec{QueryID: "0", Name: "default", ConfigKey: "env_id"}, nil
-	case idCfg == "all_granted_eps":
-		return enterpriseProjectSpec{QueryID: idCfg, ConfigKey: "env_id"}, nil
-	case enterpriseProjectUUIDRe.MatchString(idCfg):
-		return enterpriseProjectSpec{QueryID: idCfg, ConfigKey: "env_id"}, nil
-	case idCfg != "" && !enterpriseProjectUUIDRe.MatchString(idCfg):
-		glog.Warningf("waf enterprise_project_id env %q is not a UUID; resolve as enterprise project name via EPS", idCfg)
-		return resolveEnterpriseProjectByName(tenant, idCfg, "env_id_as_name")
-	case nameCfg != "":
+	if nameCfg != "" {
 		return resolveEnterpriseProjectByName(tenant, nameCfg, "env_name")
-	default:
-		return enterpriseProjectSpec{QueryID: "0", Name: "default", ConfigKey: "default_eps_0"}, nil
 	}
+	// 华为云默认企业项目 default，OpenAPI enterprise_project_id 固定为 "0"
+	return enterpriseProjectSpec{QueryID: "0", Name: "default", ConfigKey: "default_eps_0"}, nil
 }
 
 func resolveEnterpriseProjectByName(tenant *tenanter.AccessKeyTenant, name, configKey string) (enterpriseProjectSpec, error) {
