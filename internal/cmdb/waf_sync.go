@@ -19,7 +19,7 @@ import (
 )
 
 // syncWAFDerivedCMDB 从 CLOUD_FITTER_HUAWEI_WAF_CMDB_ACCOUNT_NAMES 指定账号拉 WAF/证书（不用系统关联账号），
-// 再按 WAF 源站公网 IP 与本系统 EIP 的 e.Eip（CMDB eip_ip）匹配，回写 domain_name 并同步证书 CI。
+// 再按 WAF 源站公网 IP 与本系统 EIP 的 e.Eip（CMDB eip_ip）匹配，回写 EIP.domain_name、节点 domain CI 并同步证书 CI。
 func (s *Syncer) syncWAFDerivedCMDB(ctx context.Context, systemID string, eips []*eip.Instance, linkedAccounts []configstore.Row, wafAccountNames []string) (domainSt, certStats componentSyncStats) {
 	linked := accountNamesFromRows(linkedAccounts)
 	wafPull := wafbind.WAFAccountsForPull(wafAccountNames)
@@ -57,9 +57,9 @@ func (s *Syncer) syncWAFDerivedCMDB(ctx context.Context, systemID string, eips [
 	certIndexByAccount := loadCertIndexFromWAFAccounts(ctx, systemID, wafPull)
 	certStats = s.upsertCertificatesFromJobs(ctx, systemID, bind.CertJobs, certIndexByAccount)
 
-	glog.Infof("cmdb sync waf(done): system_id=%s eip_domain_bindings=%d node_bindings=%d domain(add=%d,upd=%d,skip=%d,err=%d) cert(add=%d,upd=%d,skip=%d,err=%d)",
+	glog.Infof("cmdb sync waf(done): system_id=%s eip_domain_bindings=%d node_bindings=%d domain(add=%d,upd=%d,del=%d,skip=%d,err=%d) cert(add=%d,upd=%d,skip=%d,err=%d)",
 		systemID, len(bind.EIPDomains), len(bind.NodeDomains),
-		domainSt.Added, domainSt.Updated, domainSt.Skipped, domainSt.Errors,
+		domainSt.Added, domainSt.Updated, domainSt.Deleted, domainSt.Skipped, domainSt.Errors,
 		certStats.Added, certStats.Updated, certStats.Skipped, certStats.Errors)
 	return domainSt, certStats
 }
@@ -268,9 +268,9 @@ func wafDomainMapsFromBind(bind wafbind.Result) (eipDomains, nodeDomains map[str
 	return eipDomains, nodeDomains
 }
 
-// applyWAFDomainBindings 对本系统当前 EIP 列表中的每个 EIP/节点全量回写 domain_name（无 WAF 匹配则清空）。
+// applyWAFDomainBindings 同步 EIP.domain_name；节点域名写入独立 domain CI（与 system_node 通过 system_id+sys_node_name 关联）。
 func (s *Syncer) applyWAFDomainBindings(systemID string, eips []*eip.Instance, bind wafbind.Result) componentSyncStats {
-	eipDomains, nodeDomains := wafDomainMapsFromBind(bind)
+	eipDomains, _ := wafDomainMapsFromBind(bind)
 	var st componentSyncStats
 
 	seenEIP := make(map[string]struct{})
@@ -293,25 +293,7 @@ func (s *Syncer) applyWAFDomainBindings(systemID string, eips []*eip.Instance, b
 		st = addComponentStats(st, s.patchCMDBCIDomainName("_type:EIP", fmt.Sprintf("uuid:%s,system_id:%s", key, systemID), systemID, "eip", key, domains))
 	}
 
-	seenNode := make(map[string]struct{})
-	for _, e := range eips {
-		if e == nil {
-			continue
-		}
-		nodeKey := wafbind.SysNodeKeyFromEIP(e)
-		if nodeKey == "" {
-			continue
-		}
-		if _, ok := seenNode[nodeKey]; ok {
-			continue
-		}
-		seenNode[nodeKey] = struct{}{}
-		domains := nodeDomains[nodeKey]
-		if domains == nil {
-			domains = []string{}
-		}
-		st = addComponentStats(st, s.patchCMDBCIDomainName("_type:system_node", fmt.Sprintf("sys_node_name:%s,system_id:%s", nodeKey, systemID), systemID, "system_node", nodeKey, domains))
-	}
+	st = addComponentStats(st, s.syncNodeDomainCIsFromBind(systemID, eips, bind))
 	return st
 }
 

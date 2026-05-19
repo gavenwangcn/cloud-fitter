@@ -313,14 +313,14 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		stats.Billing.Errors += st.Errors
 	}
 	glog.Infof(
-		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,del=%d,err=%d) host(add=%d,upd=%d,skip=%d,del=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,del=%d,err=%d) eip(add=%d,upd=%d,skip=%d,del=%d,err=%d) waf_domain(upd=%d,skip=%d,err=%d) cert(add=%d,upd=%d,skip=%d,err=%d) elb(add=%d,upd=%d,skip=%d,del=%d,err=%d) billing(add=%d,upd=%d,skip=%d,del=%d,err=%d)",
+		"cmdb sync system(done): system_id=%s system_name=%q stats system_node(add=%d,upd=%d,skip=%d,err=%d) k8s(add=%d,upd=%d,skip=%d,del=%d,err=%d) host(add=%d,upd=%d,skip=%d,del=%d,err=%d) middleware(add=%d,upd=%d,skip=%d,del=%d,err=%d) eip(add=%d,upd=%d,skip=%d,del=%d,err=%d) waf_domain(add=%d,upd=%d,del=%d,skip=%d,err=%d) cert(add=%d,upd=%d,skip=%d,err=%d) elb(add=%d,upd=%d,skip=%d,del=%d,err=%d) billing(add=%d,upd=%d,skip=%d,del=%d,err=%d)",
 		systemID, systemName,
 		stats.SystemNode.Added, stats.SystemNode.Updated, stats.SystemNode.Skipped, stats.SystemNode.Errors,
 		stats.K8s.Added, stats.K8s.Updated, stats.K8s.Skipped, stats.K8s.Deleted, stats.K8s.Errors,
 		stats.Host.Added, stats.Host.Updated, stats.Host.Skipped, stats.Host.Deleted, stats.Host.Errors,
 		stats.Middleware.Added, stats.Middleware.Updated, stats.Middleware.Skipped, stats.Middleware.Deleted, stats.Middleware.Errors,
 		stats.EIP.Added, stats.EIP.Updated, stats.EIP.Skipped, stats.EIP.Deleted, stats.EIP.Errors,
-		stats.WAFDomain.Updated, stats.WAFDomain.Skipped, stats.WAFDomain.Errors,
+		stats.WAFDomain.Added, stats.WAFDomain.Updated, stats.WAFDomain.Deleted, stats.WAFDomain.Skipped, stats.WAFDomain.Errors,
 		stats.Certificate.Added, stats.Certificate.Updated, stats.Certificate.Skipped, stats.Certificate.Errors,
 		stats.ELB.Added, stats.ELB.Updated, stats.ELB.Skipped, stats.ELB.Deleted, stats.ELB.Errors,
 		stats.Billing.Added, stats.Billing.Updated, stats.Billing.Skipped, stats.Billing.Deleted, stats.Billing.Errors,

@@ -13,7 +13,7 @@ import (
 )
 
 // syncWAFDerivedCMDBFromSnapshot 从 MySQL 镜像表读取 WAF/证书（仅 CLOUD_FITTER_HUAWEI_WAF_CMDB_ACCOUNT_NAMES 账号），
-// 与直连 API 相同：按源站 IP 匹配本系统 EIP 公网 IP，再写 domain_name / 证书 CI。
+// 与直连 API 相同：按源站 IP 匹配本系统 EIP 公网 IP，再写 EIP.domain_name、节点 domain CI / 证书 CI。
 func (s *Syncer) syncWAFDerivedCMDBFromSnapshot(ctx context.Context, systemID string, db *sql.DB, eipList []*eip.Instance, linkedAccounts []configstore.Row, wafAccountNames []string) (domainSt, certStats componentSyncStats) {
 	linked := accountNamesFromRows(linkedAccounts)
 	wafPull := wafbind.WAFAccountsForPull(wafAccountNames)
