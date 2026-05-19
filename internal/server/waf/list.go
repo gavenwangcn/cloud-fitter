@@ -28,6 +28,7 @@ type Instance struct {
 	AccountName           string `json:"accountName"`
 	RegionName            string `json:"regionName"`
 	EnterpriseProjectID   string `json:"enterpriseProjectId"`
+	EnterpriseProjectName string `json:"enterpriseProjectName"`
 	ID                    string `json:"id"`
 	HostID                string `json:"hostId"`
 	Hostname              string `json:"hostname"`
@@ -73,13 +74,14 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 	for _, t := range tenanters {
 		nJobs += len(huaweiWAFRegionsForTenant(t))
 	}
-	glog.Infof("waf list start provider=%s account_filter=%q tenant_count=%d waf_jobs=%d eps=%q",
-		provider.String(), scope.AccountName(ctx), len(tenanters), nJobs, wafEnterpriseProjectID())
+	glog.Infof("waf list start provider=%s account_filter=%q tenant_count=%d waf_jobs=%d",
+		provider.String(), scope.AccountName(ctx), len(tenanters), nJobs)
 
 	var (
-		wg  sync.WaitGroup
-		mu  sync.Mutex
-		all []*Instance
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		all      []*Instance
+		firstErr error
 	)
 	wg.Add(nJobs)
 	for _, t := range tenanters {
@@ -89,6 +91,11 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 				items, err := listHuaweiWafForTenant(tenant, wafRegion)
 				if err != nil {
 					glog.Errorf("waf list failed account=%s waf_region=%s err=%v", tenant.AccountName(), wafRegion, err)
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					mu.Unlock()
 					return
 				}
 				mu.Lock()
@@ -98,6 +105,9 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 		}
 	}
 	wg.Wait()
+	if len(all) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
 
 	seen := make(map[string]struct{}, len(all))
 	uniq := make([]*Instance, 0, len(all))
@@ -118,13 +128,6 @@ func List(ctx context.Context, provider pbtenant.CloudProvider) ([]*Instance, er
 	glog.Infof("waf list done provider=%s rows_raw=%d rows_dedup=%d elapsed=%v",
 		provider.String(), len(all), len(uniq), time.Since(begin))
 	return uniq, nil
-}
-
-func wafEnterpriseProjectID() string {
-	if v := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_ENTERPRISE_PROJECT_ID")); v != "" {
-		return v
-	}
-	return "dft_lc_infra"
 }
 
 func wafRegionsFromEnvOverride() []string {
@@ -190,26 +193,37 @@ func listHuaweiWafForTenant(tenant tenanter.Tenanter, endpointRegion string) ([]
 		WithHttpConfig(huaweicloudregion.SDKHttpConfig()).
 		Build())
 
-	epsID := wafEnterpriseProjectID()
-	policyNames, err := loadWafPolicyNames(wafCli, epsID)
+	epsSpec, err := resolveWafEnterpriseProject(t)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolve WAF enterprise_project_id")
+	}
+	glog.Infof("waf list account=%s region=%s iam_project=%s eps_query=%q eps_name=%q eps_from=%s",
+		t.AccountName(), rName, projectID, epsSpec.QueryID, epsSpec.Name, epsSpec.ConfigKey)
+
+	policyNames, err := loadWafPolicyNames(wafCli, epsSpec.QueryID)
 	if err != nil {
 		glog.Warningf("waf list policy names account=%s region=%s err=%v", t.AccountName(), rName, err)
 		policyNames = map[string]string{}
 	}
-	certByHost, err := loadWafCertNamesByHostname(wafCli, epsID)
+	certByHost, err := loadWafCertNamesByHostname(wafCli, epsSpec.QueryID)
 	if err != nil {
 		glog.Warningf("waf list certificate names account=%s region=%s err=%v", t.AccountName(), rName, err)
 		certByHost = map[string]string{}
 	}
+	cloudServers, err := loadCloudHostServers(wafCli, epsSpec.QueryID)
+	if err != nil {
+		glog.Warningf("waf list cloud host servers account=%s region=%s err=%v", t.AccountName(), rName, err)
+		cloudServers = map[string]string{}
+	}
 
 	pageSize := int32(-1)
 	req := &wafmodel.ListCompositeHostsRequest{
-		EnterpriseProjectId: strPtr(epsID),
+		EnterpriseProjectId: strPtr(epsSpec.QueryID),
 		Pagesize:            &pageSize,
 	}
 	resp, err := wafCli.ListCompositeHosts(req)
 	if err != nil {
-		return nil, errors.Wrapf(err, "ListCompositeHosts region=%s eps=%s", rName, epsID)
+		return nil, errors.Wrapf(err, "ListCompositeHosts region=%s enterprise_project_id=%s", rName, epsSpec.QueryID)
 	}
 	if resp == nil || resp.Items == nil {
 		return nil, nil
@@ -218,7 +232,7 @@ func listHuaweiWafForTenant(tenant tenanter.Tenanter, endpointRegion string) ([]
 	var out []*Instance
 	for i := range *resp.Items {
 		item := &(*resp.Items)[i]
-		inst := compositeHostToInstance(item, t.AccountName(), rName, epsID, policyNames, certByHost)
+		inst := compositeHostToInstance(item, t.AccountName(), rName, epsSpec, policyNames, certByHost, cloudServers)
 		out = append(out, inst)
 	}
 	return out, nil
@@ -226,8 +240,9 @@ func listHuaweiWafForTenant(tenant tenanter.Tenanter, endpointRegion string) ([]
 
 func compositeHostToInstance(
 	h *wafmodel.CompositeHostResponse,
-	accountName, regionName, epsID string,
-	policyNames, certByHost map[string]string,
+	accountName, regionName string,
+	eps enterpriseProjectSpec,
+	policyNames, certByHost, cloudServers map[string]string,
 ) *Instance {
 	hostname := strVal(h.Hostname)
 	policyID := strVal(h.Policyid)
@@ -255,11 +270,32 @@ func compositeHostToInstance(
 		certName = certByHost[strings.ToLower(hostname)]
 	}
 
+	origin := formatWafServers(h.Server)
+	if origin == "" {
+		if v := cloudServers[strVal(h.Id)]; v != "" {
+			origin = v
+		} else if v := cloudServers[strVal(h.Hostid)]; v != "" {
+			origin = v
+		} else if v := cloudServers[hostname]; v != "" {
+			origin = v
+		}
+	}
+
+	epsID := strVal(h.EnterpriseProjectId)
+	if epsID == "" {
+		epsID = eps.QueryID
+	}
+	epsName := eps.Name
+	if epsName == "" {
+		epsName = epsID
+	}
+
 	return &Instance{
-		Provider:            pbtenant.CloudProvider_huawei.String(),
-		AccountName:         accountName,
-		RegionName:          regionName,
-		EnterpriseProjectID: epsID,
+		Provider:              pbtenant.CloudProvider_huawei.String(),
+		AccountName:           accountName,
+		RegionName:            regionName,
+		EnterpriseProjectID:   epsID,
+		EnterpriseProjectName: epsName,
 		ID:                  strVal(h.Id),
 		HostID:              strVal(h.Hostid),
 		Hostname:            hostname,
@@ -272,12 +308,65 @@ func compositeHostToInstance(
 		CertificateName:     certName,
 		PolicyID:            policyID,
 		PolicyName:          policyNames[policyID],
-		OriginServers:       formatWafServers(h.Server),
+		OriginServers:       origin,
 		CreatedAt:           formatWafTimestamp(h.Timestamp),
 		AccessCode:          strVal(h.AccessCode),
 		WebTag:              strVal(h.WebTag),
 		Description:         strVal(h.Description),
 	}
+}
+
+func loadCloudHostServers(cli *hwwaf.WafClient, epsID string) (map[string]string, error) {
+	out := make(map[string]string)
+	pageSize := int32(-1)
+	req := &wafmodel.ListHostRequest{
+		EnterpriseProjectId: strPtr(epsID),
+		Pagesize:            &pageSize,
+	}
+	resp, err := cli.ListHost(req)
+	if err != nil {
+		return out, err
+	}
+	if resp == nil || resp.Items == nil {
+		return out, nil
+	}
+	for i := range *resp.Items {
+		item := &(*resp.Items)[i]
+		servers := formatCloudWafServers(item.Server)
+		if servers == "" {
+			continue
+		}
+		if id := strVal(item.Id); id != "" {
+			out[id] = servers
+		}
+		if id := strVal(item.Hostid); id != "" {
+			out[id] = servers
+		}
+		if hn := strVal(item.Hostname); hn != "" {
+			out[hn] = servers
+		}
+	}
+	return out, nil
+}
+
+func formatCloudWafServers(servers *[]wafmodel.CloudWafServer) string {
+	if servers == nil || len(*servers) == 0 {
+		return ""
+	}
+	var parts []string
+	for i := range *servers {
+		s := &(*servers)[i]
+		addr := strings.TrimSpace(s.Address)
+		if addr == "" {
+			continue
+		}
+		if s.Port > 0 {
+			parts = append(parts, fmt.Sprintf("%s:%d", addr, s.Port))
+		} else {
+			parts = append(parts, addr)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func loadWafPolicyNames(cli *hwwaf.WafClient, epsID string) (map[string]string, error) {
