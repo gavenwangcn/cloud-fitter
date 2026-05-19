@@ -205,11 +205,6 @@ func listHuaweiWafForTenant(tenant tenanter.Tenanter, endpointRegion string) ([]
 		glog.Warningf("waf list policy names account=%s region=%s err=%v", t.AccountName(), rName, err)
 		policyNames = map[string]string{}
 	}
-	certByHost, err := loadWafCertNamesByHostname(wafCli, epsSpec.QueryID)
-	if err != nil {
-		glog.Warningf("waf list certificate names account=%s region=%s err=%v", t.AccountName(), rName, err)
-		certByHost = map[string]string{}
-	}
 	cloudServers, err := loadCloudHostServers(wafCli, epsSpec.QueryID)
 	if err != nil {
 		glog.Warningf("waf list cloud host servers account=%s region=%s err=%v", t.AccountName(), rName, err)
@@ -227,6 +222,12 @@ func listHuaweiWafForTenant(tenant tenanter.Tenanter, endpointRegion string) ([]
 	}
 	if resp == nil || resp.Items == nil {
 		return nil, nil
+	}
+
+	certByHost, err := loadWafCertificateNames(wafCli, epsSpec.QueryID, resp.Items)
+	if err != nil {
+		glog.Warningf("waf list certificate names account=%s region=%s err=%v", t.AccountName(), rName, err)
+		certByHost = map[string]string{}
 	}
 
 	var out []*Instance
@@ -265,10 +266,7 @@ func compositeHostToInstance(
 		accessCode = *h.AccessStatus
 	}
 
-	certName := certByHost[hostname]
-	if certName == "" {
-		certName = certByHost[strings.ToLower(hostname)]
-	}
+	certName := lookupCertName(certByHost, h, hostname)
 
 	origin := formatWafServers(h.Server)
 	if origin == "" {
@@ -401,9 +399,17 @@ func loadWafPolicyNames(cli *hwwaf.WafClient, epsID string) (map[string]string, 
 	return out, nil
 }
 
-func loadWafCertNamesByHostname(cli *hwwaf.WafClient, epsID string) (map[string]string, error) {
+func loadWafCertificateNames(cli *hwwaf.WafClient, epsID string, items *[]wafmodel.CompositeHostResponse) (map[string]string, error) {
+	out, err := loadWafCertNamesFromListAPI(cli, epsID)
+	if err != nil {
+		out = map[string]string{}
+	}
+	enrichWafCertNamesFromShowHost(cli, epsID, items, out)
+	return out, nil
+}
+
+func loadWafCertNamesFromListAPI(cli *hwwaf.WafClient, epsID string) (map[string]string, error) {
 	out := make(map[string]string)
-	hostTrue := true
 	const pageSize int32 = 100
 	page := int32(1)
 	for {
@@ -411,7 +417,6 @@ func loadWafCertNamesByHostname(cli *hwwaf.WafClient, epsID string) (map[string]
 			EnterpriseProjectId: strPtr(epsID),
 			Page:                &page,
 			Pagesize:            int32Ptr(pageSize),
-			Host:                &hostTrue,
 		}
 		resp, err := cli.ListCertificates(req)
 		if err != nil {
@@ -422,19 +427,25 @@ func loadWafCertNamesByHostname(cli *hwwaf.WafClient, epsID string) (map[string]
 		}
 		for i := range *resp.Items {
 			c := &(*resp.Items)[i]
+			if strings.TrimSpace(c.Name) == "" {
+				continue
+			}
 			if c.BindHost == nil {
 				continue
 			}
 			for j := range *c.BindHost {
 				bh := &(*c.BindHost)[j]
-				if bh.Hostname == nil {
-					continue
+				if bh.Id != nil {
+					out[strings.TrimSpace(*bh.Id)] = c.Name
 				}
-				hn := strings.TrimSpace(*bh.Hostname)
-				if hn == "" {
-					continue
+				if bh.Hostname != nil {
+					hn := strings.TrimSpace(*bh.Hostname)
+					if hn != "" {
+						out[hn] = c.Name
+						out[strings.ToLower(hn)] = c.Name
+						out[wafHostnameBase(hn)] = c.Name
+					}
 				}
-				out[hn] = c.Name
 			}
 		}
 		if resp.Total == nil || int32(len(*resp.Items)) < pageSize {
@@ -446,6 +457,115 @@ func loadWafCertNamesByHostname(cli *hwwaf.WafClient, epsID string) (map[string]
 		page++
 	}
 	return out, nil
+}
+
+func enrichWafCertNamesFromShowHost(cli *hwwaf.WafClient, epsID string, items *[]wafmodel.CompositeHostResponse, out map[string]string) {
+	if items == nil || out == nil {
+		return
+	}
+	const workers = 8
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for i := range *items {
+		item := &(*items)[i]
+		hostID := strVal(item.Id)
+		if hostID == "" {
+			hostID = strVal(item.Hostid)
+		}
+		hostname := strVal(item.Hostname)
+		if hostID == "" {
+			continue
+		}
+		if lookupCertName(out, item, hostname) != "" {
+			continue
+		}
+		wafType := strings.ToLower(strings.TrimSpace(strVal(item.WafType)))
+
+		wg.Add(1)
+		go func(hostID, hostname, wafType string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			certName := fetchWafHostCertificateName(cli, epsID, hostID, wafType)
+			if certName == "" {
+				return
+			}
+			mu.Lock()
+			out[hostID] = certName
+			if hostname != "" {
+				out[hostname] = certName
+				out[strings.ToLower(hostname)] = certName
+				out[wafHostnameBase(hostname)] = certName
+			}
+			mu.Unlock()
+		}(hostID, hostname, wafType)
+	}
+	wg.Wait()
+}
+
+func fetchWafHostCertificateName(cli *hwwaf.WafClient, epsID, hostID, wafType string) string {
+	if wafType == "premium" {
+		resp, err := cli.ShowPremiumHost(&wafmodel.ShowPremiumHostRequest{
+			EnterpriseProjectId: strPtr(epsID),
+			HostId:              hostID,
+		})
+		if err != nil || resp == nil {
+			return ""
+		}
+		return strVal(resp.Certificatename)
+	}
+	resp, err := cli.ShowHost(&wafmodel.ShowHostRequest{
+		EnterpriseProjectId: strPtr(epsID),
+		InstanceId:          hostID,
+	})
+	if err != nil || resp == nil {
+		return ""
+	}
+	return strVal(resp.Certificatename)
+}
+
+func lookupCertName(certByHost map[string]string, h *wafmodel.CompositeHostResponse, hostname string) string {
+	if certByHost == nil {
+		return ""
+	}
+	for _, k := range []string{
+		hostname,
+		strings.ToLower(hostname),
+		wafHostnameBase(hostname),
+		strVal(h.Id),
+		strVal(h.Hostid),
+	} {
+		if k == "" {
+			continue
+		}
+		if v := certByHost[k]; v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func wafHostnameBase(hostname string) string {
+	hostname = strings.TrimSpace(hostname)
+	if hostname == "" {
+		return ""
+	}
+	i := strings.LastIndex(hostname, ":")
+	if i <= 0 {
+		return hostname
+	}
+	hostPart := hostname[:i]
+	portPart := hostname[i+1:]
+	if !strings.Contains(hostPart, ".") {
+		return hostname
+	}
+	if _, err := strconv.Atoi(portPart); err != nil {
+		return hostname
+	}
+	return hostPart
 }
 
 func formatWafServers(servers *[]wafmodel.WafServer) string {

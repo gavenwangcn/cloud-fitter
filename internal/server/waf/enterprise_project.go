@@ -27,14 +27,15 @@ type enterpriseProjectSpec struct {
 }
 
 func wafEnterpriseProjectNameFromEnv() string {
-	if v := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_ENTERPRISE_PROJECT_NAME")); v != "" {
-		return v
-	}
-	return "dft_lc_infra"
+	return strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_ENTERPRISE_PROJECT_NAME"))
 }
 
 func wafEnterpriseProjectIDFromEnv() string {
-	return strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_ENTERPRISE_PROJECT_ID"))
+	if v := strings.TrimSpace(os.Getenv("CLOUD_FITTER_HUAWEI_WAF_ENTERPRISE_PROJECT_ID")); v != "" {
+		return v
+	}
+	// 华为云默认企业项目 default，OpenAPI enterprise_project_id 固定为 "0"
+	return "0"
 }
 
 func wafEnterpriseProjectFallbackAll() bool {
@@ -55,7 +56,9 @@ func resolveWafEnterpriseProject(tenant *tenanter.AccessKeyTenant) (enterprisePr
 	nameCfg := wafEnterpriseProjectNameFromEnv()
 
 	switch {
-	case idCfg == "0" || idCfg == "all_granted_eps":
+	case idCfg == "0":
+		return enterpriseProjectSpec{QueryID: "0", Name: "default", ConfigKey: "env_id"}, nil
+	case idCfg == "all_granted_eps":
 		return enterpriseProjectSpec{QueryID: idCfg, ConfigKey: "env_id"}, nil
 	case enterpriseProjectUUIDRe.MatchString(idCfg):
 		return enterpriseProjectSpec{QueryID: idCfg, ConfigKey: "env_id"}, nil
@@ -65,7 +68,7 @@ func resolveWafEnterpriseProject(tenant *tenanter.AccessKeyTenant) (enterprisePr
 	case nameCfg != "":
 		return resolveEnterpriseProjectByName(tenant, nameCfg, "env_name")
 	default:
-		return enterpriseProjectSpec{QueryID: "all_granted_eps", ConfigKey: "default_all_granted_eps"}, nil
+		return enterpriseProjectSpec{QueryID: "0", Name: "default", ConfigKey: "default_eps_0"}, nil
 	}
 }
 
