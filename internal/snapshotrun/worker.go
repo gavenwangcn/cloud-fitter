@@ -27,6 +27,7 @@ func snapshotWorkerLocation() *time.Location {
 
 // StartResourceSnapshotWorker 按 resourcecache.SnapshotIntervalFromEnv 周期拉云 API 写入快照表。
 // 默认本地 01:00–06:00 不拉取（与 TZ 一致）；可用 CLOUD_FITTER_RESOURCE_SNAPSHOT_BLACKOUT_LOCAL 覆盖或 off 关闭。
+// 首轮是否在启动后立即拉取由 CLOUD_FITTER_RESOURCE_SNAPSHOT_RUN_ON_STARTUP 控制（默认 false）。
 func StartResourceSnapshotWorker(store *configstore.Store, db *sql.DB) {
 	if store == nil || db == nil || !resourcecache.SnapshotWorkerEnabled() {
 		return
@@ -35,13 +36,18 @@ func StartResourceSnapshotWorker(store *configstore.Store, db *sql.DB) {
 	if d < time.Minute {
 		return
 	}
+	runOnStartup := resourcecache.SnapshotRunOnStartupFromEnv()
 	go func() {
 		base := context.Background()
 		loc := snapshotWorkerLocation()
-		glog.Infof("resource snapshot worker: interval=%v TZ=%s first run in 30s", d, loc.String())
-		time.Sleep(30 * time.Second)
-		resourcecache.WaitIfSnapshotPullBlackout(loc)
-		runPullAll(base, store, db)
+		if runOnStartup {
+			glog.Infof("resource snapshot worker: interval=%v TZ=%s RUN_ON_STARTUP=true, first pull in 30s", d, loc.String())
+			time.Sleep(30 * time.Second)
+			resourcecache.WaitIfSnapshotPullBlackout(loc)
+			runPullAll(base, store, db)
+		} else {
+			glog.Infof("resource snapshot worker: interval=%v TZ=%s RUN_ON_STARTUP=false, skip startup pull (first after one interval)", d, loc.String())
+		}
 		t := time.NewTicker(d)
 		defer t.Stop()
 		for range t.C {

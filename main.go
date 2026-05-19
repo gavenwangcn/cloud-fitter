@@ -274,7 +274,8 @@ func main() {
 	if configstore.UseMySQLFromEnv() && resourcecache.SnapshotWorkerEnabled() {
 		if db := store.SQLDB(); db != nil {
 			snapshotrun.StartResourceSnapshotWorker(store, db)
-			glog.Infof("resource snapshot worker enabled (interval=%v)", resourcecache.SnapshotIntervalFromEnv())
+			glog.Infof("resource snapshot worker enabled (interval=%v run_on_startup=%v)",
+				resourcecache.SnapshotIntervalFromEnv(), resourcecache.SnapshotRunOnStartupFromEnv())
 		}
 	}
 	if resourcecache.CMDBUseResourceSnapshotFromEnv() {
