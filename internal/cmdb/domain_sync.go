@@ -103,8 +103,14 @@ func (s *Syncer) reconcileNodeDomainCIs(systemID, sysNodeName string, wantDomain
 		st.Errors++
 		return st
 	}
-	toAdd, toDelete := domainSyncPlan(existing, wantDomains)
 	want := domainNamesForCMDB(wantDomains)
+	// 云侧未匹配到域名时，保留 CMDB 已有 domain CI，不因空匹配删除。
+	if len(want) == 0 && len(existing) > 0 {
+		glog.Infof("cmdb sync domain(skip preserve on empty cloud): system_id=%s node=%q existing=%d", systemID, sysNodeName, len(existing))
+		st.Skipped++
+		return st
+	}
+	toAdd, toDelete := domainSyncPlan(existing, wantDomains)
 	if len(toAdd) == 0 && len(toDelete) == 0 {
 		glog.V(4).Infof("cmdb sync domain(skip unchanged): system_id=%s node=%q count=%d", systemID, sysNodeName, len(want))
 		st.Skipped++

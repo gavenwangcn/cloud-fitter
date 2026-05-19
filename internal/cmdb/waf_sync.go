@@ -320,8 +320,13 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 		return st
 	}
 	existing := parseCMDBDomainNames(row)
-	// WAF 同步为全量覆盖：以当前 EIP/WAF 匹配结果为准，不合并 CMDB 历史域名（EIP 减少时需删掉多余域名）。
 	want := domainNamesForCMDB(domains)
+	// 云侧/WAF 未匹配到域名时，不拿空值覆盖 CMDB 已有 domain_name。
+	if cloudDomainListEmpty(domains) && len(existing) > 0 {
+		glog.Infof("cmdb sync waf %s(skip preserve domain_name): system_id=%s ref=%q existing=%v", kind, systemID, ref, existing)
+		st.Skipped++
+		return st
+	}
 	if row != nil && domainNamesEqual(existing, want) {
 		st.Skipped++
 		return st
@@ -432,7 +437,8 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 		"domain_name":         domainField,
 	}
 	if ref.ciID != "" {
-		if ref.row != nil && !certificateCIChanged(ref.row, fields) {
+		merged := mergeCMDBPreserveNonEmpty(fields, ref.row)
+		if ref.row != nil && !certificateCIChanged(ref.row, merged) {
 			st.Skipped++
 			return st
 		}
@@ -440,7 +446,7 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 			"ci_type":   "certificate",
 			"uuid":      cmdbUUID,
 			"system_id": systemID,
-		}, fields))
+		}, merged))
 		if err != nil {
 			glog.Errorf("cmdb sync certificate(update): system_id=%s uuid=%s id=%s err=%v",
 				systemID, cmdbUUID, ref.ciID, err)
