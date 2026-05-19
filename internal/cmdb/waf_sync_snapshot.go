@@ -3,7 +3,6 @@ package cmdb
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
 	"github.com/golang/glog"
 
@@ -32,26 +31,7 @@ func (s *Syncer) syncWAFDerivedCMDBFromSnapshot(ctx context.Context, systemID st
 	bind := wafbind.Build(eipList, wafRows, wafPull)
 	wafbind.LogBuildResult(systemID, len(wafRows), len(eipList), bind)
 
-	for _, r := range bind.EIPDomains {
-		if len(r.Domains) == 0 {
-			continue
-		}
-		st := s.patchCMDBCIDomainName("_type:EIP", fmt.Sprintf("uuid:%s,system_id:%s", r.EIPResourceKey, systemID), systemID, "eip", r.EIPResourceKey, r.Domains)
-		domainSt.Added += st.Added
-		domainSt.Updated += st.Updated
-		domainSt.Skipped += st.Skipped
-		domainSt.Errors += st.Errors
-	}
-	for _, r := range bind.NodeDomains {
-		if len(r.Domains) == 0 {
-			continue
-		}
-		st := s.patchCMDBCIDomainName("_type:system_node", fmt.Sprintf("sys_node_name:%s,system_id:%s", r.SysNodeKey, systemID), systemID, "system_node", r.SysNodeKey, r.Domains)
-		domainSt.Added += st.Added
-		domainSt.Updated += st.Updated
-		domainSt.Skipped += st.Skipped
-		domainSt.Errors += st.Errors
-	}
+	domainSt = addComponentStats(domainSt, s.applyWAFDomainBindings(systemID, eipList, bind))
 
 	certRows, err := resourcecache.LoadCertificates(ctx, db, systemID, wafPull)
 	if err != nil {

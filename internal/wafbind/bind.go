@@ -116,7 +116,7 @@ func Build(eips []*eip.Instance, wafRows []*waf.Instance, wafAccountNames []stri
 			if eipKey == "" {
 				continue
 			}
-			sysNode := SysNodeKey(eipTenantProvider(e), strings.TrimSpace(e.RegionName), e.NodeTagValue)
+			sysNode := SysNodeKeyFromEIP(e)
 			if sysNode == "" {
 				continue
 			}
@@ -248,6 +248,14 @@ func cloudTypeLabel(p pbtenant.CloudProvider) string {
 	default:
 		return "云"
 	}
+}
+
+// SysNodeKeyFromEIP 从 EIP 实例计算 CMDB 节点名（与 Build 内逻辑一致）。
+func SysNodeKeyFromEIP(e *eip.Instance) string {
+	if e == nil {
+		return ""
+	}
+	return SysNodeKey(eipTenantProvider(e), strings.TrimSpace(e.RegionName), e.NodeTagValue)
 }
 
 // SysNodeKey 与 CMDB effectiveSysNodeName 一致。

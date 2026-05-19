@@ -1507,26 +1507,9 @@ func cmdbSyncEIPBandwidthType(raw string) string {
 	}
 }
 
-// cmdbSyncEIPStatus 同步至 CMDB 的 eip_status（不再使用属性名 status）。
-// CMDB 常为下拉枚举：写入「激活」等中文若未在模型白名单会返回 400。
-// 默认写入 ACTIVE / DOWN（与华为 API 枚举一致）；若要同步中文，请在 CMDB 模型中增加可选值后设置：
-// CLOUD_FITTER_CMDB_EIP_STATUS_ACTIVE、CLOUD_FITTER_CMDB_EIP_STATUS_OTHER。
+// cmdbSyncEIPStatus 同步至 CMDB 的 eip_status：与云侧查询结果一致（如 &{ACTIVE}、&{ELB}），不做 ACTIVE/DOWN 二值映射。
 func cmdbSyncEIPStatus(raw string) string {
-	active := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_STATUS_ACTIVE"))
-	if active == "" {
-		active = "ACTIVE"
-	}
-	other := strings.TrimSpace(os.Getenv("CLOUD_FITTER_CMDB_EIP_STATUS_OTHER"))
-	if other == "" {
-		other = "DOWN"
-	}
-	r := strings.TrimSpace(raw)
-	switch {
-	case r == "&{ACTIVE}", strings.EqualFold(r, "ACTIVE"):
-		return active
-	default:
-		return other
-	}
+	return strings.TrimSpace(raw)
 }
 
 func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyncStats {

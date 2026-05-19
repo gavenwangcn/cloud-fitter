@@ -35,11 +35,15 @@ func TestParseWAFOriginIPs(t *testing.T) {
 	}
 }
 
-func TestMergeDomainNames(t *testing.T) {
-	merged := mergeDomainNames([]string{"a.com", "b.com"}, []string{"b.com", "c.com"})
-	want := []string{"a.com", "b.com", "c.com"}
-	if !domainNamesEqual(merged, want) {
-		t.Fatalf("merge got %v want %v", merged, want)
+func TestWAFDomainReplaceNotMerge(t *testing.T) {
+	existing := []string{"removed.example.com", "a.com", "b.com"}
+	fromWAF := []string{"a.com", "b.com"}
+	want := domainNamesForCMDB(fromWAF)
+	if domainNamesEqual(want, domainNamesForCMDB(append(append([]string{}, existing...), fromWAF...))) {
+		t.Fatal("replace must drop domains no longer bound by WAF")
+	}
+	if !domainNamesEqual(want, []string{"a.com", "b.com"}) {
+		t.Fatalf("want %v", want)
 	}
 }
 

@@ -52,20 +52,7 @@ func (s *Syncer) syncWAFDerivedCMDB(ctx context.Context, systemID string, eips [
 		glog.Infof("cmdb sync waf(eip_sample): system_id=%s public_ips=%v", systemID, wafbind.SampleEIPPublicIPs(eipIPs, 8))
 	}
 
-	for _, r := range bind.EIPDomains {
-		st := s.patchCMDBCIDomainName("_type:EIP", fmt.Sprintf("uuid:%s,system_id:%s", r.EIPResourceKey, systemID), systemID, "eip", r.EIPResourceKey, r.Domains)
-		domainSt.Added += st.Added
-		domainSt.Updated += st.Updated
-		domainSt.Skipped += st.Skipped
-		domainSt.Errors += st.Errors
-	}
-	for _, r := range bind.NodeDomains {
-		st := s.patchCMDBCIDomainName("_type:system_node", fmt.Sprintf("sys_node_name:%s,system_id:%s", r.SysNodeKey, systemID), systemID, "system_node", r.SysNodeKey, r.Domains)
-		domainSt.Added += st.Added
-		domainSt.Updated += st.Updated
-		domainSt.Skipped += st.Skipped
-		domainSt.Errors += st.Errors
-	}
+	domainSt = addComponentStats(domainSt, s.applyWAFDomainBindings(systemID, eips, bind))
 
 	certIndexByAccount := loadCertIndexFromWAFAccounts(ctx, systemID, wafPull)
 	certStats = s.upsertCertificatesFromJobs(ctx, systemID, bind.CertJobs, certIndexByAccount)
@@ -260,8 +247,72 @@ func domainNamesEqual(a, b []string) bool {
 	return true
 }
 
-func mergeDomainNames(existing []string, add []string) []string {
-	return domainNamesForCMDB(append(append([]string{}, existing...), add...))
+func addComponentStats(a, b componentSyncStats) componentSyncStats {
+	a.Added += b.Added
+	a.Updated += b.Updated
+	a.Skipped += b.Skipped
+	a.Deleted += b.Deleted
+	a.Errors += b.Errors
+	return a
+}
+
+func wafDomainMapsFromBind(bind wafbind.Result) (eipDomains, nodeDomains map[string][]string) {
+	eipDomains = make(map[string][]string)
+	nodeDomains = make(map[string][]string)
+	for _, r := range bind.EIPDomains {
+		eipDomains[r.EIPResourceKey] = domainNamesForCMDB(r.Domains)
+	}
+	for _, r := range bind.NodeDomains {
+		nodeDomains[r.SysNodeKey] = domainNamesForCMDB(r.Domains)
+	}
+	return eipDomains, nodeDomains
+}
+
+// applyWAFDomainBindings 对本系统当前 EIP 列表中的每个 EIP/节点全量回写 domain_name（无 WAF 匹配则清空）。
+func (s *Syncer) applyWAFDomainBindings(systemID string, eips []*eip.Instance, bind wafbind.Result) componentSyncStats {
+	eipDomains, nodeDomains := wafDomainMapsFromBind(bind)
+	var st componentSyncStats
+
+	seenEIP := make(map[string]struct{})
+	for _, e := range eips {
+		if e == nil {
+			continue
+		}
+		key := wafbind.EIPResourceKey(e.EipId)
+		if key == "" {
+			continue
+		}
+		if _, ok := seenEIP[key]; ok {
+			continue
+		}
+		seenEIP[key] = struct{}{}
+		domains := eipDomains[key]
+		if domains == nil {
+			domains = []string{}
+		}
+		st = addComponentStats(st, s.patchCMDBCIDomainName("_type:EIP", fmt.Sprintf("uuid:%s,system_id:%s", key, systemID), systemID, "eip", key, domains))
+	}
+
+	seenNode := make(map[string]struct{})
+	for _, e := range eips {
+		if e == nil {
+			continue
+		}
+		nodeKey := wafbind.SysNodeKeyFromEIP(e)
+		if nodeKey == "" {
+			continue
+		}
+		if _, ok := seenNode[nodeKey]; ok {
+			continue
+		}
+		seenNode[nodeKey] = struct{}{}
+		domains := nodeDomains[nodeKey]
+		if domains == nil {
+			domains = []string{}
+		}
+		st = addComponentStats(st, s.patchCMDBCIDomainName("_type:system_node", fmt.Sprintf("sys_node_name:%s,system_id:%s", nodeKey, systemID), systemID, "system_node", nodeKey, domains))
+	}
+	return st
 }
 
 func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref string, domains []string) componentSyncStats {
@@ -287,7 +338,8 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 		return st
 	}
 	existing := parseCMDBDomainNames(row)
-	want := domainNamesForCMDB(mergeDomainNames(existing, domains))
+	// WAF 同步为全量覆盖：以当前 EIP/WAF 匹配结果为准，不合并 CMDB 历史域名（EIP 减少时需删掉多余域名）。
+	want := domainNamesForCMDB(domains)
 	if row != nil && domainNamesEqual(existing, want) {
 		st.Skipped++
 		return st
