@@ -115,6 +115,10 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer, seqStore *systemidse
 			systemHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/apis/cmdb/sync" && r.Method == http.MethodPost:
 			cmdb.SyncHTTPHandler(cmdbSyncer).ServeHTTP(w, r)
+		case r.URL.Path == "/apis/cmdb/sync/runs" && r.Method == http.MethodGet:
+			cmdb.SyncRunsHTTPHandler(cmdbSyncer).ServeHTTP(w, r)
+		case strings.HasPrefix(r.URL.Path, "/apis/cmdb/sync/runs/") && r.Method == http.MethodGet:
+			cmdb.SyncRunByIDHTTPHandler(cmdbSyncer).ServeHTTP(w, r)
 		case r.URL.Path == "/apis/ecs/by-account" && r.Method == http.MethodPost:
 			jsonapi.EcsByAccount(w, r)
 		case r.URL.Path == "/apis/rds/by-account" && r.Method == http.MethodPost:
