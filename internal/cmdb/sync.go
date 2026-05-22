@@ -22,6 +22,7 @@ import (
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbutilization"
 	"github.com/cloud-fitter/cloud-fitter/internal/billingagg"
+	"github.com/cloud-fitter/cloud-fitter/internal/cmdb/synclog"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/resourcecache"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/billing"
@@ -38,43 +39,66 @@ type Syncer struct {
 }
 
 type componentSyncStats struct {
-	Added   int
-	Updated int
-	Skipped int
-	Deleted int
-	Errors  int
+	Added     int
+	Updated   int
+	Skipped   int
+	Deleted   int
+	Errors    int
+	FailedIDs []string
+}
+
+func (st *componentSyncStats) noteError(resourceID string) {
+	st.Errors++
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID != "" {
+		st.FailedIDs = append(st.FailedIDs, resourceID)
+	}
 }
 
 type systemSyncStats struct {
-	SystemNode componentSyncStats
-	K8s        componentSyncStats
-	Host       componentSyncStats
-	Middleware componentSyncStats
-	EIP         componentSyncStats
-	ELB         componentSyncStats
-	WAFDomain   componentSyncStats
-	Certificate componentSyncStats
-	Billing     componentSyncStats
+	SystemNode       componentSyncStats
+	K8s              componentSyncStats
+	Host             componentSyncStats
+	Middleware       componentSyncStats
+	MiddlewareByType map[string]componentSyncStats
+	EIP              componentSyncStats
+	ELB              componentSyncStats
+	WAFDomain        componentSyncStats
+	Certificate      componentSyncStats
+	Billing          componentSyncStats
 }
 
 // Run 与 Python main.cmdb 一致：分页拉取 CMDB 中全部 system，再对每个 system_id 同步。
 // 云资源默认来自本服务 List*BySystemName；若设置 CLOUD_FITTER_CMDB_USE_RESOURCE_SNAPSHOT=true 且使用 MySQL，则从 cloud_snap_* 快照表读取（与定时快照任务配合）。
 func (s *Syncer) Run(ctx context.Context) error {
+	return s.runWithTrigger(ctx, synclog.TriggerScheduled, "", "")
+}
+
+func (s *Syncer) runWithTrigger(ctx context.Context, trigger synclog.TriggerType, manualSystemID, manualSystemName string) error {
 	if s == nil || s.Client == nil || s.Store == nil {
 		return errors.New("cmdb syncer: nil client or store")
 	}
-	glog.Infof("cmdb sync run(start): full scheduled sync")
+	started := time.Now()
+	glog.Infof("cmdb sync run(start): trigger=%s", trigger)
 	ids, err := s.listCMDBSystemIDs()
 	if err != nil {
+		s.persistSyncRun(ctx, trigger, manualSystemID, manualSystemName, started, nil, err)
 		return err
 	}
 	glog.Infof("cmdb sync: found %d system(s) in CMDB", len(ids))
+	var outcomes []SystemSyncOutcome
 	for _, systemID := range ids {
-		if err := s.syncSystem(ctx, systemID); err != nil {
-			glog.Warningf("cmdb sync system_id=%s: %v", systemID, err)
+		if manualSystemID != "" && systemID != manualSystemID {
+			continue
+		}
+		outcome := s.syncSystemOutcome(ctx, systemID)
+		outcomes = append(outcomes, outcome)
+		if outcome.EarlyError != "" {
+			glog.Warningf("cmdb sync system_id=%s: %s", systemID, outcome.EarlyError)
 		}
 	}
-	glog.Infof("cmdb sync run(done): full scheduled sync finished")
+	runID := s.persistSyncRun(ctx, trigger, manualSystemID, manualSystemName, started, outcomes, nil)
+	glog.Infof("cmdb sync run(done): trigger=%s run_id=%d systems=%d", trigger, runID, len(outcomes))
 	return nil
 }
 
@@ -110,14 +134,28 @@ func (s *Syncer) listCMDBSystemIDs() ([]string, error) {
 }
 
 func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
+	outcome := s.syncSystemOutcome(ctx, systemID)
+	if outcome.EarlyError != "" {
+		return errors.New(outcome.EarlyError)
+	}
+	return nil
+}
+
+func (s *Syncer) syncSystemOutcome(ctx context.Context, systemID string) SystemSyncOutcome {
+	out := SystemSyncOutcome{SystemID: systemID}
 	sysRow, err := s.Store.SystemBySystemID(systemID)
 	if err != nil {
 		glog.Infof("cmdb sync: skip system_id=%s (no local system row: %v)", systemID, err)
-		return nil
+		out.Skipped = true
+		out.SkipReason = err.Error()
+		return out
 	}
+	out.SystemName = sysRow.Name
 	if len(sysRow.AccountIDs) == 0 {
 		glog.Infof("cmdb sync: skip system_id=%s name=%q (no linked cloud accounts)", systemID, sysRow.Name)
-		return nil
+		out.Skipped = true
+		out.SkipReason = "未关联云账号"
+		return out
 	}
 	systemName := sysRow.Name
 	cmdbSystemName := systemName
@@ -141,25 +179,32 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	if useSnap && dbSnap != nil {
 		var err error
 		if ecsResp, err = resourcecache.LoadECS(ctx, dbSnap, systemID); err != nil {
-			return errors.Wrap(err, "LoadECS snapshot")
+			out.EarlyError = errors.Wrap(err, "LoadECS snapshot").Error()
+			return out
 		}
 		if rdsResp, err = resourcecache.LoadRDS(ctx, dbSnap, systemID); err != nil {
-			return errors.Wrap(err, "LoadRDS snapshot")
+			out.EarlyError = errors.Wrap(err, "LoadRDS snapshot").Error()
+			return out
 		}
 		if redisResp, err = resourcecache.LoadRedis(ctx, dbSnap, systemID); err != nil {
-			return errors.Wrap(err, "LoadRedis snapshot")
+			out.EarlyError = errors.Wrap(err, "LoadRedis snapshot").Error()
+			return out
 		}
 		if kafkaResp, err = resourcecache.LoadKafka(ctx, dbSnap, systemID); err != nil {
-			return errors.Wrap(err, "LoadKafka snapshot")
+			out.EarlyError = errors.Wrap(err, "LoadKafka snapshot").Error()
+			return out
 		}
 		if cceResp, err = resourcecache.LoadCCE(ctx, dbSnap, systemID); err != nil {
-			return errors.Wrap(err, "LoadCCE snapshot")
+			out.EarlyError = errors.Wrap(err, "LoadCCE snapshot").Error()
+			return out
 		}
 		if eipList, err = resourcecache.LoadEIP(ctx, dbSnap, systemID); err != nil {
-			return errors.Wrap(err, "LoadEIP snapshot")
+			out.EarlyError = errors.Wrap(err, "LoadEIP snapshot").Error()
+			return out
 		}
 		if elbList, err = resourcecache.LoadELB(ctx, dbSnap, systemID); err != nil {
-			return errors.Wrap(err, "LoadELB snapshot")
+			out.EarlyError = errors.Wrap(err, "LoadELB snapshot").Error()
+			return out
 		}
 		glog.Infof("cmdb sync system_id=%s: mysql snapshots ecs=%d rds=%d dcs=%d kafka=%d cce=%d eip=%d elb=%d (billing from snapshot when enabled)",
 			systemID, len(ecsResp.GetEcses()), len(rdsResp.GetRdses()), len(redisResp.GetRedises()), len(kafkaResp.GetKafkas()), len(cceResp.GetClusters()), len(eipList), len(elbList))
@@ -170,31 +215,38 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		var err error
 		ecsResp, err = jsonapi.ListEcsBySystemName(ctx, systemName)
 		if err != nil {
-			return errors.Wrap(err, "ListEcsBySystemName")
+			out.EarlyError = errors.Wrap(err, "ListEcsBySystemName").Error()
+			return out
 		}
 		rdsResp, err = jsonapi.ListRdsBySystemName(ctx, systemName)
 		if err != nil {
-			return errors.Wrap(err, "ListRdsBySystemName")
+			out.EarlyError = errors.Wrap(err, "ListRdsBySystemName").Error()
+			return out
 		}
 		redisResp, err = jsonapi.ListRedisBySystemName(ctx, systemName)
 		if err != nil {
-			return errors.Wrap(err, "ListRedisBySystemName")
+			out.EarlyError = errors.Wrap(err, "ListRedisBySystemName").Error()
+			return out
 		}
 		kafkaResp, err = jsonapi.ListKafkaBySystemName(ctx, systemName)
 		if err != nil {
-			return errors.Wrap(err, "ListKafkaBySystemName")
+			out.EarlyError = errors.Wrap(err, "ListKafkaBySystemName").Error()
+			return out
 		}
 		cceResp, err = jsonapi.ListCceBySystemName(ctx, systemName)
 		if err != nil {
-			return errors.Wrap(err, "ListCceBySystemName")
+			out.EarlyError = errors.Wrap(err, "ListCceBySystemName").Error()
+			return out
 		}
 		eipList, err = jsonapi.ListEipBySystemName(ctx, systemName)
 		if err != nil {
-			return errors.Wrap(err, "ListEipBySystemName")
+			out.EarlyError = errors.Wrap(err, "ListEipBySystemName").Error()
+			return out
 		}
 		elbList, err = jsonapi.ListElbBySystemName(ctx, systemName)
 		if err != nil {
-			return errors.Wrap(err, "ListElbBySystemName")
+			out.EarlyError = errors.Wrap(err, "ListElbBySystemName").Error()
+			return out
 		}
 	}
 	billLoc, lerr := time.LoadLocation("Asia/Shanghai")
@@ -204,7 +256,8 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	billingMonth := time.Now().In(billLoc).Format("2006-01")
 	acco, err := s.Store.AccountsBySystemName(systemName)
 	if err != nil {
-		return errors.Wrap(err, "AccountsBySystemName")
+		out.EarlyError = errors.Wrap(err, "AccountsBySystemName").Error()
+		return out
 	}
 
 	// 华为 ECS→CCE 集群 UID：非快照模式调云 API；快照模式读 cloud_snap_ecs_cce_map（定时快照任务内写入）。
@@ -213,7 +266,8 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		var lerr error
 		ecsIDToCceUID, lerr = resourcecache.LoadHuaweiEcsCceMap(ctx, dbSnap, systemID)
 		if lerr != nil {
-			return errors.Wrap(lerr, "LoadHuaweiEcsCceMap snapshot")
+			out.EarlyError = errors.Wrap(lerr, "LoadHuaweiEcsCceMap snapshot").Error()
+			return out
 		}
 	} else {
 		var err error
@@ -233,31 +287,27 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 
 	clusterToECS := hostBelongsK8S(k8sList, hosts)
 
-	stats := systemSyncStats{}
+	stats := systemSyncStats{MiddlewareByType: make(map[string]componentSyncStats)}
 	stats.SystemNode = s.addCMDBSystemNodes(systemID, cmdbSystemName, systemNodes)
 	stats.K8s = s.addCMDBK8sClusters(systemID, k8sList, clusterToECS)
 	if len(k8sList) > 0 {
 		r := s.reconcileCMDBCIsNotInAPI("k8s_cluster", systemID, uuidSetFromK8s(k8sList), nil)
-		stats.K8s.Deleted += r.Deleted
-		stats.K8s.Errors += r.Errors
+		stats.K8s = addComponentStats(stats.K8s, r)
 	}
 	stats.Host = s.addCMDBHosts(systemID, hosts)
 	if len(hosts) > 0 {
 		r := s.reconcileCMDBCIsNotInAPI("server", systemID, uuidSetFromHosts(hosts), nil)
-		stats.Host.Deleted += r.Deleted
-		stats.Host.Errors += r.Errors
+		stats.Host = addComponentStats(stats.Host, r)
 	}
-	stats.Middleware = s.addCMDBMiddlewares(systemID, middlewares)
+	stats.Middleware, stats.MiddlewareByType = s.addCMDBMiddlewares(systemID, middlewares)
 	if len(middlewares) > 0 {
 		r := s.reconcileCMDBCIsNotInAPI("middle_software", systemID, uuidSetFromMiddlewares(middlewares), []string{"RDS_INS", "DCS_REDIS", "DMS_ROCKETMQ"})
-		stats.Middleware.Deleted += r.Deleted
-		stats.Middleware.Errors += r.Errors
+		stats.Middleware = addComponentStats(stats.Middleware, r)
 	}
 	stats.EIP = s.addCMDBEIPs(systemID, eipList)
 	if len(eipList) > 0 {
 		r := s.reconcileCMDBCIsNotInAPI("EIP", systemID, uuidSetFromEIPs(eipList), nil)
-		stats.EIP.Deleted += r.Deleted
-		stats.EIP.Errors += r.Errors
+		stats.EIP = addComponentStats(stats.EIP, r)
 	}
 	if wafAccs := wafbind.AccountNamesFromEnv(); len(wafAccs) > 0 {
 		if useSnap && dbSnap != nil {
@@ -282,8 +332,7 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 	stats.ELB = s.addCMDBELBs(systemID, elbList)
 	if len(elbList) > 0 {
 		r := s.reconcileCMDBCIsNotInAPI("ELB", systemID, uuidSetFromELBs(elbList), nil)
-		stats.ELB.Deleted += r.Deleted
-		stats.ELB.Errors += r.Errors
+		stats.ELB = addComponentStats(stats.ELB, r)
 	}
 	stats.Billing = componentSyncStats{}
 	for _, acc := range acco {
@@ -292,7 +341,8 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 			var lerr error
 			billResp, lerr = resourcecache.LoadBilling(ctx, dbSnap, systemID, billingMonth, acc.Provider, acc.Name)
 			if lerr != nil {
-				return errors.Wrapf(lerr, "LoadBilling snapshot account=%s", acc.Name)
+				out.EarlyError = errors.Wrapf(lerr, "LoadBilling snapshot account=%s", acc.Name).Error()
+				return out
 			}
 		} else {
 			var lerr error
@@ -302,7 +352,8 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 				AccountName:  acc.Name,
 			})
 			if lerr != nil {
-				return errors.Wrapf(lerr, "billing ListSummary account=%s", acc.Name)
+				out.EarlyError = errors.Wrapf(lerr, "billing ListSummary account=%s", acc.Name).Error()
+				return out
 			}
 		}
 		st := s.addCMDBBillings(systemID, billingMonth, acc.Name, billResp)
@@ -323,9 +374,10 @@ func (s *Syncer) syncSystem(ctx context.Context, systemID string) error {
 		stats.WAFDomain.Added, stats.WAFDomain.Updated, stats.WAFDomain.Deleted, stats.WAFDomain.Skipped, stats.WAFDomain.Errors,
 		stats.Certificate.Added, stats.Certificate.Updated, stats.Certificate.Skipped, stats.Certificate.Errors,
 		stats.ELB.Added, stats.ELB.Updated, stats.ELB.Skipped, stats.ELB.Deleted, stats.ELB.Errors,
-		stats.Billing.Added, stats.Billing.Updated, stats.Billing.Skipped, stats.Billing.Deleted, stats.Billing.Errors,
+		stats.Billing.Added, stats.Billing.Updated, stats.Billing.Skipped, stats.Billing.Deleted, 		stats.Billing.Errors,
 	)
-	return nil
+	out.Stats = stats
+	return out
 }
 
 // SyncOneBySystemName 按本库系统名称对 CMDB 做该系统的全量同步，逻辑与 Run 中针对单系统的处理一致（syncSystem）。
@@ -353,7 +405,14 @@ func (s *Syncer) SyncOneBySystemName(ctx context.Context, systemName string) err
 		return errors.New("CMDB中没有相同系统信息")
 	}
 	glog.Infof("cmdb sync run(start): manual single sync system_name=%q system_id=%s", sysRow.Name, sysRow.SystemID)
-	return s.syncSystem(ctx, sysRow.SystemID)
+	started := time.Now()
+	outcome := s.syncSystemOutcome(ctx, sysRow.SystemID)
+	runID := s.persistSyncRun(ctx, synclog.TriggerManual, sysRow.SystemID, sysRow.Name, started, []SystemSyncOutcome{outcome}, nil)
+	glog.Infof("cmdb sync run(done): manual sync run_id=%d system_id=%s status=%s", runID, sysRow.SystemID, outcome.toSystemDetail().Status)
+	if outcome.EarlyError != "" {
+		return errors.New(outcome.EarlyError)
+	}
+	return nil
 }
 
 func collectSystemNodeKeys(
@@ -505,7 +564,7 @@ func (s *Syncer) reconcileCMDBCIsNotInAPI(ciType, systemID string, keep map[stri
 		})
 		if err != nil {
 			glog.Errorf("cmdb reconcile list(%s): system_id=%s page=%d err=%v", ciType, systemID, page, err)
-			st.Errors++
+			st.noteError("")
 			return st
 		}
 		res, _ := data["result"].([]any)
@@ -543,7 +602,7 @@ func (s *Syncer) reconcileCMDBCIsNotInAPI(ciType, systemID string, keep map[stri
 			}
 			if _, err := s.Client.DeleteCI(ciID); err != nil {
 				glog.Errorf("cmdb reconcile delete: system_id=%s _type=%s ci_id=%s uuid=%s err=%v", systemID, ciType, ciID, canon, err)
-				st.Errors++
+				st.noteError(canon)
 				continue
 			}
 			glog.Infof("cmdb reconcile delete ok: system_id=%s _type=%s ci_id=%s uuid=%s", systemID, ciType, ciID, canon)
@@ -962,14 +1021,14 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
 			glog.Errorf("cmdb sync system_node(get): system_id=%s node=%q err=%v", systemID, node, err)
-			st.Errors++
+			st.noteError(node)
 			continue
 		}
 		if exists != "" {
 			row, err := s.Client.GetCIFirst(q)
 			if err != nil {
 				glog.Errorf("cmdb sync system_node(get row): system_id=%s node=%q err=%v", systemID, node, err)
-				st.Errors++
+				st.noteError(node)
 				continue
 			}
 			ciType := "system_node"
@@ -993,7 +1052,7 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 			_, err = s.Client.UpdateCI(exists, merged)
 			if err != nil {
 				glog.Errorf("cmdb sync system_node(update admin_name): system_id=%s node=%q id=%s err=%v", systemID, node, exists, err)
-				st.Errors++
+				st.noteError(node)
 				continue
 			}
 			glog.Infof("cmdb sync system_node(update ok admin_name): system_id=%s node=%q id=%s", systemID, node, exists)
@@ -1005,7 +1064,7 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 		})
 		if err != nil || root == "" {
 			glog.Errorf("cmdb sync system_node(root): system_id=%s node=%q err=%v", systemID, node, err)
-			st.Errors++
+			st.noteError(node)
 			continue
 		}
 		rel, err := s.Client.GetSystemLevelRelations(map[string]any{
@@ -1015,7 +1074,7 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 		})
 		if err != nil {
 			glog.Errorf("cmdb sync system_node(relations): system_id=%s node=%q err=%v", systemID, node, err)
-			st.Errors++
+			st.noteError(node)
 			continue
 		}
 		var bizDomain, productLine, subProduct string
@@ -1036,7 +1095,7 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 		}
 		if len(res) == 0 {
 			glog.Errorf("cmdb sync system_node(relations): system_id=%s node=%q no relations root=%s", systemID, node, root)
-			st.Errors++
+			st.noteError(node)
 			continue
 		}
 		cloud, loc := splitSysNodeNameForCMDB(node, regionHint)
@@ -1056,7 +1115,7 @@ func (s *Syncer) addCMDBSystemNodes(systemID, systemName string, nodes map[strin
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
 			glog.Errorf("cmdb sync system_node(add): system_id=%s node=%q err=%v", systemID, node, err)
-			st.Errors++
+			st.noteError(node)
 			continue
 		}
 		glog.Infof("cmdb sync system_node(add ok): system_id=%s node=%q resp=%+v", systemID, node, d)
@@ -1097,7 +1156,7 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 		if !ok {
 			glog.Warningf("cmdb sync k8s(skip invalid cluster uuid): system_id=%s cluster=%q cluster_uid=%q",
 				systemID, c.Name, c.ClusterUID)
-			st.Errors++
+			st.noteError(c.ClusterUID)
 			continue
 		}
 		kq := map[string]any{
@@ -1106,7 +1165,7 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 		exists, err := s.Client.GetCIID(kq)
 		if err != nil {
 			glog.Errorf("cmdb sync k8s(get): system_id=%s cluster=%q err=%v", systemID, c.Name, err)
-			st.Errors++
+			st.noteError(c.ClusterUID)
 			continue
 		}
 		ips := strings.Join(clusterToECS[c.Name], ",")
@@ -1116,7 +1175,7 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 			row, err := s.Client.GetCIFirst(kq)
 			if err != nil {
 				glog.Errorf("cmdb sync k8s(get row): system_id=%s cluster=%q id=%s err=%v", systemID, c.Name, exists, err)
-				st.Errors++
+				st.noteError(c.ClusterUID)
 				continue
 			}
 			fields = mergeCMDBPreserveNonEmpty(fields, row)
@@ -1128,7 +1187,7 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 			_, err = s.Client.UpdateCI(exists, fields)
 			if err != nil {
 				glog.Errorf("cmdb sync k8s(update): system_id=%s cluster=%q id=%s err=%v", systemID, c.Name, exists, err)
-				st.Errors++
+				st.noteError(c.ClusterUID)
 				continue
 			}
 			glog.Infof("cmdb sync k8s(update ok): system_id=%s cluster=%q id=%s", systemID, c.Name, exists)
@@ -1138,7 +1197,7 @@ func (s *Syncer) addCMDBK8sClusters(systemID string, k8s []k8sCluster, clusterTo
 		d, err := s.Client.AddCI(fields)
 		if err != nil {
 			glog.Errorf("cmdb sync k8s(add): system_id=%s cluster=%q err=%v", systemID, c.Name, err)
-			st.Errors++
+			st.noteError(c.ClusterUID)
 			continue
 		}
 		glog.Infof("cmdb sync k8s(add ok): system_id=%s cluster=%q resp=%+v", systemID, c.Name, d)
@@ -1161,7 +1220,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 		if !ok {
 			glog.Warningf("cmdb sync host(skip invalid instance uuid): system_id=%s server_name=%q instance_id=%q",
 				systemID, h.Name, h.InstanceID)
-			st.Errors++
+			st.noteError(h.InstanceID)
 			continue
 		}
 		ct, locn := cmdbCloudLocationFromSysNodeName(sysNode, h.CloudLabel, h.Region)
@@ -1171,14 +1230,14 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
 			glog.Errorf("cmdb sync host(get): system_id=%s host=%q ip=%s err=%v", systemID, h.Name, h.IP, err)
-			st.Errors++
+			st.noteError(h.InstanceID)
 			continue
 		}
 		if exists != "" {
 			row, err := s.Client.GetCIFirst(q)
 			if err != nil {
 				glog.Errorf("cmdb sync host(get row): system_id=%s host=%q ip=%s id=%s err=%v", systemID, h.Name, h.IP, exists, err)
-				st.Errors++
+				st.noteError(h.InstanceID)
 				continue
 			}
 			ciType := "server"
@@ -1225,7 +1284,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 			_, err = s.Client.UpdateCI(exists, merged)
 			if err != nil {
 				glog.Errorf("cmdb sync host(update): system_id=%s host=%q ip=%s id=%s err=%v", systemID, h.Name, h.IP, exists, err)
-				st.Errors++
+				st.noteError(h.InstanceID)
 				continue
 			}
 			glog.Infof("cmdb sync host(update ok): system_id=%s host=%q ip=%s id=%s", systemID, h.Name, h.IP, exists)
@@ -1264,7 +1323,7 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
 			glog.Errorf("cmdb sync host(add): system_id=%s host=%q ip=%s err=%v", systemID, h.Name, h.IP, err)
-			st.Errors++
+			st.noteError(h.InstanceID)
 			continue
 		}
 		glog.Infof("cmdb sync host(add ok): system_id=%s host=%q ip=%s resp=%+v", systemID, h.Name, h.IP, d)
@@ -1273,8 +1332,19 @@ func (s *Syncer) addCMDBHosts(systemID string, hosts []hostRec) componentSyncSta
 	return st
 }
 
-func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncStats {
+func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) (componentSyncStats, map[string]componentSyncStats) {
 	st := componentSyncStats{}
+	byType := make(map[string]componentSyncStats)
+	noteMwErr := func(m mwRec, resourceID string) {
+		st.noteError(resourceID)
+		mwType := strings.TrimSpace(m.MwType)
+		if mwType == "" {
+			mwType = "Middleware"
+		}
+		bs := byType[mwType]
+		bs.noteError(resourceID)
+		byType[mwType] = bs
+	}
 	for _, m := range mws {
 		if m.Name == "" {
 			continue
@@ -1286,13 +1356,13 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 		rawID := strings.TrimSpace(m.InstanceID)
 		if rawID == "" {
 			glog.Warningf("cmdb sync middleware(skip empty instance_id): system_id=%s name=%q", systemID, m.Name)
-			st.Errors++
+			noteMwErr(m, m.Name)
 			continue
 		}
 		instUUID, ok := middlewareCMDBUUID(rawID)
 		if !ok {
 			glog.Warningf("cmdb sync middleware(skip instance_id): system_id=%s name=%q instance_id=%q", systemID, m.Name, rawID)
-			st.Errors++
+			noteMwErr(m, rawID)
 			continue
 		}
 		// 唯一性对齐：优先 instance_id + system_id；旧数据仅有 uuid 时回退按 uuid 命中并补写 instance_id
@@ -1300,7 +1370,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 		exists, err := s.Client.GetCIID(mqInst)
 		if err != nil {
 			glog.Errorf("cmdb sync middleware(get by instance_id): system_id=%s name=%q err=%v", systemID, m.Name, err)
-			st.Errors++
+			noteMwErr(m, rawID)
 			continue
 		}
 		var row map[string]any
@@ -1308,7 +1378,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 			row, err = s.Client.GetCIFirst(mqInst)
 			if err != nil {
 				glog.Errorf("cmdb sync middleware(get row by instance_id): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
-				st.Errors++
+				noteMwErr(m, rawID)
 				continue
 			}
 		} else {
@@ -1316,14 +1386,14 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 			exists, err = s.Client.GetCIID(mqUUID)
 			if err != nil {
 				glog.Errorf("cmdb sync middleware(get by uuid): system_id=%s name=%q err=%v", systemID, m.Name, err)
-				st.Errors++
+				noteMwErr(m, rawID)
 				continue
 			}
 			if exists != "" {
 				row, err = s.Client.GetCIFirst(mqUUID)
 				if err != nil {
 					glog.Errorf("cmdb sync middleware(get row by uuid): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
-					st.Errors++
+					noteMwErr(m, rawID)
 					continue
 				}
 			}
@@ -1371,7 +1441,7 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 			_, err = s.Client.UpdateCI(exists, merged)
 			if err != nil {
 				glog.Errorf("cmdb sync middleware(update): system_id=%s name=%q id=%s err=%v", systemID, m.Name, exists, err)
-				st.Errors++
+				noteMwErr(m, rawID)
 				continue
 			}
 			glog.Infof("cmdb sync middleware(update ok): system_id=%s name=%q id=%s", systemID, m.Name, exists)
@@ -1408,13 +1478,13 @@ func (s *Syncer) addCMDBMiddlewares(systemID string, mws []mwRec) componentSyncS
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
 			glog.Errorf("cmdb sync middleware(add): system_id=%s name=%q err=%v", systemID, m.Name, err)
-			st.Errors++
+			noteMwErr(m, rawID)
 			continue
 		}
 		glog.Infof("cmdb sync middleware(add ok): system_id=%s name=%q resp=%+v", systemID, m.Name, d)
 		st.Added++
 	}
-	return st
+	return st, byType
 }
 
 func mergeEIPSystemNodeKeys(nodes map[string]string, eips []*eip.Instance) {
@@ -1528,13 +1598,13 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 		eipUUID, ok := parseCloudInstanceUUID(e.EipId)
 		if !ok {
 			glog.Warningf("cmdb sync eip(skip invalid instance uuid): system_id=%s eip_id=%q", systemID, e.EipId)
-			st.Errors++
+			st.noteError(e.EipId)
 			continue
 		}
 		sysNode := effectiveSysNodeName(eipTenantProvider(e), strings.TrimSpace(e.RegionName), e.NodeTagValue)
 		if sysNode == "" {
 			glog.Warningf("cmdb sync eip(skip no sys_node): system_id=%s eip_id=%s", systemID, e.EipId)
-			st.Errors++
+			st.noteError(e.EipId)
 			continue
 		}
 		q := map[string]any{
@@ -1543,7 +1613,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
 			glog.Errorf("cmdb sync eip(get): system_id=%s eip_id=%s err=%v", systemID, e.EipId, err)
-			st.Errors++
+			st.noteError(e.EipId)
 			continue
 		}
 		fields := map[string]any{
@@ -1562,7 +1632,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			row, err := s.Client.GetCIFirst(q)
 			if err != nil {
 				glog.Errorf("cmdb sync eip(get row): system_id=%s eip_id=%s err=%v", systemID, e.EipId, err)
-				st.Errors++
+				st.noteError(e.EipId)
 				continue
 			}
 			fields = mergeCMDBPreserveNonEmpty(fields, row)
@@ -1574,7 +1644,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 			_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{"ci_type": "EIP"}, fields))
 			if err != nil {
 				glog.Errorf("cmdb sync eip(update): system_id=%s eip_id=%s id=%s err=%v", systemID, e.EipId, exists, err)
-				st.Errors++
+				st.noteError(e.EipId)
 				continue
 			}
 			glog.Infof("cmdb sync eip(update ok): system_id=%s eip_id=%s id=%s", systemID, e.EipId, exists)
@@ -1589,7 +1659,7 @@ func (s *Syncer) addCMDBEIPs(systemID string, eips []*eip.Instance) componentSyn
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
 			glog.Errorf("cmdb sync eip(add): system_id=%s eip_id=%s err=%v", systemID, e.EipId, err)
-			st.Errors++
+			st.noteError(e.EipId)
 			continue
 		}
 		glog.Infof("cmdb sync eip(add ok): system_id=%s eip_id=%s resp=%+v", systemID, e.EipId, d)
@@ -1608,14 +1678,14 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 		elbUUID, ok := parseCloudInstanceUUID(e.ID)
 		if !ok {
 			glog.Warningf("cmdb sync elb(skip invalid instance uuid): system_id=%s elb_id=%q", systemID, e.ID)
-			st.Errors++
+			st.noteError(e.ID)
 			continue
 		}
 		elbName := strings.TrimSpace(e.Name)
 		sysNode := effectiveSysNodeName(elbTenantProvider(e), strings.TrimSpace(e.RegionName), e.NodeTagValue)
 		if sysNode == "" {
 			glog.Warningf("cmdb sync elb(skip no sys_node): system_id=%s elb_id=%s", systemID, e.ID)
-			st.Errors++
+			st.noteError(e.ID)
 			continue
 		}
 		q := map[string]any{
@@ -1624,7 +1694,7 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
 			glog.Errorf("cmdb sync elb(get): system_id=%s elb_id=%s err=%v", systemID, e.ID, err)
-			st.Errors++
+			st.noteError(e.ID)
 			continue
 		}
 		fields := map[string]any{
@@ -1641,7 +1711,7 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 			row, err := s.Client.GetCIFirst(q)
 			if err != nil {
 				glog.Errorf("cmdb sync elb(get row): system_id=%s elb_id=%s err=%v", systemID, e.ID, err)
-				st.Errors++
+				st.noteError(e.ID)
 				continue
 			}
 			fields = mergeCMDBPreserveNonEmpty(fields, row)
@@ -1653,7 +1723,7 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 			_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{"ci_type": "ELB"}, fields))
 			if err != nil {
 				glog.Errorf("cmdb sync elb(update): system_id=%s elb_id=%s id=%s err=%v", systemID, e.ID, exists, err)
-				st.Errors++
+				st.noteError(e.ID)
 				continue
 			}
 			glog.Infof("cmdb sync elb(update ok): system_id=%s elb_id=%s id=%s", systemID, e.ID, exists)
@@ -1667,7 +1737,7 @@ func (s *Syncer) addCMDBELBs(systemID string, elbs []*elb.Instance) componentSyn
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
 			glog.Errorf("cmdb sync elb(add): system_id=%s elb_id=%s err=%v", systemID, e.ID, err)
-			st.Errors++
+			st.noteError(e.ID)
 			continue
 		}
 		glog.Infof("cmdb sync elb(add ok): system_id=%s elb_id=%s resp=%+v", systemID, e.ID, d)
@@ -1737,7 +1807,7 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 			exists0, err := s.Client.GetCIID(q)
 			if err != nil {
 				glog.Errorf("cmdb sync billing(get zero consume): system_id=%s account=%s category=%q err=%v", systemID, accountName, cat, err)
-				st.Errors++
+				st.noteError(cat)
 				continue
 			}
 			if exists0 == "" {
@@ -1747,7 +1817,7 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 			}
 			if _, err := s.Client.DeleteCI(exists0); err != nil {
 				glog.Errorf("cmdb sync billing(delete zero consume): system_id=%s account=%s category=%q id=%s err=%v", systemID, accountName, cat, exists0, err)
-				st.Errors++
+				st.noteError(cat)
 				continue
 			}
 			glog.Infof("cmdb sync billing(delete ok zero consume): system_id=%s account=%s category=%s id=%s", systemID, accountName, cat, exists0)
@@ -1761,7 +1831,7 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 		exists, err := s.Client.GetCIID(q)
 		if err != nil {
 			glog.Errorf("cmdb sync billing(get): system_id=%s account=%s category=%q err=%v", systemID, accountName, cat, err)
-			st.Errors++
+			st.noteError(cat)
 			continue
 		}
 		rowCountStr := itoa32(row.SourceRowCount)
@@ -1777,7 +1847,7 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 			frow, err := s.Client.GetCIFirst(q)
 			if err != nil {
 				glog.Errorf("cmdb sync billing(get row): system_id=%s account=%s category=%q err=%v", systemID, accountName, cat, err)
-				st.Errors++
+				st.noteError(cat)
 				continue
 			}
 			fields = mergeCMDBPreserveNonEmpty(fields, frow)
@@ -1789,7 +1859,7 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 			_, err = s.Client.UpdateCI(exists, mergeAttrMaps(map[string]any{"ci_type": "billing"}, fields))
 			if err != nil {
 				glog.Errorf("cmdb sync billing(update): system_id=%s account=%s category=%q id=%s err=%v", systemID, accountName, cat, exists, err)
-				st.Errors++
+				st.noteError(cat)
 				continue
 			}
 			glog.Infof("cmdb sync billing(update ok): system_id=%s account=%s category=%s id=%s", systemID, accountName, cat, exists)
@@ -1806,7 +1876,7 @@ func (s *Syncer) addCMDBBillings(systemID, billingMonth, accountName string, res
 		d, err := s.Client.AddCI(payload)
 		if err != nil {
 			glog.Errorf("cmdb sync billing(add): system_id=%s account=%s category=%q err=%v", systemID, accountName, cat, err)
-			st.Errors++
+			st.noteError(cat)
 			continue
 		}
 		glog.Infof("cmdb sync billing(add ok): system_id=%s account=%s category=%s resp=%+v", systemID, accountName, cat, d)

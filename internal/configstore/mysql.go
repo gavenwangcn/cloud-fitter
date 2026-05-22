@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/cloud-fitter/cloud-fitter/internal/cmdb/synclog"
 	"github.com/cloud-fitter/cloud-fitter/internal/resourcecache"
 	"github.com/pkg/errors"
 )
@@ -67,6 +68,9 @@ func migrateMySQL(db *sql.DB) error {
 	}
 	if err := resourcecache.MigrateMySQL(db); err != nil {
 		return errors.WithMessage(err, "migrate mysql resource snapshots")
+	}
+	if err := synclog.MigrateMySQL(db); err != nil {
+		return errors.WithMessage(err, "migrate mysql cmdb sync log")
 	}
 	return nil
 }

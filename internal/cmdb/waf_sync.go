@@ -253,6 +253,7 @@ func addComponentStats(a, b componentSyncStats) componentSyncStats {
 	a.Skipped += b.Skipped
 	a.Deleted += b.Deleted
 	a.Errors += b.Errors
+	a.FailedIDs = append(a.FailedIDs, b.FailedIDs...)
 	return a
 }
 
