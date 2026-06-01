@@ -34,7 +34,7 @@ func (s *Syncer) syncWAFDerivedCMDB(ctx context.Context, systemID string, eips [
 		wafRows, err := waf.List(accCtx, pbtenant.CloudProvider_huawei)
 		if err != nil {
 			glog.Warningf("cmdb sync waf(list): system_id=%s account=%s err=%v", systemID, accName, err)
-			domainSt.Errors++
+			domainSt.noteError(accName, syncErrMsg("Huawei WAF List", err))
 			continue
 		}
 		glog.Infof("cmdb sync waf(list ok): system_id=%s account=%s rows=%d", systemID, accName, len(wafRows))
@@ -106,7 +106,7 @@ func (s *Syncer) upsertCertificatesFromJobs(ctx context.Context, systemID string
 		if idx == nil {
 			glog.Warningf("cmdb sync certificate(miss account index): system_id=%s account=%s cert_name=%q (cert list only from CLOUD_FITTER_HUAWEI_WAF_CMDB_ACCOUNT_NAMES)",
 				systemID, job.AccountName, job.CertName)
-			certStats.Errors++
+			certStats.noteError(job.CertName, fmt.Sprintf("certificate account index missing: %s", job.AccountName))
 			continue
 		}
 		c := idx[job.CertName]
@@ -115,7 +115,7 @@ func (s *Syncer) upsertCertificatesFromJobs(ctx context.Context, systemID string
 		}
 		if c == nil {
 			glog.Warningf("cmdb sync certificate(miss name): system_id=%s account=%s cert_name=%q", systemID, job.AccountName, job.CertName)
-			certStats.Errors++
+			certStats.noteError(job.CertName, fmt.Sprintf("certificate not found in SCM account=%s", job.AccountName))
 			continue
 		}
 		ek := job.AccountName + "|" + strings.TrimSpace(c.ID)
@@ -248,13 +248,7 @@ func domainNamesEqual(a, b []string) bool {
 }
 
 func addComponentStats(a, b componentSyncStats) componentSyncStats {
-	a.Added += b.Added
-	a.Updated += b.Updated
-	a.Skipped += b.Skipped
-	a.Deleted += b.Deleted
-	a.Errors += b.Errors
-	a.FailedIDs = append(a.FailedIDs, b.FailedIDs...)
-	return a
+	return mergeComponentStats(a, b)
 }
 
 func wafDomainMapsFromBind(bind wafbind.Result) (eipDomains, nodeDomains map[string][]string) {
@@ -306,7 +300,7 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 	ciID, err := s.Client.GetCIID(q)
 	if err != nil {
 		glog.Errorf("cmdb sync waf %s(get): system_id=%s ref=%q err=%v", kind, systemID, ref, err)
-		st.Errors++
+		st.noteError(ref, syncErrMsg(fmt.Sprintf("CMDB GetCIID waf %s", kind), err))
 		return st
 	}
 	if ciID == "" {
@@ -317,7 +311,7 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 	row, err := s.Client.GetCIFirst(q)
 	if err != nil {
 		glog.Errorf("cmdb sync waf %s(get row): system_id=%s ref=%q err=%v", kind, systemID, ref, err)
-		st.Errors++
+		st.noteError(ref, syncErrMsg(fmt.Sprintf("CMDB GetCIFirst waf %s", kind), err))
 		return st
 	}
 	existing := parseCMDBDomainNames(row)
@@ -347,7 +341,7 @@ func (s *Syncer) patchCMDBCIDomainName(typePrefix, idQuery, systemID, kind, ref 
 	})
 	if err != nil {
 		glog.Errorf("cmdb sync waf %s(update domain_name): system_id=%s ref=%q id=%s err=%v", kind, systemID, ref, ciID, err)
-		st.Errors++
+		st.noteError(ref, syncErrMsg(fmt.Sprintf("CMDB UpdateCI waf %s domain_name", kind), err))
 		return st
 	}
 	glog.Infof("cmdb sync waf %s(update domain_name ok): system_id=%s ref=%q id=%s domains=%v", kind, systemID, ref, ciID, want)
@@ -402,20 +396,20 @@ func (s *Syncer) resolveCertificateCI(systemID, scmID string) (certificateCIRef,
 func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundDomains []string) componentSyncStats {
 	st := componentSyncStats{}
 	if c == nil || strings.TrimSpace(c.ID) == "" {
-		st.Errors++
+		st.noteError("", "empty certificate scm id")
 		return st
 	}
 	certCloudID := strings.TrimSpace(c.ID) // SCM ListCertificates.Id
 	cmdbUUID := certificateCMDBUUID(certCloudID, systemID)
 	if cmdbUUID == "" {
 		glog.Warningf("cmdb sync certificate(skip): empty scm_id or system_id scm=%q system=%q", certCloudID, systemID)
-		st.Errors++
+		st.noteError(certCloudID, "empty scm_id or system_id")
 		return st
 	}
 	ref, err := s.resolveCertificateCI(systemID, certCloudID)
 	if err != nil {
 		glog.Errorf("cmdb sync certificate(resolve): system_id=%s uuid=%s err=%v", systemID, cmdbUUID, err)
-		st.Errors++
+		st.noteError(cmdbUUID, syncErrMsg("CMDB resolve certificate", err))
 		return st
 	}
 	domainField := domainNamesForCMDB(boundDomains)
@@ -451,7 +445,7 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 		if err != nil {
 			glog.Errorf("cmdb sync certificate(update): system_id=%s uuid=%s id=%s err=%v",
 				systemID, cmdbUUID, ref.ciID, err)
-			st.Errors++
+			st.noteError(cmdbUUID, syncErrMsg("CMDB UpdateCI certificate", err))
 			return st
 		}
 		glog.Infof("cmdb sync certificate(update ok): system_id=%s uuid=%s id=%s",
@@ -466,7 +460,7 @@ func (s *Syncer) upsertCMDBCertificate(systemID string, c *cert.Instance, boundD
 	}, fields)
 	if _, err := s.Client.AddCI(payload); err != nil {
 		glog.Errorf("cmdb sync certificate(add): system_id=%s uuid=%s err=%v", systemID, cmdbUUID, err)
-		st.Errors++
+		st.noteError(cmdbUUID, syncErrMsg("CMDB AddCI certificate", err))
 		return st
 	}
 	glog.Infof("cmdb sync certificate(add ok): system_id=%s uuid=%s name=%q", systemID, cmdbUUID, c.Name)

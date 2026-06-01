@@ -10,18 +10,26 @@ const (
 	TriggerManual    TriggerType = "manual"
 )
 
+// FailureDetail 单条失败明细（资源 ID + 原因）。
+type FailureDetail struct {
+	ResourceID string `json:"resource_id,omitempty"`
+	Reason     string `json:"reason"`
+}
+
 // ResourceFailure 单类资源同步失败明细（系统维度）。
 type ResourceFailure struct {
-	FailCount int      `json:"fail_count"`
-	FailedIDs []string `json:"failed_ids,omitempty"`
+	FailCount int             `json:"fail_count"`
+	FailedIDs []string        `json:"failed_ids,omitempty"`
+	Failures  []FailureDetail `json:"failures,omitempty"`
 }
 
 // ResourceFailBySystem 某系统下某类资源的失败明细。
 type ResourceFailBySystem struct {
-	SystemID   string   `json:"system_id"`
-	SystemName string   `json:"system_name"`
-	FailCount  int      `json:"fail_count"`
-	FailedIDs  []string `json:"failed_ids,omitempty"`
+	SystemID   string          `json:"system_id"`
+	SystemName string          `json:"system_name"`
+	FailCount  int             `json:"fail_count"`
+	FailedIDs  []string        `json:"failed_ids,omitempty"`
+	Failures   []FailureDetail `json:"failures,omitempty"`
 }
 
 // ResourceFailTotal 某类资源失败汇总（含跨系统明细，便于排查）。

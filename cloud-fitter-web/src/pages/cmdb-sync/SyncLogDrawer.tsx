@@ -6,6 +6,7 @@ import {
   CmdbSyncSystemDetail,
   getCmdbSyncRun,
 } from '@/services/cmdbSync';
+import FailureDetailTable from './FailureDetailTable';
 
 const { Text } = Typography;
 
@@ -146,22 +147,23 @@ const SyncLogDrawer: React.FC<SyncLogDrawerProps> = ({ open, runId, preview, onC
                   size="small"
                   pagination={false}
                   dataSource={row.items}
+                  expandable={{
+                    expandedRowRender: (item) => (
+                      <FailureDetailTable
+                        resourceFailure={{
+                          fail_count: item.fail_count,
+                          failed_ids: item.failed_ids,
+                          failures: item.failures,
+                        }}
+                      />
+                    ),
+                    rowExpandable: (item) =>
+                      Boolean(item.failures?.length || item.failed_ids?.length),
+                  }}
                   columns={[
                     { title: '系统名称', dataIndex: 'system_name', width: 160 },
                     { title: 'system_id', dataIndex: 'system_id', width: 180 },
                     { title: '失败数', dataIndex: 'fail_count', width: 72, align: 'center' },
-                    {
-                      title: '失败资源 ID',
-                      dataIndex: 'failed_ids',
-                      render: (ids?: string[]) =>
-                        ids?.length ? (
-                          <Text code style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                            {ids.join(', ')}
-                          </Text>
-                        ) : (
-                          '—'
-                        ),
-                    },
                   ]}
                 />
               ),
@@ -193,13 +195,14 @@ const SyncLogDrawer: React.FC<SyncLogDrawerProps> = ({ open, runId, preview, onC
                 const rows = Object.entries(resources).map(([type, rf]) => ({
                   key: type,
                   type,
-                  failCount: rf.fail_count,
-                  failedIds: rf.failed_ids ?? [],
+                  rf,
                 }));
                 if (sys.error) {
                   return (
                     <div style={{ marginBottom: 8 }}>
-                      <Text type="danger">{sys.error}</Text>
+                      <Text type="danger" style={{ whiteSpace: 'pre-wrap' }}>
+                        {sys.error}
+                      </Text>
                     </div>
                   );
                 }
@@ -212,21 +215,14 @@ const SyncLogDrawer: React.FC<SyncLogDrawerProps> = ({ open, runId, preview, onC
                     size="small"
                     pagination={false}
                     dataSource={rows}
+                    expandable={{
+                      expandedRowRender: (row) => <FailureDetailTable resourceFailure={row.rf} compact />,
+                      rowExpandable: (row) =>
+                        Boolean(row.rf.failures?.length || row.rf.failed_ids?.length),
+                    }}
                     columns={[
                       { title: '资源类型', dataIndex: 'type', width: 120 },
-                      { title: '失败数', dataIndex: 'failCount', width: 80, align: 'center' },
-                      {
-                        title: '失败 ID',
-                        dataIndex: 'failedIds',
-                        render: (ids: string[]) =>
-                          ids.length ? (
-                            <Text code style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                              {ids.join(', ')}
-                            </Text>
-                          ) : (
-                            '—'
-                          ),
-                      },
+                      { title: '失败数', render: (_, row) => row.rf.fail_count, width: 80, align: 'center' },
                     ]}
                   />
                 );

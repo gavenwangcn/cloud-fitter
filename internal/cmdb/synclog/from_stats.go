@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// FailureEntry 与 cmdb.syncFailureEntry 对齐。
+type FailureEntry struct {
+	ResourceID string
+	Reason     string
+}
+
 // ComponentStats 与 cmdb.componentSyncStats 字段对齐，避免 synclog 依赖 cmdb 包循环引用。
 type ComponentStats struct {
 	Added     int
@@ -13,6 +19,7 @@ type ComponentStats struct {
 	Deleted   int
 	Errors    int
 	FailedIDs []string
+	Failures  []FailureEntry
 }
 
 // SystemStats 单系统各组件统计。
@@ -37,13 +44,42 @@ func (s SystemStats) TotalErrors() int {
 	return n
 }
 
+func failureDetails(entries []FailureEntry) []FailureDetail {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]FailureDetail, 0, len(entries))
+	for _, e := range entries {
+		reason := strings.TrimSpace(e.Reason)
+		if reason == "" {
+			reason = "unknown error"
+		}
+		out = append(out, FailureDetail{
+			ResourceID: strings.TrimSpace(e.ResourceID),
+			Reason:     reason,
+		})
+	}
+	return out
+}
+
 func resourceFailure(st ComponentStats) (ResourceFailure, bool) {
 	if st.Errors <= 0 {
 		return ResourceFailure{}, false
 	}
+	failures := failureDetails(st.Failures)
+	ids := dedupeNonEmpty(st.FailedIDs)
+	if len(ids) == 0 && len(failures) > 0 {
+		for _, f := range failures {
+			if f.ResourceID != "" {
+				ids = append(ids, f.ResourceID)
+			}
+		}
+		ids = dedupeNonEmpty(ids)
+	}
 	return ResourceFailure{
 		FailCount: st.Errors,
-		FailedIDs: dedupeNonEmpty(st.FailedIDs),
+		FailedIDs: ids,
+		Failures:  failures,
 	}, true
 }
 
@@ -63,6 +99,7 @@ func systemResources(stats SystemStats) map[string]ResourceFailure {
 			if prev, exists := out[name]; exists {
 				prev.FailCount += rf.FailCount
 				prev.FailedIDs = dedupeNonEmpty(append(prev.FailedIDs, rf.FailedIDs...))
+				prev.Failures = append(prev.Failures, rf.Failures...)
 				out[name] = prev
 			} else {
 				out[name] = rf
@@ -131,6 +168,7 @@ func buildResourceFailTotals(systems []SystemDetail) map[string]ResourceFailTota
 				SystemName: sys.SystemName,
 				FailCount:  rf.FailCount,
 				FailedIDs:  dedupeNonEmpty(rf.FailedIDs),
+				Failures:   rf.Failures,
 			})
 			out[resName] = total
 		}

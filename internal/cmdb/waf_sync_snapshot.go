@@ -24,7 +24,7 @@ func (s *Syncer) syncWAFDerivedCMDBFromSnapshot(ctx context.Context, systemID st
 	wafRows, err := resourcecache.LoadWAF(ctx, db, systemID, wafPull)
 	if err != nil {
 		glog.Warningf("cmdb sync waf snapshot(load waf): system_id=%s err=%v", systemID, err)
-		domainSt.Errors++
+		domainSt.noteError("", syncErrMsg("LoadWAF snapshot", err))
 		return domainSt, certStats
 	}
 	glog.Infof("cmdb sync waf snapshot(load): system_id=%s waf_rows=%d accounts=%v (filtered)", systemID, len(wafRows), wafPull)
@@ -36,7 +36,7 @@ func (s *Syncer) syncWAFDerivedCMDBFromSnapshot(ctx context.Context, systemID st
 	certRows, err := resourcecache.LoadCertificates(ctx, db, systemID, wafPull)
 	if err != nil {
 		glog.Warningf("cmdb sync waf snapshot(load cert): system_id=%s err=%v", systemID, err)
-		certStats.Errors++
+		certStats.noteError("", syncErrMsg("LoadCertificates snapshot", err))
 		return domainSt, certStats
 	}
 	certByAccount := certIndexFromSnapshot(certRows, wafPull)

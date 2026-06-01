@@ -65,6 +65,23 @@ func TestParseResourceTotalsJSONDetailed(t *testing.T) {
 	}
 }
 
+func TestResourceFailureWithReasons(t *testing.T) {
+	stats := SystemStats{
+		EIP: ComponentStats{
+			Errors: 1,
+			Failures: []FailureEntry{{
+				ResourceID: "eip-1",
+				Reason:     "CMDB AddCI EIP: duplicate uuid",
+			}},
+		},
+	}
+	detail := SystemDetailFrom("sid", "name", "failed", "", stats)
+	rf := detail.Resources["EIP"]
+	if len(rf.Failures) != 1 || rf.Failures[0].Reason == "" {
+		t.Fatalf("failures=%v", rf.Failures)
+	}
+}
+
 func TestSystemResourcesMiddlewareTypes(t *testing.T) {
 	stats := SystemStats{
 		MiddlewareByType: map[string]ComponentStats{

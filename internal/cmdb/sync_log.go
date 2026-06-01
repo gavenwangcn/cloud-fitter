@@ -50,6 +50,13 @@ func (o SystemSyncOutcome) toSystemDetail() synclog.SystemDetail {
 }
 
 func toSynclogComponent(st componentSyncStats) synclog.ComponentStats {
+	failures := make([]synclog.FailureEntry, 0, len(st.Failures))
+	for _, f := range st.Failures {
+		failures = append(failures, synclog.FailureEntry{
+			ResourceID: f.ResourceID,
+			Reason:     f.Reason,
+		})
+	}
 	return synclog.ComponentStats{
 		Added:     st.Added,
 		Updated:   st.Updated,
@@ -57,6 +64,7 @@ func toSynclogComponent(st componentSyncStats) synclog.ComponentStats {
 		Deleted:   st.Deleted,
 		Errors:    st.Errors,
 		FailedIDs: append([]string(nil), st.FailedIDs...),
+		Failures:  failures,
 	}
 }
 

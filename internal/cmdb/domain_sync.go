@@ -88,7 +88,7 @@ func (s *Syncer) reconcileNodeDomainCIs(systemID, sysNodeName string, wantDomain
 	})
 	if err != nil {
 		glog.Errorf("cmdb sync domain(node get): system_id=%s node=%q err=%v", systemID, sysNodeName, err)
-		st.Errors++
+		st.noteError(sysNodeName, syncErrMsg("CMDB GetCIID system_node for domain", err))
 		return st
 	}
 	if nodeCIID == "" {
@@ -100,7 +100,7 @@ func (s *Syncer) reconcileNodeDomainCIs(systemID, sysNodeName string, wantDomain
 	existing, err := s.listCMDBDomainTextsForNode(systemID, sysNodeName)
 	if err != nil {
 		glog.Errorf("cmdb sync domain(list): system_id=%s node=%q err=%v", systemID, sysNodeName, err)
-		st.Errors++
+		st.noteError(sysNodeName, syncErrMsg("CMDB list domain CI", err))
 		return st
 	}
 	want := domainNamesForCMDB(wantDomains)
@@ -127,7 +127,7 @@ func (s *Syncer) reconcileNodeDomainCIs(systemID, sysNodeName string, wantDomain
 		}
 		if _, err := s.Client.AddCI(payload); err != nil {
 			glog.Errorf("cmdb sync domain(add): system_id=%s node=%q domain=%q err=%v", systemID, sysNodeName, text, err)
-			st.Errors++
+			st.noteError(text, syncErrMsg("CMDB AddCI domain", err))
 			continue
 		}
 		glog.Infof("cmdb sync domain(add ok): system_id=%s node=%q domain=%q", systemID, sysNodeName, text)
@@ -141,7 +141,7 @@ func (s *Syncer) reconcileNodeDomainCIs(systemID, sysNodeName string, wantDomain
 		}
 		if _, err := s.Client.DeleteCI(ciID); err != nil {
 			glog.Errorf("cmdb sync domain(delete): system_id=%s node=%q domain=%q id=%s err=%v", systemID, sysNodeName, text, ciID, err)
-			st.Errors++
+			st.noteError(text, syncErrMsg("CMDB DeleteCI domain", err))
 			continue
 		}
 		glog.Infof("cmdb sync domain(delete ok): system_id=%s node=%q domain=%q id=%s", systemID, sysNodeName, text, ciID)

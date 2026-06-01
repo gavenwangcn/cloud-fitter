@@ -11,9 +11,15 @@ export async function syncCmdbBySystemName(systemName: string): Promise<{ status
 
 export type CmdbSyncTriggerType = 'scheduled' | 'manual';
 
+export interface CmdbFailureDetail {
+  resource_id?: string;
+  reason: string;
+}
+
 export interface CmdbResourceFailure {
   fail_count: number;
   failed_ids?: string[];
+  failures?: CmdbFailureDetail[];
 }
 
 export interface CmdbResourceFailBySystem {
@@ -21,6 +27,7 @@ export interface CmdbResourceFailBySystem {
   system_name: string;
   fail_count: number;
   failed_ids?: string[];
+  failures?: CmdbFailureDetail[];
 }
 
 export interface CmdbResourceFailTotal {
