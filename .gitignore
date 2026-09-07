@@ -41,3 +41,6 @@ cloud-fitter-web/.umi-production/
 cloud-fitter-web/.mfsu/
 cloud-fitter-web/.cache/
 cloud-fitter-web/src/.umi/
+.worktrees/
+.superpowers/
+

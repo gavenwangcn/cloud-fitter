@@ -24,7 +24,7 @@ export async function queryBillingBySystem(systemName: string, billingMonth?: st
 
 async function messageFromJsonErrorBlob(blob: Blob): Promise<string> {
   const text = await blob.text();
-  let msg = '导出失败';
+  let msg = '操作失败';
   try {
     const j = JSON.parse(text);
     msg = j.error || j.errMsg || msg;
@@ -38,9 +38,6 @@ function isJsonBlob(blob: Blob): boolean {
   return !!blob.type && blob.type.includes('application/json');
 }
 
-/** 批量导出：全账号 × 多月份，耗时可远超普通 API */
-const BILLING_BATCH_EXPORT_TIMEOUT_MS = 30 * 60 * 1000;
-
 function filenameFromContentDisposition(
   contentDisposition: string | undefined,
   fallback: string,
@@ -53,15 +50,34 @@ function filenameFromContentDisposition(
   return fallback;
 }
 
-/** 批量导出全部云账号在 [startMonth, endMonth] 的费用明细 xlsx */
-export async function exportBillingBatch(startMonth: string, endMonth: string) {
-  const fallbackFilename = `billing-export-${startMonth}-${endMonth}.xlsx`;
+/** 启动异步批量导出（后台写 xlsx 到 batch-export 目录） */
+export async function startBillingBatchExport(
+  startMonth: string,
+  endMonth: string,
+): Promise<{ filename: string; message?: string }> {
+  return request('/apis/billing/batch-export', {
+    method: 'POST',
+    data: { startMonth, endMonth },
+    timeout: API_REQUEST_TIMEOUT_MS,
+  });
+}
+
+/** 列出已生成的批量导出文件 */
+export async function listBillingBatchExportFiles(): Promise<{ files: string[] }> {
+  return request('/apis/billing/batch-export/files', {
+    method: 'GET',
+    timeout: API_REQUEST_TIMEOUT_MS,
+  });
+}
+
+/** 下载选中的批量导出文件 */
+export async function downloadBillingBatchExportFile(filename: string) {
   try {
-    const result: any = await request('/apis/billing/batch-export', {
-      method: 'POST',
-      data: { startMonth, endMonth },
+    const result: any = await request('/apis/billing/batch-export/download', {
+      method: 'GET',
+      params: { filename },
       responseType: 'blob',
-      timeout: BILLING_BATCH_EXPORT_TIMEOUT_MS,
+      timeout: API_REQUEST_TIMEOUT_MS,
       skipErrorHandler: true,
       getResponse: true,
     });
@@ -75,14 +91,11 @@ export async function exportBillingBatch(startMonth: string, endMonth: string) {
       response?.headers && typeof response.headers.get === 'function'
         ? response.headers.get('content-disposition')
         : response?.headers?.['content-disposition'];
-    const filename = filenameFromContentDisposition(
-      disposition ?? undefined,
-      fallbackFilename,
-    );
+    const name = filenameFromContentDisposition(disposition ?? undefined, filename);
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();

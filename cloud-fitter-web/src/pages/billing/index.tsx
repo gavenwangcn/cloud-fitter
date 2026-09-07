@@ -8,7 +8,11 @@ import { queryBillingBySystemId } from '@/services/billingBySystemId';
 import { providerLabel } from '@/services/cloudConfig';
 import { listSystems, SystemRow } from '@/services/systemManage';
 import { BillingPageState } from './model';
-import { exportBillingBatch } from './service';
+import {
+  downloadBillingBatchExportFile,
+  listBillingBatchExportFiles,
+  startBillingBatchExport,
+} from './service';
 import {
   RESOURCE_TABLE_DEFAULT_PAGE_SIZE,
   RESOURCE_TABLE_PAGE_SIZE_OPTIONS,
@@ -43,6 +47,10 @@ const BillingPage: React.FC<BillingPageProps> = ({
   const [exportStart, setExportStart] = useState<Dayjs | null>(null);
   const [exportEnd, setExportEnd] = useState<Dayjs | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportFiles, setExportFiles] = useState<string[]>([]);
+  const [selectedExportFile, setSelectedExportFile] = useState<string | undefined>();
+  const [downloadingExport, setDownloadingExport] = useState(false);
+  const [pendingExportFile, setPendingExportFile] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(RESOURCE_TABLE_DEFAULT_PAGE_SIZE);
   const [systems, setSystems] = useState<SystemRow[]>([]);
@@ -67,14 +75,73 @@ const BillingPage: React.FC<BillingPageProps> = ({
     if (!canExport || !exportStart || !exportEnd) return;
     setExporting(true);
     try {
-      await exportBillingBatch(exportStart.format('YYYY-MM'), exportEnd.format('YYYY-MM'));
-      message.success('导出成功');
+      const res = await startBillingBatchExport(
+        exportStart.format('YYYY-MM'),
+        exportEnd.format('YYYY-MM'),
+      );
+      const filename = res?.filename;
+      if (filename) {
+        setPendingExportFile(filename);
+        setSelectedExportFile(filename);
+      }
+      message.info(res?.message || '导出任务已启动，完成后可下载');
+      void loadExportFiles();
     } catch (e: any) {
-      message.error(e?.message || '批量导出失败');
-    } finally {
+      message.error(e?.message || '启动批量导出失败');
       setExporting(false);
+      setPendingExportFile(null);
     }
   };
+
+  const onDownloadExport = async () => {
+    if (!selectedExportFile) {
+      message.warning('请选择要下载的文件');
+      return;
+    }
+    setDownloadingExport(true);
+    try {
+      await downloadBillingBatchExportFile(selectedExportFile);
+      message.success('下载成功');
+    } catch (e: any) {
+      message.error(e?.message || '下载失败');
+    } finally {
+      setDownloadingExport(false);
+    }
+  };
+
+  const loadExportFiles = useCallback(async () => {
+    try {
+      const res = await listBillingBatchExportFiles();
+      setExportFiles(res?.files ?? []);
+    } catch (e: any) {
+      message.error(e?.message || '加载导出文件列表失败');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadExportFiles();
+  }, [loadExportFiles]);
+
+  useEffect(() => {
+    if (!pendingExportFile) return undefined;
+    const poll = async () => {
+      try {
+        const res = await listBillingBatchExportFiles();
+        const files = res?.files ?? [];
+        setExportFiles(files);
+        if (files.includes(pendingExportFile)) {
+          setPendingExportFile(null);
+          setExporting(false);
+          message.success('导出文件已生成，可点击下载');
+        }
+      } catch {
+        // 轮询失败静默，避免刷屏
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 3000);
+    return () => window.clearInterval(timer);
+  }, [pendingExportFile]);
 
   useEffect(() => {
     setBreadcrumb({
@@ -223,6 +290,21 @@ const BillingPage: React.FC<BillingPageProps> = ({
               onClick={() => void onBatchExport()}
             >
               导出
+            </Button>
+            <Select
+              placeholder="选择导出文件"
+              style={{ minWidth: 220 }}
+              allowClear
+              value={selectedExportFile}
+              onChange={(v) => setSelectedExportFile(v)}
+              options={exportFiles.map((f) => ({ label: f, value: f }))}
+            />
+            <Button
+              disabled={!selectedExportFile}
+              loading={downloadingExport}
+              onClick={() => void onDownloadExport()}
+            >
+              下载
             </Button>
           </>
         }

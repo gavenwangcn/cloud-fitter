@@ -1,15 +1,19 @@
 package jsonapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbbilling"
 	"github.com/cloud-fitter/cloud-fitter/gen/idl/pbtenant"
+	"github.com/cloud-fitter/cloud-fitter/internal/billingbatchexport"
 	"github.com/cloud-fitter/cloud-fitter/internal/configstore"
 	"github.com/cloud-fitter/cloud-fitter/internal/server/billing"
 	"github.com/golang/glog"
@@ -22,27 +26,9 @@ type billingBatchExportBody struct {
 }
 
 // BillingBatchExport POST /apis/billing/batch-export
-// body: {"startMonth":"YYYY-MM","endMonth":"YYYY-MM"}
-// 枚举全部云账号配置 × 月份，复用 ListSummary；失败跳过；返回单表 xlsx。
+// 异步：立即返回文件名，后台生成 xlsx 写入 batch-export 目录。
 func BillingBatchExport(w http.ResponseWriter, r *http.Request, store *configstore.Store) {
-	startAll := time.Now()
-	raw, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeBillingErr(w, http.StatusBadRequest, errors.Wrap(err, "read body"))
-		return
-	}
-	var body billingBatchExportBody
-	if err := json.Unmarshal(raw, &body); err != nil {
-		writeBillingErr(w, http.StatusBadRequest, errors.Wrap(err, "decode billing batch-export body"))
-		return
-	}
-	body.StartMonth = strings.TrimSpace(body.StartMonth)
-	body.EndMonth = strings.TrimSpace(body.EndMonth)
-	if body.StartMonth == "" || body.EndMonth == "" {
-		writeBillingErr(w, http.StatusBadRequest, errors.New("startMonth and endMonth are required (YYYY-MM)"))
-		return
-	}
-	months, err := billing.MonthRangeInclusive(body.StartMonth, body.EndMonth)
+	body, err := decodeBillingBatchExportBody(r)
 	if err != nil {
 		writeBillingErr(w, http.StatusBadRequest, err)
 		return
@@ -51,16 +37,99 @@ func BillingBatchExport(w http.ResponseWriter, r *http.Request, store *configsto
 		writeBillingErr(w, http.StatusInternalServerError, errors.New("config store is nil"))
 		return
 	}
+	months, err := billing.MonthRangeInclusive(body.StartMonth, body.EndMonth)
+	if err != nil {
+		writeBillingErr(w, http.StatusBadRequest, err)
+		return
+	}
 	configs, err := store.List()
 	if err != nil {
 		writeBillingErr(w, http.StatusInternalServerError, errors.Wrap(err, "list cloud configs"))
 		return
 	}
 
-	ctx := r.Context()
+	now := time.Now()
+	filename, err := billingbatchexport.NewFilename(now)
+	if err != nil {
+		writeBillingErr(w, http.StatusInternalServerError, errors.Wrap(err, "allocate export filename"))
+		return
+	}
+
+	go runBillingBatchExportJob(context.Background(), configs, months, body.StartMonth, body.EndMonth, filename)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"filename": filename,
+		"message":  "导出任务已启动，完成后可在文件列表中下载",
+	})
+}
+
+// BillingBatchExportListFiles GET /apis/billing/batch-export/files
+func BillingBatchExportListFiles(w http.ResponseWriter, r *http.Request) {
+	files, err := billingbatchexport.ListXLSX()
+	if err != nil {
+		writeBillingErr(w, http.StatusInternalServerError, errors.Wrap(err, "list export files"))
+		return
+	}
+	if files == nil {
+		files = []string{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string][]string{"files": files})
+}
+
+// BillingBatchExportDownload GET /apis/billing/batch-export/download?filename=...
+func BillingBatchExportDownload(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.URL.Query().Get("filename"))
+	abs, err := billingbatchexport.ResolveFile(name)
+	if err != nil {
+		writeBillingErr(w, http.StatusBadRequest, err)
+		return
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeBillingErr(w, http.StatusNotFound, errors.New("export file not found"))
+			return
+		}
+		writeBillingErr(w, http.StatusInternalServerError, errors.Wrap(err, "open export file"))
+		return
+	}
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename="+jsonQuoteFilename(name))
+	http.ServeContent(w, r, name, mustModTime(f, abs), f)
+}
+
+func decodeBillingBatchExportBody(r *http.Request) (billingBatchExportBody, error) {
+	var body billingBatchExportBody
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return body, errors.Wrap(err, "read body")
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return body, errors.Wrap(err, "decode billing batch-export body")
+	}
+	body.StartMonth = strings.TrimSpace(body.StartMonth)
+	body.EndMonth = strings.TrimSpace(body.EndMonth)
+	if body.StartMonth == "" || body.EndMonth == "" {
+		return body, errors.New("startMonth and endMonth are required (YYYY-MM)")
+	}
+	return body, nil
+}
+
+func runBillingBatchExportJob(
+	ctx context.Context,
+	configs []configstore.Row,
+	months []string,
+	startMonth, endMonth, filename string,
+) {
+	startAll := time.Now()
 	queries := len(configs) * len(months)
-	glog.Infof("billing batch-export start accounts=%d start=%s end=%s months=%d queries=%d",
-		len(configs), body.StartMonth, body.EndMonth, len(months), queries)
+	glog.Infof("billing batch-export async start file=%s accounts=%d start=%s end=%s months=%d queries=%d dir=%s",
+		filename, len(configs), startMonth, endMonth, len(months), queries, billingbatchexport.ExportDir())
 
 	var exportRows []billing.ExportRow
 	var failures []string
@@ -68,10 +137,6 @@ func BillingBatchExport(w http.ResponseWriter, r *http.Request, store *configsto
 
 	for _, cfg := range configs {
 		for _, month := range months {
-			if err := ctx.Err(); err != nil {
-				writeBillingErr(w, http.StatusRequestTimeout, errors.Wrap(err, "client canceled billing batch-export"))
-				return
-			}
 			qStart := time.Now()
 			req := &pbbilling.ListBillingSummaryReq{
 				Provider:     pbtenant.CloudProvider(cfg.Provider),
@@ -84,7 +149,7 @@ func BillingBatchExport(w http.ResponseWriter, r *http.Request, store *configsto
 				failN++
 				msg := fmt.Sprintf("account=%s provider=%d month=%s err=%v", cfg.Name, cfg.Provider, month, err)
 				failures = append(failures, msg)
-				glog.Errorf("billing batch-export fail %s elapsed=%v", msg, elapsed)
+				glog.Errorf("billing batch-export async fail %s elapsed=%v", msg, elapsed)
 				continue
 			}
 			kept := 0
@@ -104,22 +169,50 @@ func BillingBatchExport(w http.ResponseWriter, r *http.Request, store *configsto
 				})
 			}
 			successN++
-			glog.Infof("billing batch-export ok account=%s provider=%d month=%s rows=%d kept=%d elapsed=%v",
+			glog.Infof("billing batch-export async ok account=%s provider=%d month=%s rows=%d kept=%d elapsed=%v",
 				cfg.Name, cfg.Provider, month, len(resp.GetRows()), kept, elapsed)
 		}
 	}
 
-	glog.Infof("billing batch-export done success=%d fail=%d exportRows=%d failures=%v elapsed=%v",
-		successN, failN, len(exportRows), failures, time.Since(startAll))
-
 	xlsx, err := billing.BuildBillingExportXLSX(exportRows)
 	if err != nil {
-		writeBillingErr(w, http.StatusInternalServerError, errors.Wrap(err, "build xlsx"))
+		glog.Errorf("billing batch-export async build xlsx failed file=%s err=%v", filename, err)
 		return
 	}
-	filename := fmt.Sprintf("billing-export-%s-%s.xlsx", body.StartMonth, body.EndMonth)
-	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(xlsx)
+
+	dir := billingbatchexport.ExportDir()
+	if err := billingbatchexport.EnsureDir(); err != nil {
+		glog.Errorf("billing batch-export async mkdir failed dir=%s err=%v", dir, err)
+		return
+	}
+	partPath := filepath.Join(dir, filename+".part")
+	finalPath := filepath.Join(dir, filename)
+	if err := os.WriteFile(partPath, xlsx, 0o644); err != nil {
+		glog.Errorf("billing batch-export async write failed path=%s err=%v", partPath, err)
+		return
+	}
+	if err := os.Rename(partPath, finalPath); err != nil {
+		glog.Errorf("billing batch-export async rename failed part=%s final=%s err=%v", partPath, finalPath, err)
+		_ = os.Remove(partPath)
+		return
+	}
+
+	glog.Infof("billing batch-export async done file=%s success=%d fail=%d exportRows=%d failures=%v elapsed=%v",
+		filename, successN, failN, len(exportRows), failures, time.Since(startAll))
+}
+
+func jsonQuoteFilename(name string) string {
+	b, _ := json.Marshal(name)
+	// json.Marshal adds quotes — Content-Disposition filename= expects quoted string
+	return string(b)
+}
+
+func mustModTime(f *os.File, path string) time.Time {
+	if st, err := f.Stat(); err == nil {
+		return st.ModTime()
+	}
+	if st, err := os.Stat(path); err == nil {
+		return st.ModTime()
+	}
+	return time.Now()
 }
