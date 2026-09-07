@@ -14,6 +14,8 @@ export interface CloudAccountBarProps {
   accountOnly?: boolean;
   /** 清空下拉选择时回调 */
   onClear?: () => void;
+  /** 渲染在「云账号」选择器之后（如账单批量导出控件） */
+  extra?: React.ReactNode;
 }
 
 const CloudAccountBar: React.FC<CloudAccountBarProps> = ({
@@ -21,6 +23,7 @@ const CloudAccountBar: React.FC<CloudAccountBarProps> = ({
   onQueryBySystem,
   accountOnly = false,
   onClear,
+  extra,
 }) => {
   const [configs, setConfigs] = useState<CloudConfigRow[]>([]);
   const [systems, setSystems] = useState<SystemRow[]>([]);
@@ -35,7 +38,7 @@ const CloudAccountBar: React.FC<CloudAccountBarProps> = ({
   }, []);
 
   return (
-    <Space style={{ marginBottom: 16 }} align="center">
+    <Space style={{ marginBottom: 16 }} align="center" wrap>
       {!accountOnly && (
         <>
           <span>系统名称：</span>
@@ -77,6 +80,7 @@ const CloudAccountBar: React.FC<CloudAccountBarProps> = ({
           }
         }}
       />
+      {extra}
     </Space>
   );
 };
