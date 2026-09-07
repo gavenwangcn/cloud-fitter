@@ -13,10 +13,6 @@ import {
   listBillingBatchExportFiles,
   startBillingBatchExport,
 } from './service';
-import {
-  RESOURCE_TABLE_DEFAULT_PAGE_SIZE,
-  RESOURCE_TABLE_PAGE_SIZE_OPTIONS,
-} from '@/constants/tablePagination';
 
 const { Text } = Typography;
 
@@ -30,8 +26,13 @@ const PROVIDER_ENUM_CN: Record<number, string> = {
 interface BillingPageProps {
   billingPage: BillingPageState;
   loading?: boolean;
-  fetchByAccount: (p: { provider: number; accountName: string; billingMonth?: string }) => void;
-  fetchBySystem: (p: { systemName: string; billingMonth?: string }) => void;
+  fetchByAccount: (p: {
+    provider: number;
+    accountName: string;
+    startMonth?: string;
+    endMonth?: string;
+  }) => void;
+  fetchBySystem: (p: { systemName: string; startMonth?: string; endMonth?: string }) => void;
   clearTable: () => void;
 }
 
@@ -43,7 +44,8 @@ const BillingPage: React.FC<BillingPageProps> = ({
   clearTable,
 }) => {
   const { setBreadcrumb } = useModel('layout');
-  const [month, setMonth] = useState<Dayjs | null>(() => dayjs());
+  const [queryStart, setQueryStart] = useState<Dayjs | null>(() => dayjs());
+  const [queryEnd, setQueryEnd] = useState<Dayjs | null>(() => dayjs());
   const [exportStart, setExportStart] = useState<Dayjs | null>(null);
   const [exportEnd, setExportEnd] = useState<Dayjs | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -51,8 +53,6 @@ const BillingPage: React.FC<BillingPageProps> = ({
   const [selectedExportFile, setSelectedExportFile] = useState<string | undefined>();
   const [downloadingExport, setDownloadingExport] = useState(false);
   const [pendingExportFile, setPendingExportFile] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(RESOURCE_TABLE_DEFAULT_PAGE_SIZE);
   const [systems, setSystems] = useState<SystemRow[]>([]);
   const [systemIdQuery, setSystemIdQuery] = useState<string | undefined>();
   const [bySystemModalOpen, setBySystemModalOpen] = useState(false);
@@ -61,9 +61,24 @@ const BillingPage: React.FC<BillingPageProps> = ({
     ReturnType<typeof queryBillingBySystemId>
   > | null>(null);
 
-  const billingMonthStr = useMemo(
-    () => (month ? month.format('YYYY-MM') : ''),
-    [month],
+  const queryStartMonthStr = useMemo(
+    () => (queryStart ? queryStart.format('YYYY-MM') : ''),
+    [queryStart],
+  );
+  const queryEndMonthStr = useMemo(
+    () => (queryEnd ? queryEnd.format('YYYY-MM') : ''),
+    [queryEnd],
+  );
+
+  const canQueryRange =
+    !!queryStart && !!queryEnd && !queryStart.isAfter(queryEnd, 'month');
+
+  const queryMonthPayload = useMemo(
+    () =>
+      canQueryRange
+        ? { startMonth: queryStartMonthStr, endMonth: queryEndMonthStr }
+        : undefined,
+    [canQueryRange, queryStartMonthStr, queryEndMonthStr],
   );
 
   const canExport =
@@ -150,10 +165,6 @@ const BillingPage: React.FC<BillingPageProps> = ({
     });
   }, []);
 
-  useEffect(() => {
-    setPage(1);
-  }, [billingPage.tableData]);
-
   const loadSystems = useCallback(async () => {
     try {
       const res = await listSystems({ page: 1, pageSize: 500 });
@@ -175,7 +186,7 @@ const BillingPage: React.FC<BillingPageProps> = ({
     }
     setBySystemLoading(true);
     try {
-      const data = await queryBillingBySystemId(sid, billingMonthStr);
+      const data = await queryBillingBySystemId(sid, queryEndMonthStr || queryStartMonthStr);
       setBySystemPayload(data);
       setBySystemModalOpen(true);
     } catch (e: any) {
@@ -228,8 +239,7 @@ const BillingPage: React.FC<BillingPageProps> = ({
       key: '_index',
       width: 72,
       align: 'center',
-      render: (_: unknown, __: any, index: number) =>
-        (page - 1) * pageSize + index + 1,
+      render: (_: unknown, __: any, index: number) => index + 1,
     },
     {
       title: '云类型',
@@ -260,12 +270,20 @@ const BillingPage: React.FC<BillingPageProps> = ({
   return (
     <div className="pageContent">
       <CloudAccountBar
-        onQuery={(provider, accountName) =>
-          fetchByAccount({ provider, accountName, billingMonth: billingMonthStr })
-        }
-        onQueryBySystem={(systemName) =>
-          fetchBySystem({ systemName, billingMonth: billingMonthStr })
-        }
+        onQuery={(provider, accountName) => {
+          if (!queryMonthPayload) {
+            message.warning('请选择有效的开始月份与结束月份');
+            return;
+          }
+          fetchByAccount({ provider, accountName, ...queryMonthPayload });
+        }}
+        onQueryBySystem={(systemName) => {
+          if (!queryMonthPayload) {
+            message.warning('请选择有效的开始月份与结束月份');
+            return;
+          }
+          fetchBySystem({ systemName, ...queryMonthPayload });
+        }}
         onClear={clearTable}
         extra={
           <>
@@ -309,17 +327,24 @@ const BillingPage: React.FC<BillingPageProps> = ({
           </>
         }
       />
-      <Space style={{ marginBottom: 16 }} align="center">
-        <span>账单月份：</span>
+      <Space style={{ marginBottom: 16 }} align="center" wrap>
+        <span>开始月份：</span>
         <DatePicker
           picker="month"
-          value={month}
-          onChange={(d) => setMonth(d)}
+          value={queryStart}
+          onChange={(d) => setQueryStart(d)}
+          allowClear={false}
+        />
+        <span>结束月份：</span>
+        <DatePicker
+          picker="month"
+          value={queryEnd}
+          onChange={(d) => setQueryEnd(d)}
           allowClear={false}
         />
         <Text type="secondary">
-          所选账号/系统在各产品大类（ECS、RDS、DCS 等）的应付金额汇总；华为云来自 BSS
-          汇总账单，阿里云/腾讯云由账单明细聚合。需具备账单只读权限。
+          按起止月份汇总所选账号/系统在各产品大类的应付金额（含负数退费项）；明细按月份排序。华为云来自
+          BSS 汇总账单，阿里云/腾讯云由账单明细聚合。
         </Text>
       </Space>
       <Card size="small" title="按系统 ID 查询（与 CMDB 分账号账单维度一致）" style={{ marginBottom: 16 }}>
@@ -347,25 +372,12 @@ const BillingPage: React.FC<BillingPageProps> = ({
         </Space>
       </Card>
       <Table
-        rowKey={(r) => `${r.key}-${r.category}-${r.accountName}`}
+        rowKey={(r, i) => `${r.accountName}-${r.billingCycle}-${r.category}-${i}`}
         loading={!!loading}
         dataSource={billingPage.tableData}
         columns={columns}
-        pagination={{
-          current: page,
-          pageSize,
-          total: billingPage.tableData.length,
-          showTotal: (t) => `共 ${t} 条`,
-          showSizeChanger: true,
-          pageSizeOptions: [...RESOURCE_TABLE_PAGE_SIZE_OPTIONS],
-          onChange: (p, ps) => {
-            setPage(p);
-            if (ps) {
-              setPageSize(ps);
-            }
-          },
-        }}
-        scroll={{ x: 'max-content' }}
+        pagination={false}
+        scroll={{ x: 'max-content', y: 480 }}
       />
       <Card size="small" style={{ marginTop: 16 }} title="消费总账">
         <Text strong>
@@ -438,12 +450,17 @@ export default connect(
     fetchByAccount: (payload: {
       provider: number;
       accountName: string;
-      billingMonth?: string;
+      startMonth?: string;
+      endMonth?: string;
     }) => ({
       type: 'billingPage/fetchByAccount',
       payload,
     }),
-    fetchBySystem: (payload: { systemName: string; billingMonth?: string }) => ({
+    fetchBySystem: (payload: {
+      systemName: string;
+      startMonth?: string;
+      endMonth?: string;
+    }) => ({
       type: 'billingPage/fetchBySystem',
       payload,
     }),
