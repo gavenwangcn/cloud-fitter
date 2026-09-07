@@ -141,6 +141,8 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer, seqStore *systemidse
 			jsonapi.BillingSummaryByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-system-id" && r.Method == http.MethodPost:
 			jsonapi.BillingSummaryBySystemID(w, r, store)
+		case r.URL.Path == "/apis/billing/batch-export" && r.Method == http.MethodPost:
+			jsonapi.BillingBatchExport(w, r, store)
 		case r.URL.Path == "/apis/system-id/next" && r.Method == http.MethodPost:
 			jsonapi.NextSystemID(w, r, seqStore)
 		default:
