@@ -8,6 +8,7 @@ import { queryBillingBySystemId } from '@/services/billingBySystemId';
 import { providerLabel } from '@/services/cloudConfig';
 import { listSystems, SystemRow } from '@/services/systemManage';
 import { BillingPageState } from './model';
+import { exportBillingBatch } from './service';
 import {
   RESOURCE_TABLE_DEFAULT_PAGE_SIZE,
   RESOURCE_TABLE_PAGE_SIZE_OPTIONS,
@@ -39,6 +40,9 @@ const BillingPage: React.FC<BillingPageProps> = ({
 }) => {
   const { setBreadcrumb } = useModel('layout');
   const [month, setMonth] = useState<Dayjs | null>(() => dayjs());
+  const [exportStart, setExportStart] = useState<Dayjs | null>(null);
+  const [exportEnd, setExportEnd] = useState<Dayjs | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(RESOURCE_TABLE_DEFAULT_PAGE_SIZE);
   const [systems, setSystems] = useState<SystemRow[]>([]);
@@ -53,6 +57,24 @@ const BillingPage: React.FC<BillingPageProps> = ({
     () => (month ? month.format('YYYY-MM') : ''),
     [month],
   );
+
+  const canExport =
+    !!exportStart &&
+    !!exportEnd &&
+    !exportStart.isAfter(exportEnd, 'month');
+
+  const onBatchExport = async () => {
+    if (!canExport || !exportStart || !exportEnd) return;
+    setExporting(true);
+    try {
+      await exportBillingBatch(exportStart.format('YYYY-MM'), exportEnd.format('YYYY-MM'));
+      message.success('导出成功');
+    } catch (e: any) {
+      message.error(e?.message || '批量导出失败');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     setBreadcrumb({
@@ -178,6 +200,32 @@ const BillingPage: React.FC<BillingPageProps> = ({
           fetchBySystem({ systemName, billingMonth: billingMonthStr })
         }
         onClear={clearTable}
+        extra={
+          <>
+            <span>开始时间：</span>
+            <DatePicker
+              picker="month"
+              value={exportStart}
+              onChange={(d) => setExportStart(d)}
+              allowClear
+            />
+            <span>结束时间：</span>
+            <DatePicker
+              picker="month"
+              value={exportEnd}
+              onChange={(d) => setExportEnd(d)}
+              allowClear
+            />
+            <Button
+              type="primary"
+              disabled={!canExport}
+              loading={exporting}
+              onClick={() => void onBatchExport()}
+            >
+              导出
+            </Button>
+          </>
+        }
       />
       <Space style={{ marginBottom: 16 }} align="center">
         <span>账单月份：</span>
