@@ -137,6 +137,52 @@ func HuaweiCategoryFromServiceType(serviceTypeCode string) string {
 	}
 }
 
+// HuaweiOtherDetailCategoryOrder 「其他」弹框明细大类展示顺序。
+var HuaweiOtherDetailCategoryOrder = []string{
+	"文件存储", "云备份", "数据库复制", "数据库安全",
+	"WAF", "云堡垒机", "云专线", "证书管理", "DNS", "其他",
+}
+
+// HuaweiOtherDetailCategory 华为云汇总账单中归入主表「其他」行的 service_type_code 细分为展示大类。
+func HuaweiOtherDetailCategory(serviceTypeCode string) string {
+	switch huaweiServiceTypeSuffix(serviceTypeCode) {
+	case "sfs", "sfsturbo":
+		return "文件存储"
+	case "cbr":
+		return "云备份"
+	case "drs":
+		return "数据库复制"
+	case "dbss":
+		return "数据库安全"
+	case "waf":
+		return "WAF"
+	case "cbh":
+		return "云堡垒机"
+	case "dcaas":
+		return "云专线"
+	case "ccm":
+		return "证书管理"
+	case "dns":
+		return "DNS"
+	default:
+		return "其他"
+	}
+}
+
+// HuaweiIsOtherSummaryCategory 该 service_type_code 是否计入主表「其他」汇总行。
+func HuaweiIsOtherSummaryCategory(serviceTypeCode string) bool {
+	return HuaweiCategoryFromServiceType(serviceTypeCode) == "其他"
+}
+
+func huaweiServiceTypeSuffix(serviceTypeCode string) string {
+	code := strings.TrimSpace(serviceTypeCode)
+	const prefix = "hws.service.type."
+	if strings.HasPrefix(code, prefix) {
+		return strings.TrimPrefix(code, prefix)
+	}
+	return code
+}
+
 // RoundMoney2 金额保留两位小数（展示用）。
 func RoundMoney2(x float64) float64 {
 	return float64(int64(x*100+0.5)) / 100

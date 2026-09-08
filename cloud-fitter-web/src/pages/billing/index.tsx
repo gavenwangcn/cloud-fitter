@@ -9,8 +9,10 @@ import { providerLabel } from '@/services/cloudConfig';
 import { listSystems, SystemRow } from '@/services/systemManage';
 import { BillingPageState } from './model';
 import {
+  BILLING_OTHER_DETAIL_CATEGORIES,
   downloadBillingBatchExportFile,
   listBillingBatchExportFiles,
+  queryBillingOtherBreakdown,
   startBillingBatchExport,
 } from './service';
 
@@ -60,6 +62,17 @@ const BillingPage: React.FC<BillingPageProps> = ({
   const [bySystemPayload, setBySystemPayload] = useState<Awaited<
     ReturnType<typeof queryBillingBySystemId>
   > | null>(null);
+  const [queryContext, setQueryContext] = useState<{
+    mode: 'account' | 'system';
+    systemName?: string;
+  }>({ mode: 'account' });
+  const [otherModalOpen, setOtherModalOpen] = useState(false);
+  const [otherModalLoading, setOtherModalLoading] = useState(false);
+  const [otherModalRow, setOtherModalRow] = useState<any | null>(null);
+  const [otherBreakdown, setOtherBreakdown] = useState<Awaited<
+    ReturnType<typeof queryBillingOtherBreakdown>
+  > | null>(null);
+  const [otherCategoryFilter, setOtherCategoryFilter] = useState<string>('全部');
 
   const queryStartMonthStr = useMemo(
     () => (queryStart ? queryStart.format('YYYY-MM') : ''),
@@ -198,6 +211,64 @@ const BillingPage: React.FC<BillingPageProps> = ({
     }
   };
 
+  const openOtherModal = async (record: any) => {
+    setOtherModalRow(record);
+    setOtherModalOpen(true);
+    setOtherModalLoading(true);
+    setOtherCategoryFilter('全部');
+    setOtherBreakdown(null);
+    try {
+      const params: {
+        provider: number;
+        billingMonth: string;
+        accountName?: string;
+        systemName?: string;
+      } = {
+        provider: record.provider,
+        billingMonth: record.billingCycle,
+      };
+      if (queryContext.mode === 'system' && queryContext.systemName) {
+        params.systemName = queryContext.systemName;
+      } else if (record.accountName && record.accountName !== '（系统内多账号）') {
+        params.accountName = record.accountName;
+      } else {
+        message.warning('无法解析账号，请重新查询');
+        setOtherModalOpen(false);
+        return;
+      }
+      const data = await queryBillingOtherBreakdown(params);
+      setOtherBreakdown(data);
+    } catch (e: any) {
+      message.error(e?.message || '加载其他费用明细失败');
+    } finally {
+      setOtherModalLoading(false);
+    }
+  };
+
+  const otherCategoryOptions = useMemo(() => {
+    const cats = new Set((otherBreakdown?.rows ?? []).map((r) => r.category));
+    const ordered = BILLING_OTHER_DETAIL_CATEGORIES.filter((c) => cats.has(c));
+    cats.forEach((c) => {
+      if (!ordered.includes(c as (typeof BILLING_OTHER_DETAIL_CATEGORIES)[number])) {
+        ordered.push(c as (typeof BILLING_OTHER_DETAIL_CATEGORIES)[number]);
+      }
+    });
+    return [{ label: '全部', value: '全部' }, ...ordered.map((c) => ({ label: c, value: c }))];
+  }, [otherBreakdown]);
+
+  const filteredOtherRows = useMemo(() => {
+    const rows = otherBreakdown?.rows ?? [];
+    if (otherCategoryFilter === '全部') return rows;
+    return rows.filter((r) => r.category === otherCategoryFilter);
+  }, [otherBreakdown, otherCategoryFilter]);
+
+  const showOtherAccountColumn = useMemo(() => {
+    const rows = otherBreakdown?.rows ?? [];
+    if (queryContext.mode === 'system') return true;
+    const accounts = new Set(rows.map((r) => r.accountName));
+    return accounts.size > 1;
+  }, [otherBreakdown, queryContext.mode]);
+
   const accountModalColumns: ColumnsType<{
     accountName: string;
     provider: number;
@@ -255,7 +326,27 @@ const BillingPage: React.FC<BillingPageProps> = ({
       key: 'billingMonth',
       align: 'center',
     },
-    { title: '资源大类', dataIndex: 'category', key: 'category', align: 'center' },
+    {
+      title: '资源大类',
+      dataIndex: 'category',
+      key: 'category',
+      align: 'center',
+      render: (cat: string, record: any) => {
+        const isOther = typeof cat === 'string' && cat.startsWith('其他');
+        const isHuawei = record.provider === 2;
+        if (!isOther || !isHuawei) return cat;
+        return (
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0 }}
+            onClick={() => void openOtherModal(record)}
+          >
+            {cat}
+          </Button>
+        );
+      },
+    },
     {
       title: '消费合计',
       dataIndex: 'totalConsumeAmount',
@@ -275,6 +366,7 @@ const BillingPage: React.FC<BillingPageProps> = ({
             message.warning('请选择有效的开始月份与结束月份');
             return;
           }
+          setQueryContext({ mode: 'account' });
           fetchByAccount({ provider, accountName, ...queryMonthPayload });
         }}
         onQueryBySystem={(systemName) => {
@@ -282,6 +374,7 @@ const BillingPage: React.FC<BillingPageProps> = ({
             message.warning('请选择有效的开始月份与结束月份');
             return;
           }
+          setQueryContext({ mode: 'system', systemName });
           fetchBySystem({ systemName, ...queryMonthPayload });
         }}
         onClear={clearTable}
@@ -434,6 +527,86 @@ const BillingPage: React.FC<BillingPageProps> = ({
               );
             },
           }}
+        />
+      </Modal>
+
+      <Modal
+        title={
+          otherModalRow
+            ? `其他费用明细 — ${otherModalRow.accountName} ${otherModalRow.billingCycle}`
+            : '其他费用明细'
+        }
+        open={otherModalOpen}
+        onCancel={() => setOtherModalOpen(false)}
+        footer={null}
+        width={920}
+        destroyOnClose
+      >
+        <Space style={{ marginBottom: 16 }} wrap>
+          <span>资源大类：</span>
+          <Select
+            style={{ minWidth: 180 }}
+            value={otherCategoryFilter}
+            onChange={(v) => setOtherCategoryFilter(v)}
+            options={otherCategoryOptions}
+          />
+          <Text type="secondary">点击主表「其他」可查看文件存储、云备份等细分费用（仅华为云）</Text>
+        </Space>
+        <Table
+          rowKey={(r, i) => `${r.accountName}-${r.serviceTypeCode}-${r.consumeAmount}-${i}`}
+          loading={otherModalLoading}
+          dataSource={filteredOtherRows}
+          pagination={false}
+          scroll={{ y: 360 }}
+          columns={[
+            {
+              title: '序号',
+              key: '_index',
+              width: 72,
+              align: 'center',
+              render: (_: unknown, __: unknown, index: number) => index + 1,
+            },
+            ...(showOtherAccountColumn
+              ? [{ title: '账号', dataIndex: 'accountName', key: 'accountName', align: 'center' as const }]
+              : []),
+            { title: '资源大类', dataIndex: 'category', key: 'category', align: 'center' as const },
+            {
+              title: '云服务编码',
+              dataIndex: 'serviceTypeCode',
+              key: 'serviceTypeCode',
+              align: 'center' as const,
+              ellipsis: true,
+            },
+            {
+              title: '消费合计',
+              dataIndex: 'consumeAmount',
+              key: 'consumeAmount',
+              align: 'right' as const,
+              render: (v: number) => (v != null ? Number(v).toFixed(2) : '—'),
+            },
+            { title: '币种', dataIndex: 'currency', key: 'currency', align: 'center' as const },
+          ]}
+          summary={() =>
+            otherBreakdown ? (
+              <Table.Summary fixed>
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={showOtherAccountColumn ? 4 : 3} align="right">
+                    <Text strong>合计</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={1} align="right">
+                    <Text strong>
+                      {filteredOtherRows
+                        .reduce((s, r) => s + (r.consumeAmount ?? 0), 0)
+                        .toFixed(2)}
+                    </Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={2} align="center">
+                    {otherBreakdown.currency || 'CNY'}
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              </Table.Summary>
+            ) : null
+          }
         />
       </Modal>
     </div>

@@ -139,6 +139,8 @@ func run(store *configstore.Store, cmdbSyncer *cmdb.Syncer, seqStore *systemidse
 			jsonapi.WafByAccount(w, r)
 		case r.URL.Path == "/apis/billing/by-account" && r.Method == http.MethodPost:
 			jsonapi.BillingSummaryByAccount(w, r)
+		case r.URL.Path == "/apis/billing/other-breakdown" && r.Method == http.MethodPost:
+			jsonapi.BillingOtherBreakdown(w, r)
 		case r.URL.Path == "/apis/billing/by-system-id" && r.Method == http.MethodPost:
 			jsonapi.BillingSummaryBySystemID(w, r, store)
 		case r.URL.Path == "/apis/billing/batch-export" && r.Method == http.MethodPost:

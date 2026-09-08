@@ -22,6 +22,49 @@ export async function queryBillingBySystem(systemName: string, billingMonth?: st
   });
 }
 
+export const BILLING_OTHER_DETAIL_CATEGORIES = [
+  '文件存储',
+  '云备份',
+  '数据库复制',
+  '数据库安全',
+  'WAF',
+  '云堡垒机',
+  '云专线',
+  '证书管理',
+  'DNS',
+  '其他',
+] as const;
+
+export type BillingOtherDetailCategory = (typeof BILLING_OTHER_DETAIL_CATEGORIES)[number];
+
+export interface BillingOtherBreakdownRow {
+  accountName: string;
+  category: string;
+  serviceTypeCode: string;
+  consumeAmount: number;
+  currency: string;
+}
+
+export interface BillingOtherBreakdownResp {
+  rows: BillingOtherBreakdownRow[];
+  total: number;
+  currency: string;
+}
+
+/** 华为云「其他」行明细（按文件存储/云备份等大类拆分） */
+export async function queryBillingOtherBreakdown(params: {
+  provider: number;
+  billingMonth: string;
+  accountName?: string;
+  systemName?: string;
+}): Promise<BillingOtherBreakdownResp> {
+  return request('/apis/billing/other-breakdown', {
+    method: 'POST',
+    data: params,
+    timeout: API_REQUEST_TIMEOUT_MS,
+  });
+}
+
 async function messageFromJsonErrorBlob(blob: Blob): Promise<string> {
   const text = await blob.text();
   let msg = '操作失败';
