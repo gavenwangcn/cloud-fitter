@@ -5,7 +5,7 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
 import CloudAccountBar from '@/components/CloudAccountBar';
 import { queryBillingBySystemId } from '@/services/billingBySystemId';
-import { providerLabel } from '@/services/cloudConfig';
+import { isHuaweiProvider, providerLabel, providerToApiNumber } from '@/services/cloudConfig';
 import { listSystems, SystemRow } from '@/services/systemManage';
 import { BillingPageState } from './model';
 import {
@@ -224,7 +224,7 @@ const BillingPage: React.FC<BillingPageProps> = ({
         accountName?: string;
         systemName?: string;
       } = {
-        provider: record.provider,
+        provider: providerToApiNumber(record.provider),
         billingMonth: record.billingCycle,
       };
       if (queryContext.mode === 'system' && queryContext.systemName) {
@@ -333,7 +333,7 @@ const BillingPage: React.FC<BillingPageProps> = ({
       align: 'center',
       render: (cat: string, record: any) => {
         const isOther = typeof cat === 'string' && cat.startsWith('其他');
-        const isHuawei = record.provider === 2;
+        const isHuawei = isHuaweiProvider(record.provider);
         if (!isOther || !isHuawei) return cat;
         return (
           <Button
